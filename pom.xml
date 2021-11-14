@@ -57,48 +57,49 @@
   limitations under the License.
 
 -->
+
+<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>fish.payara.arquillian</groupId>
-    <artifactId>parent-payara-containers</artifactId>
-    <version>3.0.alpha2-SNAPSHOT</version>
+    <groupId>org.omnifaces.arquillian</groupId>
+    <artifactId>parent-glassfish-containers</artifactId>
+    <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>Arquillian Container Parent Payara</name>
+    <name>Arquillian Container Parent GlassFish</name>
 
     <description>
-        Payara Container integrations for the Arquillian Project.
+        GlassFish Container integrations for the Arquillian Project.
         Based on the JBoss GlassFish container integrations.
+        Based on the Payara Payara container integrations.
     </description>
 
-    <url>https://github.com/payara/Payara</url>
+    <url>https://github.com/omnifaces/</url>
 
     <properties>
-        <version.arquillian_core>1.7.0.Alpha9</version.arquillian_core>
-        <version.jersey>3.0.1</version.jersey>
+        <version.arquillian_core>1.7.0.Alpha10</version.arquillian_core>
+        <version.jersey>3.0.3</version.jersey>
         <version.jakartaee>9</version.jakartaee>
-        <version.jakartaee.api>9.1.0-RC1</version.jakartaee.api>
+        <version.jakartaee.api>9.1.0</version.jakartaee.api>
         <version.maven.surefire.plugin>3.0.0-M5</version.maven.surefire.plugin>
         <version.maven.source.plugin>3.2.1</version.maven.source.plugin>
         <version.maven.jar.plugin>3.2.0</version.maven.jar.plugin>
         <version.maven.gpg.plugin>1.6</version.maven.gpg.plugin>
-        <version.maven.javadoc.plugin>3.2.0</version.maven.javadoc.plugin>
+        <version.maven.javadoc.plugin>3.3.1</version.maven.javadoc.plugin>
         <version.maven.shade.plugin>3.2.4</version.maven.shade.plugin>
-        <version.maven.enforcer.plugin>3.0.0-M2</version.maven.enforcer.plugin>
+        <version.maven.enforcer.plugin>3.0.0</version.maven.enforcer.plugin>
         <version.maven.deploy.plugin>3.0.0-M1</version.maven.deploy.plugin>
 
-        <version.java>1.8</version.java>
+        <version.java>11</version.java>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.target>1.8</maven.compiler.target>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <version.maven.enforcer.java.limit>1.9</version.maven.enforcer.java.limit>
+        <maven.compiler.target>11</maven.compiler.target>
+        <maven.compiler.source>11</maven.compiler.source>
+        <version.maven.enforcer.java.limit>17</version.maven.enforcer.java.limit>
         <docs.phase>deploy</docs.phase>
 
-        <version.payara>6.2021.1-SNAPSHOT</version.payara>
-        <payara.home>payara6</payara.home>
-
-        <gpg.keyname>Payara-CI</gpg.keyname>
+        <version.glassfish>6.2.3-SNAPSHOT</version.glassfish>
+        <glassfish.home>glassfish6</glassfish.home>
     </properties>
 
     <scm>
@@ -119,49 +120,18 @@
 
     <developers>
         <developer>
-            <name>Payara Team</name>
-            <email>info@payara.fish</email>
-            <organization>Payara Foundation</organization>
-            <organizationUrl>http://www.payara.fish</organizationUrl>
+            <name>OmniFaces Team</name>
+            <organization>OmniFaces</organization>
+            <organizationUrl>http://omnifaces.org</organizationUrl>
         </developer>
     </developers>
 
-    <repositories>
-        <!-- Try Maven central first, not last, which happens when omitted here -->
-        <repository>
-            <id>payara-maven-central</id>
-            <name>Central Repository</name>
-            <url>https://repo.maven.apache.org/maven2</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-
-        <repository>
-            <id>payara-patched-externals</id>
-            <name>Payara Patched Externals</name>
-            <url>https://raw.github.com/payara/Payara_PatchedProjects/master</url>
-            <releases>
-                <enabled>true</enabled>
-            </releases>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
-
-    </repositories>
-
     <modules>
-        <module>payara-common</module>
-        <module>payara-managed</module>
-        <module>payara-remote</module>
-        <module>payara-embedded</module>
-        <module>payara-micro</module>
-        <module>payara-client-ee7</module>
-        <module>payara-client-ee8</module>
-        <module>payara-client-ee9</module>
-        <module>payara-micro-deployer</module>
-        <module>payara-micro-remote</module>
+        <module>glassfish-common</module>
+        <module>glassfish-managed</module>
+        <module>glassfish-remote</module>
+        <module>glassfish-embedded</module>
+        <module>glassfish-client-ee9</module>
         <module>environment-setup</module>
         <module>integration-tests</module>
     </modules>
@@ -222,12 +192,14 @@
                 <version>${version.jersey}</version>
             </dependency>
 
+            
             <dependency>
                 <groupId>org.glassfish.jersey.media</groupId>
                 <artifactId>jersey-media-json-processing</artifactId>
                 <version>${version.jersey}</version>
             </dependency>
 
+            <!-- Note: indirectly depends on javax.* -->
             <dependency>
                 <groupId>org.glassfish.jersey.media</groupId>
                 <artifactId>jersey-media-json-jackson</artifactId>
@@ -260,6 +232,26 @@
 
     <build>
         <plugins>
+            <plugin>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.0.0</version>
+                <executions>
+                    <execution>
+                        <id>enforce-java</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireMavenVersion>
+                                    <version>3.6</version>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        
             <!-- Configure the jar with the binaries. -->
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -317,60 +309,23 @@
                     </execution>
                 </executions>
             </plugin>
+            
+            <!-- Configure snapshot deployment to Sonatype. -->
             <plugin>
-                <artifactId>maven-deploy-plugin</artifactId>
-                <version>${version.maven.deploy.plugin}</version>
-                <executions>
-                    <execution>
-                        <id>default-deploy</id>
-                        <phase>none</phase>
-                    </execution>
-                    <execution>
-                        <id>deploy</id>
-                        <goals>
-                            <goal>deploy</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <artifactId>maven-release-plugin</artifactId>
+                <groupId>org.sonatype.plugins</groupId>
+                <artifactId>nexus-staging-maven-plugin</artifactId>
+                <version>1.6.8</version>
+                <extensions>true</extensions>
                 <configuration>
-                    <autoVersionSubmodules>true</autoVersionSubmodules>
-                    <pushChanges>false</pushChanges>
-                    <localCheckout>true</localCheckout>
-                    <releaseProfiles>release</releaseProfiles>
+                    <serverId>ossrh</serverId>
+                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
                 </configuration>
             </plugin>
-
-            <plugin>
-                <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.0.0-M3</version>
-                <executions>
-                    <execution>
-                        <id>enforce-java</id>
-                        <goals>
-                            <goal>enforce</goal>
-                        </goals>
-                        <configuration>
-                            <rules>
-                                <requireJavaVersion>
-                                    <version>[${version.java},${version.maven.enforcer.java.limit})</version>
-                                    <message>JDK8 only please</message>
-                                </requireJavaVersion>
-                                <requireMavenVersion>
-                                    <version>3.6</version>
-                                </requireMavenVersion>
-                            </rules>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
         </plugins>
+        
         <pluginManagement>
             <plugins>
-
                 <plugin>
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>${version.maven.shade.plugin}</version>
@@ -384,6 +339,20 @@
                                 <createDependencyReducedPom>false</createDependencyReducedPom>
                                 <artifactSet>
                                     <includes>
+                                        <!-- Jakarta EE -->
+                                        <include>jakarta.validation:jakarta.validation-api:*</include>
+                                        <include>jakarta.annotation:jakarta.annotation-api:*</include>
+                                        <include>jakarta.ws.rs:jakarta.ws.rs-api:*</include>
+                                        <include>jakarta.inject:*</include>
+                                        <include>jakarta.json:*</include>
+                                        
+                                        <include>jakarta.xml.bind:*</include>
+                                        <include>com.sun.activation:*</include>
+                                        
+                                        <include>javax.xml.bind:*</include>
+                                        <include>javax.activation:*</include>
+                                    
+                                        <!-- GlassFish -->
                                         <include>org.glassfish:*</include>
                                         <include>org.glassfish.hk2</include>
                                         <include>org.glassfish.hk2.external:*</include>
@@ -391,77 +360,109 @@
                                         <include>org.glassfish.jersey.inject:*</include>
                                         <include>org.glassfish.jersey.media:*</include>
                                         <include>org.glassfish.jersey.ext:*</include>
-                                        <include>org.jvnet:*</include>
-                                        <include>org.jvnet.mimepull:*</include>
-
+                                        <include>org.glassfish:jakarta.json:*</include>
+                                        
+                                        <!-- Other -->
+                                        <include>org.javassist:*</include>
                                         <include>com.fasterxml.jackson.core:*</include>
                                         <include>com.fasterxml.jackson.module:*</include>
-                                        <include>org.glassfish:jakarta.json:*</include>
-                                        <include>jakarta.validation:jakarta.validation-api:*</include>
-                                        <include>jakarta.annotation:jakarta.annotation-api:*</include>
-                                        <include>jakarta.ws.rs:jakarta.ws.rs-api:*</include>
+                                        <include>org.jvnet:*</include>
+                                        <include>org.jvnet.mimepull:*</include>
                                     </includes>
                                 </artifactSet>
+                                
                                 <transformers>
                                     <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                                     <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer" />
                                 </transformers>
 
                                 <relocations>
-                                    <relocation>
-                                        <pattern>org.glassfish.json</pattern>
-                                        <shadedPattern>fish.payara.arquillian.json</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>org.glassfish.hk2</pattern>
-                                        <shadedPattern>fish.payara.arquillian.hk2</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>org.glassfish.jersey</pattern>
-                                        <shadedPattern>fish.payara.arquillian.jersey</shadedPattern>
-                                    </relocation>
-
-                                    <relocation>
-                                        <pattern>com.fasterxml</pattern>
-                                        <shadedPattern>fish.payara.arquillian.faster</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>jersey.repackaged</pattern>
-                                        <shadedPattern>fish.payara.arquillian.jersey.repackaged</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>com.sun.research</pattern>
-                                        <shadedPattern>fish.payara.arquillian.research</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>org.jvnet</pattern>
-                                        <shadedPattern>fish.payara.arquillian.jvnet</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>org.aopalliance</pattern>
-                                        <shadedPattern>fish.payara.arquillian.aopalliance</shadedPattern>
-                                    </relocation>
-
-<!--                                    <relocation>
-                                        <pattern>jakarta.json</pattern>
-                                        <shadedPattern>fish.payara.arquillian.jakarta.json</shadedPattern>
-                                    </relocation>
+                                    <!-- Jakarta EE -->
                                     <relocation>
                                         <pattern>jakarta.validation</pattern>
-                                        <shadedPattern>fish.payara.arquillian.validation</shadedPattern>
+                                        <shadedPattern>org.omnifaces.arquillian.validation</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.annotation</pattern>
-                                        <shadedPattern>fish.payara.arquillian.annotation</shadedPattern>
+                                        <shadedPattern>org.omnifaces.arquillian.annotation</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.ws</pattern>
-                                        <shadedPattern>fish.payara.arquillian.ws</shadedPattern>
+                                        <shadedPattern>org.omnifaces.arquillian.ws</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.inject</pattern>
-                                        <shadedPattern>fish.payara.arquillian.inject</shadedPattern>
-                                    </relocation>-->
+                                        <shadedPattern>org.omnifaces.arquillian.inject</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>jakarta.json</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.jakarta.json</shadedPattern>
+                                    </relocation>
+                                    
+                                    <relocation>
+                                        <pattern>jakarta.xml.bind</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.jakarta.xml.bind</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>jakarta.activation</pattern> <!-- 1st package in com.sun.activation:jakarta.activation -->
+                                        <pattern>com.sun.activation.registries</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.jakarta.activation</shadedPattern>
+                                    </relocation>
+                                    <relocation> <!-- 2nd package in com.sun.activation:jakarta.activation -->
+                                        <pattern>com.sun.activation.registries</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.com.sun.activation.registries</shadedPattern>
+                                    </relocation>
+                                    
+                                    
+                                    
+                                    <relocation>
+                                        <pattern>javax.xml.bind</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.javax.xml.bind</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>javax.activation</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.javax.activation</shadedPattern>
+                                    </relocation>
+                                
+                                    <!-- GlassFish -->
+                                    <relocation>
+                                        <pattern>org.glassfish.hk2</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.hk2</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>org.glassfish.jersey</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.jersey</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>org.glassfish.json</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.json</shadedPattern>
+                                    </relocation>
+
+                                    <!-- Other -->
+                                    <relocation>
+                                        <pattern>javassist</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.javassist</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>com.fasterxml</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.faster</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>jersey.repackaged</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.jersey.repackaged</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>com.sun.research</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.research</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>org.jvnet</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.jvnet</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>org.aopalliance</pattern>
+                                        <shadedPattern>org.omnifaces.arquillian.aopalliance</shadedPattern>
+                                    </relocation>
                                 </relocations>
                             </configuration>
                         </execution>
@@ -471,6 +472,7 @@
         </pluginManagement>
     </build>
 
+    <!-- Release deploy: mvn clean deploy -P release -->
     <profiles>
         <profile>
             <id>release</id>
@@ -483,10 +485,6 @@
                     <plugin>
                         <artifactId>maven-gpg-plugin</artifactId>
                         <version>${version.maven.gpg.plugin}</version>
-                        <configuration>
-                            <keyname>${gpg.keyname}</keyname>
-                            <passphraseServerId>${gpg.keyname}</passphraseServerId>
-                        </configuration>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
@@ -500,63 +498,7 @@
                 </plugins>
             </build>
         </profile>
-        <profile>
-            <id>payara-enterprise</id>
-            <properties>
-                <version.payara>5.20.0</version.payara>
-            </properties>
-            <distributionManagement>
-                <repository>
-                    <id>payara-enterprise</id>
-                    <name>Payara Enterprise Nexus</name>
-                    <url>https://nexus.payara.fish/content/repositories/payara-enterprise/</url>
-                </repository>
-            </distributionManagement>
-            <repositories>
-                <repository>
-                    <id>payara-enterprise</id>
-                    <name>Payara Enterprise Nexus</name>
-                    <url>https://nexus.payara.fish/content/repositories/payara-enterprise/</url>
-                    <releases>
-                        <enabled>true</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>false</enabled>
-                    </snapshots>
-                </repository>
-            </repositories>
-        </profile>
-        <profile>
-            <id>payara-community</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <distributionManagement>
-                <snapshotRepository>
-                    <id>payara-maven-central</id>
-                    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-                </snapshotRepository>
-                <repository>
-                    <id>payara-maven-central</id>
-                    <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-                </repository>
-            </distributionManagement>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.sonatype.plugins</groupId>
-                        <artifactId>nexus-staging-maven-plugin</artifactId>
-                        <version>1.6.8</version>
-                        <extensions>true</extensions>
-                        <configuration>
-                            <serverId>payara-maven-central</serverId>
-                            <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                            <autoReleaseAfterClose>false</autoReleaseAfterClose>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
+        
         <profile>
             <id>skipTests</id>
             <activation>

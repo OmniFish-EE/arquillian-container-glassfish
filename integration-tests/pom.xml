@@ -38,47 +38,30 @@
 ~    only if the new code is made subject to such option by the copyright
 ~    holder.
 -->
-
+<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] --> 
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <parent>
-        <artifactId>parent-payara-containers</artifactId>
-        <groupId>fish.payara.arquillian</groupId>
-        <version>3.0.alpha2-SNAPSHOT</version>
-    </parent>
     <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.omnifaces.arquillian</groupId>
+        <artifactId>parent-glassfish-containers</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
     <artifactId>integration-tests</artifactId>
 
     <dependencies>
         <dependency>
-            <groupId>fish.payara.arquillian</groupId>
-            <artifactId>arquillian-payara-server-embedded</artifactId>
-            <scope>test</scope>
+            <groupId>org.omnifaces.arquillian</groupId>
+            <artifactId>arquillian-glassfish-server-embedded</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>fish.payara.arquillian</groupId>
-            <artifactId>arquillian-payara-server-managed</artifactId>
-            <scope>test</scope>
+            <groupId>org.omnifaces.arquillian</groupId>
+            <artifactId>arquillian-glassfish-server-managed</artifactId>
             <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>fish.payara.arquillian</groupId>
-            <artifactId>arquillian-payara-micro-managed</artifactId>
             <scope>test</scope>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>fish.payara.arquillian</groupId>
-            <artifactId>payara-micro-remote</artifactId>
-            <scope>test</scope>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>fish.payara.arquillian</groupId>
-            <artifactId>payara-micro-deployer</artifactId>
-            <type>war</type>
-            <scope>test</scope>
-            <version>${project.version}</version>
         </dependency>
     </dependencies>
 
@@ -90,7 +73,7 @@
                 <configuration>
                     <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
                     <filterProperties>
-                        <payara.version>${version.payara}</payara.version>
+                        <glassfish.version>${version.glassfish}</glassfish.version>
                         <arquillian.version>${version.arquillian_core}</arquillian.version>
                         <project.version>${project.version}</project.version>
                     </filterProperties>

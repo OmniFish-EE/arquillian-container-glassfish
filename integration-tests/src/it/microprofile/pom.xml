@@ -39,373 +39,195 @@
   ~    holder.
   -->
 
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] --> 
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
     <parent>
-        <groupId>fish.payara.arquillian</groupId>
-        <artifactId>parent-payara-containers</artifactId>
+        <groupId>org.omnifaces.arquillian</groupId>
+        <artifactId>parent-glassfish-containers</artifactId>
         <version>@project.version@</version>
     </parent>
-    <modelVersion>4.0.0</modelVersion>
-    <groupId>fish.payara.arquillian.test</groupId>
+    
+    <groupId>org.omnifaces.arquillian.test</groupId>
     <artifactId>microprofile-test</artifactId>
     <packaging>war</packaging>
+
     <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.jboss.arquillian</groupId>
+                <artifactId>arquillian-bom</artifactId>
+                <version>@arquillian.version@</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
-      <dependency>
-        <groupId>org.jboss.arquillian</groupId>
-        <artifactId>arquillian-bom</artifactId>
-        <version>@arquillian.version@</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <version>9.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.arquillian.junit</groupId>
+            <artifactId>arquillian-junit-container</artifactId>
+            <scope>test</scope>
+        </dependency>
 
     </dependencies>
-  </dependencyManagement>
 
-  <dependencies>
-    <!-- That's you core dependency for all Jakarta EE APIs (scope provided) -->
-    <dependency>
-      <groupId>jakarta.platform</groupId>
-      <artifactId>jakarta.jakartaee-api</artifactId>
-      <version>9.1.0-RC1</version>
-      <scope>provided</scope>
-    </dependency>
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <container.version>@project.version@</container.version>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+    </properties>
 
-    <!-- This is aggregate dependency of all Microprofile APIs.
-         Even that artifact is also usable as BOM, the version in dependencyManagement
-         cannot be set by import, but this is also convenient use that brings all apis in provided scope. -->
-    <dependency>
-      <groupId>org.eclipse.microprofile</groupId>
-      <artifactId>microprofile</artifactId>
-      <type>pom</type>
-      <version>2.2</version>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>4.13.1</version>
-      <scope>test</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.jboss.arquillian.junit</groupId>
-      <artifactId>arquillian-junit-container</artifactId>
-      <scope>test</scope>
-    </dependency>
-
-  </dependencies>
-
-  <properties>
-    <!-- This is Java 8 project -->
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
-    <container.version>@project.version@</container.version>
-    <payara.version>@payara.version@</payara.version>
-  </properties>
-
-  <build>
-    <pluginManagement>
-      <!-- EE 7+ compliant war plugin (no web.xml needed) -->
-      <plugins>
-        <plugin>
-          <artifactId>maven-war-plugin</artifactId>
-          <version>3.2.3</version>
-        </plugin>
-      </plugins>
-    </pluginManagement>
-    <plugins>
-      <!-- Run integration tests -->
-      <plugin>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <version>3.0.0-M3</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
-            <configuration>
-              <failIfNoTests>true</failIfNoTests>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-deploy-plugin</artifactId>
-          <version>3.0.0-M1</version>
-          <configuration>
-              <skip>true</skip>
-          </configuration>
-      </plugin>
-    </plugins>
-  </build>
-
-  <profiles>
-    <profile>
-      <id>payara-server-embedded</id>
-      <dependencies>
-        <dependency>
-          <groupId>fish.payara.arquillian</groupId>
-          <artifactId>arquillian-payara-server-embedded</artifactId>
-          <version>${container.version}</version>
-          <scope>test</scope>
-        </dependency>
-        <dependency>
-          <groupId>fish.payara.extras</groupId>
-          <artifactId>payara-embedded-all</artifactId>
-          <version>${payara.version}</version>
-          <scope>test</scope>
-        </dependency>
-      </dependencies>
-      <build>
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>3.3.2</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
-          <plugin>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <!-- don't mix compile-time apis and bundled server apis -->
-              <classpathDependencyScopeExclude>compile</classpathDependencyScopeExclude>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-
-    <profile>
-      <id>payara-server-managed</id>
-      <dependencies>
-        <dependency>
-          <groupId>fish.payara.arquillian</groupId>
-          <artifactId>arquillian-payara-server-managed</artifactId>
-          <version>${container.version}</version>
-          <scope>test</scope>
-        </dependency>
-      </dependencies>
-      <build>
-        <plugins>
-          <!-- download and unpack payara server -->
-          <plugin>
-            <artifactId>maven-dependency-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>unpack</id>
-                <phase>pre-integration-test</phase>
-                <goals>
-                  <goal>unpack</goal>
-                </goals>
+            <!-- Run integration tests -->
+            <plugin>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.0.0-M3</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <failIfNoTests>true</failIfNoTests>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.0.0-M1</version>
                 <configuration>
-                  <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
-                  <markersDirectory>
-                    ${session.executionRootDirectory}/target/dependency-maven-plugin-markers
-                  </markersDirectory>
-                  <artifactItems>
-                    <artifactItem>
-                      <groupId>fish.payara.distributions</groupId>
-                      <artifactId>payara</artifactId>
-                      <type>zip</type>
-                      <version>${payara.version}</version>
-                      <overWrite>false</overWrite>
-                      <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
-                    </artifactItem>
-                  </artifactItems>
+                    <skip>true</skip>
                 </configuration>
-              </execution>
-            </executions>
-          </plugin>
-
-          <!-- pass server location to test -->
-          <plugin>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <systemPropertyVariables>
-                <!-- Pass location of server installation to arquillian container -->
-                <payara.home>${session.executionRootDirectory}/target/payara6</payara.home>
-              </systemPropertyVariables>
-            </configuration>
-          </plugin>
+            </plugin>
         </plugins>
-      </build>
-    </profile>
+    </build>
 
-    <profile>
-      <id>payara-micro-managed-copied</id>
-      <dependencies>
+    <profiles>
+        <profile>
+            <id>glassfish-server-embedded</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.omnifaces.arquillian</groupId>
+                    <artifactId>arquillian-glassfish-server-embedded</artifactId>
+                    <version>${container.version}</version>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.glassfish.main.extras</groupId>
+                    <artifactId>glassfish-embedded-all</artifactId>
+                    <version>${glassfish.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <argLine>
+                                --add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED
+                                --add-opens=java.base/sun.net.www.protocol.jrt=ALL-UNNAMED
+                                --add-opens=java.base/java.lang=ALL-UNNAMED
+                                --add-opens=java.base/java.util=ALL-UNNAMED
+                                --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED
+                                --add-opens=java.naming/javax.naming.spi=ALL-UNNAMED
+                            </argLine>
+                            <!-- don't mix compile-time apis and bundled 
+                                server apis -->
+                            <classpathDependencyScopeExclude>compile</classpathDependencyScopeExclude>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
 
-        <dependency>
-          <groupId>fish.payara.arquillian</groupId>
-          <artifactId>arquillian-payara-micro-managed</artifactId>
-          <version>${container.version}</version>
-          <scope>test</scope>
-        </dependency>
-      </dependencies>
+        <profile>
+            <id>glassfish-server-managed</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.omnifaces.arquillian</groupId>
+                    <artifactId>arquillian-glassfish-server-managed</artifactId>
+                    <version>${container.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <!-- download and unpack glassfish server -->
+                    <plugin>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>unpack</id>
+                                <phase>pre-integration-test</phase>
+                                <goals>
+                                    <goal>unpack</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
+                                    <markersDirectory>
+                                        ${session.executionRootDirectory}/target/dependency-maven-plugin-markers
+                                    </markersDirectory>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>org.glassfish.main.distributions</groupId>
+                                            <artifactId>glassfish</artifactId>
+                                            <type>zip</type>
+                                            <version>${glassfish.version}</version>
+                                            <overWrite>false</overWrite>
+                                            <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
+                                        </artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
 
-      <build>
-        <plugins>
-          <!-- download and unpack payara micro -->
-          <plugin>
-            <artifactId>maven-dependency-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>unpack</id>
-                <phase>pre-integration-test</phase>
-                <goals>
-                  <goal>copy</goal>
-                </goals>
-                <configuration>
-                  <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
-                  <artifactItems>
-                    <artifactItem>
-                      <groupId>fish.payara.extras</groupId>
-                      <artifactId>payara-micro</artifactId>
-                      <version>${payara.version}</version>
-                      <overWrite>false</overWrite>
-                      <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
-                    </artifactItem>
-                  </artifactItems>
-                  <stripVersion>true</stripVersion>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
+                    <!-- pass server location to test -->
+                    <plugin>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <!-- Pass location of server installation 
+                                    to arquillian container -->
+                                <glassfish.home>${session.executionRootDirectory}/target/glassfish6</glassfish.home>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
 
-          <!-- pass location to test -->
-          <plugin>
-            <artifactId>maven-failsafe-plugin</artifactId>
-            <configuration>
-              <systemProperties>
-                <payara.microJar>target/payara-micro.jar</payara.microJar>
-              </systemProperties>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-
-    <profile>
-      <id>payara-micro-managed-classpath</id>
-      <dependencies>
-
-        <dependency>
-          <groupId>fish.payara.arquillian</groupId>
-          <artifactId>arquillian-payara-micro-managed</artifactId>
-          <version>${container.version}</version>
-          <scope>test</scope>
-        </dependency>
-
-        <dependency>
-          <groupId>fish.payara.extras</groupId>
-          <artifactId>payara-micro</artifactId>
-          <version>${payara.version}</version>
-          <scope>runtime</scope>
-        </dependency>
-      </dependencies>
-
-    </profile>
-
-    <profile>
-      <id>payara-micro-remote</id>
-      <dependencies>
-          <dependency>
-              <groupId>fish.payara.arquillian</groupId>
-              <artifactId>payara-micro-remote</artifactId>
-              <version>${container.version}</version>
-              <scope>test</scope>
-          </dependency>
-
-        <dependency>
-          <groupId>fish.payara.arquillian</groupId>
-          <artifactId>payara-micro-deployer</artifactId>
-          <version>${container.version}</version>
-          <scope>test</scope>
-          <type>war</type>
-        </dependency>
-      </dependencies>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-dependency-plugin</artifactId>
-            <executions>
-              <execution>
-                <id>deployer-for-tests</id>
-                <phase>pre-integration-test</phase>
-                <goals>
-                  <goal>copy</goal>
-                </goals>
-                <configuration>
-                  <artifactItems>
-                    <artifactItem>
-                      <groupId>fish.payara.arquillian</groupId>
-                      <artifactId>payara-micro-deployer</artifactId>
-                      <type>war</type>
-                    </artifactItem>
-                  </artifactItems>
-                  <stripVersion>true</stripVersion>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
-            <groupId>fish.payara.maven.plugins</groupId>
-            <artifactId>payara-micro-maven-plugin</artifactId>
-            <version>1.0.6</version>
-            <executions>
-              <execution>
-                <id>start-test-instance</id>
-                <phase>pre-integration-test</phase>
-                <goals>
-                  <goal>start</goal>
-                </goals>
-                <configuration>
-                  <daemon>true</daemon>
-                  <javaCommandLineOptions>
-                    <!--
-                    There is a bug in payara micro remote deployer where
-                    wrong class loader is used to perform injection,
-                    so the properties files from the apps are not read,
-                    thus force the value to be found here
-                    -->
-                    <option>
-                      <key>-Dinjected.value</key>
-                      <value>Injected value</value>
-                    </option>
-                  </javaCommandLineOptions>
-                  <deployWar>false</deployWar>
-                  <commandLineOptions>
-                    <option>
-                      <key>--deploy</key>
-                      <value>${project.build.directory}/dependency/payara-micro-deployer.war</value>
-                    </option>
-                    <option>
-                      <key>--nocluster</key>
-                    </option>
-                    <option>
-                      <key>--logToFile</key>
-                      <value>${project.build.directory}/payara-micro.log</value>
-                    </option>
-                  </commandLineOptions>
-                </configuration>
-              </execution>
-              <execution>
-                <id>stop-test-instance</id>
-                <phase>post-integration-test</phase>
-                <goals>
-                  <goal>stop</goal>
-                </goals>
-              </execution>
-            </executions>
-            <configuration>
-              <payaraVersion>${payara.version}</payaraVersion>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
-
+    </profiles>
 
 </project>

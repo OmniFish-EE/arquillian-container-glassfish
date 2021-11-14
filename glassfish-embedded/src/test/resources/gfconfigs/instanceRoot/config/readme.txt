@@ -1,0 +1,1 @@
+This directory is meant to be the config directory of a GlassFish instanceRoot. It contains a blank domain.xml file for the purpose of testing.

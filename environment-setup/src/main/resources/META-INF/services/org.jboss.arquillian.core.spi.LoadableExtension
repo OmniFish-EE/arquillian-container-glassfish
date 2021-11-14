@@ -1,1 +1,1 @@
-fish.payara.arquillian.environment.setup.EnvironmentExtension
+org.omnifaces.arquillian.environment.setup.EnvironmentExtension
