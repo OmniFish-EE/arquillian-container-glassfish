@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -66,6 +66,8 @@ import java.sql.Statement;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.sql.DataSource;
+
 import jakarta.annotation.Resource;
 import jakarta.ejb.EJB;
 import jakarta.servlet.ServletException;
@@ -73,23 +75,22 @@ import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import javax.sql.DataSource;
 
 /**
- * Simple servlet for testing deployment with enabled h2 database.
+ * Simple servlet for testing deployment with enabled Derby database.
  *
  * @author <a href="http://community.jboss.org/people/aslak">Aslak Knutsen</a>
  * @author <a href="http://community.jboss.org/people/LightGuard">Jason Porter</a>
  */
 @WebServlet("/Greeter")
-public class GreeterServletWithH2 extends HttpServlet {
+public class GreeterServletWithDerby extends HttpServlet {
 
     private static final String GET_LOG_ARCHIVE_MODE_QUERY =
-        "VALUES SYSCS_UTIL.SYSCS_GET_DATABASE_PROPERTY('h2.storage.logArchiveMode')";
+        "VALUES SYSCS_UTIL.SYSCS_GET_DATABASE_PROPERTY('derby.storage.logArchiveMode')";
 
     private static final long serialVersionUID = 8249673615048070666L;
 
-    private static final Logger logger = Logger.getLogger(GreeterServletWithH2.class.getName());
+    private static final Logger logger = Logger.getLogger(GreeterServletWithDerby.class.getName());
 
     @EJB
     private Greeter greeter;
@@ -100,25 +101,25 @@ public class GreeterServletWithH2 extends HttpServlet {
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         // test the DataSource and thus the working DB connection with an internal H2 query
-        Connection conn = null;
-        Statement stmt = null;
-        ResultSet rs = null;
+        Connection connection = null;
+        Statement statement = null;
+        ResultSet resultSet = null;
         try {
-            conn = dataSource.getConnection();
-            stmt = conn.createStatement();
-            rs = stmt.executeQuery(GET_LOG_ARCHIVE_MODE_QUERY);
+            connection = dataSource.getConnection();
+            statement = connection.createStatement();
+            resultSet = statement.executeQuery(GET_LOG_ARCHIVE_MODE_QUERY);
 
-            rs.next();
+            resultSet.next();
             final PrintWriter writer = resp.getWriter();
-            if (!rs.getBoolean(1)) {
+            if (!resultSet.getBoolean(1)) {
                 writer.append(this.greeter.greet());
             } else {
-                writer.append("Something terrible happened! No greetings! h2.storage.logArchiveMode is set to TRUE");
+                writer.append("Something terrible happened! No greetings! derby.storage.logArchiveMode is set to TRUE");
             }
         } catch (SQLException ex) {
             throw new ServletException(ex);
         } finally {
-            closeResources(conn, stmt, rs);
+            closeResources(connection, statement, resultSet);
         }
     }
 

@@ -89,7 +89,7 @@ class GlassFishServerControl {
 
     private static final String DERBY_MISCONFIGURED_HINT =
         "It seems that the GlassFish version you are running might have a problem starting embedded "  +
-        "Derby database. Please take a look at the server logs. You can also switch off 'enableH2' property in your 'arquillian.xml' if you don't need it.";
+        "Derby database. Please take a look at the server logs. You can also switch off 'enableDerby' property in your 'arquillian.xml' if you don't need it.";
 
     private static final List<String> NO_ARGS = new ArrayList<>();
 
@@ -103,7 +103,7 @@ class GlassFishServerControl {
     void start() throws LifecycleException {
         registerShutdownHook();
 
-        if (config.isEnableH2()) {
+        if (config.isEnableDerby()) {
             startH2Database();
         }
 
@@ -131,7 +131,7 @@ class GlassFishServerControl {
     }
 
     private void startH2Database() throws LifecycleException {
-        if (!config.isEnableH2()) {
+        if (!config.isEnableDerby()) {
             return;
         }
 
@@ -144,7 +144,7 @@ class GlassFishServerControl {
     }
 
     private void stopH2Database() throws LifecycleException {
-        if (config.isEnableH2()) {
+        if (config.isEnableDerby()) {
             executeAdminDomainCommand("Stopping database", "stop-database", NO_ARGS, createProcessOutputConsumer());
         }
     }

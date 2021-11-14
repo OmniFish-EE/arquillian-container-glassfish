@@ -80,7 +80,7 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
 
     private boolean outputToConsole = true;
     private boolean allowConnectingToRunningServer;
-    private boolean enableH2;
+    private boolean enableDerby;
 
     public String getGlassFishHome() {
         return glassFishHome;
@@ -119,15 +119,15 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
         this.allowConnectingToRunningServer = allowConnectingToRunningServer;
     }
 
-    public boolean isEnableH2() {
-        return enableH2;
+    public boolean isEnableDerby() {
+        return enableDerby;
     }
 
     /**
-     * @param enableH2 Flag to start/stop the registered H2 server using standard H2 port
+     * @param enableDerby Flag to start/stop the registered Derby server using standard Derby port
      */
-    public void setEnableH2(boolean enableH2) {
-        this.enableH2 = enableH2;
+    public void setEnableDerby(boolean enableDerby) {
+        this.enableDerby = enableDerby;
     }
 
     @Override

@@ -88,8 +88,8 @@ public abstract class GlassFishManagedDeploymentTestTemplate {
     }
 
     static Class<?> greeterImplementationBasedOnH2Enabled() {
-        if (Boolean.valueOf(System.getProperty("enableH2"))) {
-            return GreeterServletWithH2.class;
+        if (Boolean.valueOf(System.getProperty("enableDerby"))) {
+            return GreeterServletWithDerby.class;
         }
         return GreeterServlet.class;
     }
