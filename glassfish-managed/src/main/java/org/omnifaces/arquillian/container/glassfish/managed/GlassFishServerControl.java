@@ -111,6 +111,9 @@ class GlassFishServerControl {
         if (config.isDebug()) {
             args.add("--debug");
         }
+        if (config.isSuspend()) {
+            args.add("--suspend");
+        }
 
         executeAdminDomainCommand("Starting container", "start-domain", args, createProcessOutputConsumer());
     }
@@ -122,7 +125,7 @@ class GlassFishServerControl {
         } catch (LifecycleException failedStoppingContainer) {
             logger.log(SEVERE, "Failed stopping container.", failedStoppingContainer);
         } finally {
-            stopH2Database();
+            stopDerbyDatabase();
         }
     }
 
@@ -143,7 +146,7 @@ class GlassFishServerControl {
         }
     }
 
-    private void stopH2Database() throws LifecycleException {
+    private void stopDerbyDatabase() throws LifecycleException {
         if (config.isEnableDerby()) {
             executeAdminDomainCommand("Stopping database", "stop-database", NO_ARGS, createProcessOutputConsumer());
         }
@@ -163,7 +166,7 @@ class GlassFishServerControl {
                 logger.warning("Forcing container shutdown");
                 try {
                     stopContainer();
-                    stopH2Database();
+                    stopDerbyDatabase();
                 } catch (LifecycleException e) {
                     logger.log(SEVERE, "Failed stopping services through shutdown hook.", e);
                 }

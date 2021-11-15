@@ -78,9 +78,9 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
 
     private String glassFishHome = System.getProperty(GLASSFISH_HOME_PROPERTY);
 
-    private boolean outputToConsole = true;
-    private boolean allowConnectingToRunningServer;
-    private boolean enableDerby;
+    private boolean outputToConsole = Boolean.valueOf(System.getProperty("glassfish.outputToConsole", "true"));
+    private boolean allowConnectingToRunningServer = Boolean.valueOf(System.getProperty("glassfish.allowConnectingToRunningServer", "false"));
+    private boolean enableDerby = Boolean.valueOf(System.getProperty("glassfish.enableDerby", "false"));
 
     public String getGlassFishHome() {
         return glassFishHome;

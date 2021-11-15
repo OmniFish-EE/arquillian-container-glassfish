@@ -73,17 +73,20 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     protected String adminHost = "localhost";
     protected int adminPort = 4848;
 
-    protected boolean adminHttps;
-    private boolean authorisation;
-    private boolean ignoreCertificates;
-    private String adminUser;
-    private String adminPassword;
-    private String target = ADMINSERVER;
-    private String libraries;
-    private String properties;
-    private String type;
-    private String domain;
-    protected boolean debug;
+    protected boolean adminHttps = Boolean.valueOf(System.getProperty("glassfish.adminHttps", "false"));
+    private boolean authorisation = Boolean.valueOf(System.getProperty("glassfish.authorisation", "false"));
+    private boolean ignoreCertificates = Boolean.valueOf(System.getProperty("glassfish.ignoreCertificates", "false"));
+
+    private String adminUser = System.getProperty("glassfish.adminUser");
+    private String adminPassword = System.getProperty("glassfish.adminPassword");
+    private String target = System.getProperty("glassfish.target", ADMINSERVER);
+    private String libraries = System.getProperty("glassfish.libraries");
+    private String properties = System.getProperty("glassfish.properties");
+    private String type = System.getProperty("glassfish.type");
+    private String domain = System.getProperty("glassfish.domain");
+
+    private boolean debug = Boolean.valueOf(System.getProperty("glassfish.debug", "false"));
+    private boolean suspend = Boolean.valueOf(System.getProperty("glassfish.suspend", "false"));
 
     public CommonGlassFishConfiguration() {
         super();
@@ -169,22 +172,27 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
 
     /**
      * @param target
-     *     Specifies the target to which you are  deploying.
+     *     Specifies the target to which you are deploying.
+     *
      *     <p>
      *     Valid values are:
+     *
      *     server
      *     Deploys the component to the default Admin Server instance.
      *     This is the default value.
+     *
      *     instance_name
-     *     Deploys the component to  a  particular  stand-alone
+     *     Deploys the component to a particular stand-alone
      *     sever instance.
+     *
      *     cluster_name
-     *     Deploys the component to every  server  instance  in
-     *     the cluster. (Though Arquillion use only one instance
+     *     Deploys the component to every server instance in
+     *     the cluster. (Though Arquillian uses only one instance
      *     to run the test case.)
      *     <p>
+     *
      *     The domain name as a target is not a reasonable deployment
-     *     senarion in case of testing.
+     *     scenario in case of testing.
      */
     public void setTarget(String target) {
         this.target = target;
@@ -215,8 +223,8 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
      * @param properties
      *     Optional keyword-value  pairs  that  specify  additional
      *     properties  for the deployment. The available properties
-     *     are determined by the implementation  of  the  component
-     *     that  is  being deployed or redeployed.
+     *     are determined by the implementation of the component
+     *     that is being deployed or redeployed.
      */
     public void setProperties(String properties) {
         this.properties = properties;
@@ -280,10 +288,23 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
         this.debug = debug;
     }
 
+    public boolean isSuspend() {
+        return suspend;
+    }
+
+    /**
+     *
+     * @param suspend Flag to start the server in debug mode and wait for a debug connection using standard GlassFish debug port
+     */
+    public void setSuspend(boolean suspend) {
+        this.suspend = suspend;
+    }
+
     /**
      * Validates if current configuration is valid, that is if all required
      * properties are set and have correct values
      */
+    @Override
     public void validate() throws ConfigurationException {
         if (isAuthorisation()) {
             Validate.notNull(getAdminUser(), "adminUser must be specified to use authorisation");
