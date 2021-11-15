@@ -64,7 +64,7 @@ public class GlassFishVersion {
      * @param update - Stability/Feature patch version of the server
      * @param glassFishMinor - Minor version of GlassFish versions
      * @param glassFishUpdate - Stability/Feat patch version of GlassFish versions
-     * @return
+     * @return a new GlassFishVersion object
      */
     public static GlassFishVersion buildVersionFromBrandingProperties(String major, String minor, String update, String glassFishMinor,
             String glassFishUpdate) throws IllegalArgumentException {

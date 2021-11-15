@@ -87,7 +87,7 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     }
 
     /**
-     * @param glassFishHome The local GlassFish installation directory
+     * @param glashFishHome The local GlassFish installation directory
      */
     public void setGlassFishHome(String glashFishHome) {
         this.glassFishHome = glashFishHome;

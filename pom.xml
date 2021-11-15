@@ -64,7 +64,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
@@ -296,7 +296,7 @@
                     <splitindex>true</splitindex>
                     <doctitle>Arquillian connector</doctitle>
                     <links>
-                        <link>https://docs.oracle.com/javaee/${version.jakartaee}/api/</link>
+                        <link>https://jakarta.ee/specifications/platform/${version.jakartaee}/apidocs/</link>
                     </links>
                 </configuration>
                 <executions>
