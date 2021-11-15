@@ -58,6 +58,8 @@
 package org.omnifaces.arquillian.container.glassfish.managed;
 
 import static java.lang.Runtime.getRuntime;
+import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOfRange;
 import static java.util.logging.Level.SEVERE;
 
 import java.io.File;
@@ -104,7 +106,7 @@ class GlassFishServerControl {
         registerShutdownHook();
 
         if (config.isEnableDerby()) {
-            startH2Database();
+            startDerbyDatabase();
         }
 
         final List<String> args = new ArrayList<>();
@@ -116,6 +118,23 @@ class GlassFishServerControl {
         }
 
         executeAdminDomainCommand("Starting container", "start-domain", args, createProcessOutputConsumer());
+
+        for (String commandLine : config.getPostBootCommandList()) {
+            String[] commandParts = commandLine.split(" ");
+
+            List<String> arguments = NO_ARGS;
+
+            if (commandParts.length > 1) {
+                arguments = asList(copyOfRange(commandParts, 1, commandParts.length));
+            }
+
+            try {
+                executeAdminDomainCommand("Executing post boot command", commandParts[0], arguments, createProcessOutputConsumer());
+            } catch (LifecycleException e) {
+                logger.warning(e.getMessage());
+            }
+        }
+
     }
 
     void stop() throws LifecycleException {
@@ -133,7 +152,7 @@ class GlassFishServerControl {
         executeAdminDomainCommand("Stopping container", "stop-domain", NO_ARGS, createProcessOutputConsumer());
     }
 
-    private void startH2Database() throws LifecycleException {
+    private void startDerbyDatabase() throws LifecycleException {
         if (!config.isEnableDerby()) {
             return;
         }

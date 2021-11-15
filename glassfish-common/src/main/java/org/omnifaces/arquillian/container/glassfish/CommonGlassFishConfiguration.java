@@ -57,7 +57,11 @@
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish;
 
+import static java.util.stream.Collectors.toList;
 import static org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
+
+import java.util.Collections;
+import java.util.List;
 
 import org.jboss.arquillian.container.spi.ConfigurationException;
 import org.jboss.arquillian.container.spi.client.container.ContainerConfiguration;
@@ -84,9 +88,12 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     private String properties = System.getProperty("glassfish.properties");
     private String type = System.getProperty("glassfish.type");
     private String domain = System.getProperty("glassfish.domain");
+    private String postBootCommands = System.getProperty("glassfish.postBootCommands");
 
     private boolean debug = Boolean.valueOf(System.getProperty("glassfish.debug", "false"));
     private boolean suspend = Boolean.valueOf(System.getProperty("glassfish.suspend", "false"));
+
+    private List<String> postBootCommandList = Collections.emptyList();
 
     public CommonGlassFishConfiguration() {
         super();
@@ -270,6 +277,18 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
         return domain;
     }
 
+    public String getPostBootCommands() {
+        return postBootCommands;
+    }
+
+    public void setPostBootCommands(String postBootCommands) {
+        this.postBootCommands = postBootCommands;
+    }
+
+    public List<String> getPostBootCommandList() {
+        return postBootCommandList;
+    }
+
     /**
      * @param domain The GlassFish domain to use or the default domain if not specified
      */
@@ -310,5 +329,14 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
             Validate.notNull(getAdminUser(), "adminUser must be specified to use authorisation");
             Validate.notNull(getAdminPassword(), "adminPassword must be specified to use authorisation");
         }
+
+        if (postBootCommands != null) {
+            postBootCommandList =
+                postBootCommands.lines()
+                                .map(e -> e.trim())
+                                .filter(e -> !e.startsWith("#"))
+                                .collect(toList());
+        }
+
     }
 }
