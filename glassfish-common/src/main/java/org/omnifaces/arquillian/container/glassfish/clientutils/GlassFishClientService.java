@@ -312,7 +312,7 @@ public class GlassFishClientService implements GlassFishClient {
      * Do deploy an application defined by a multipart form's fileds to a target server or a cluster
      * of GlassFish 3.1
      *
-     * @param name - name of the appliacation form - a form of MediaType.MULTIPART_FORM_DATA_TYPE
+     * @param name - name of the application form - a form of MediaType.MULTIPART_FORM_DATA_TYPE
      * @return subComponents - a map of SubComponents of the application
      */
     @Override
