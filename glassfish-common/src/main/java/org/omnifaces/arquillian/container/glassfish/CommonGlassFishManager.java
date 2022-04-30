@@ -154,7 +154,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
                 deployLock.unlock();
             }
             protocolMetaData.addContext(httpContext);
-        } catch (GlassFishClientException | IOException | ContainerException e) {
+        } catch (GlassFishClientException | IOException e) {
             throw new DeploymentException("Could not deploy " + archiveName, e);
         }
 
@@ -181,7 +181,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             } finally {
                 deployLock.unlock();
             }
-        } catch (GlassFishClientException | ContainerException e) {
+        } catch (GlassFishClientException e) {
             throw new DeploymentException("Could not undeploy " + archive.getName(), e);
         }
     }
