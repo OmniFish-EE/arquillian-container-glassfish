@@ -69,6 +69,7 @@ import java.util.logging.Logger;
 
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.file.StreamDataBodyPart;
+import org.glassfish.jersey.server.ContainerException;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
@@ -154,7 +155,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
                 deployLock.unlock();
             }
             protocolMetaData.addContext(httpContext);
-        } catch (GlassFishClientException | IOException e) {
+        } catch (GlassFishClientException | IOException | ContainerException e) {
             throw new DeploymentException("Could not deploy " + archiveName, e);
         }
 
@@ -181,7 +182,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             } finally {
                 deployLock.unlock();
             }
-        } catch (GlassFishClientException e) {
+        } catch (GlassFishClientException | ContainerException e) {
             throw new DeploymentException("Could not undeploy " + archive.getName(), e);
         }
     }

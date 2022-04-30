@@ -64,7 +64,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.0</version>
+    <version>1.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
@@ -98,8 +98,10 @@
         <version.maven.enforcer.java.limit>17</version.maven.enforcer.java.limit>
         <docs.phase>deploy</docs.phase>
 
-        <version.glassfish>6.2.3-SNAPSHOT</version.glassfish>
+        <version.glassfish>6.2.5</version.glassfish>
         <glassfish.home>glassfish6</glassfish.home>
+
+        <skipITs>false</skipITs>
     </properties>
 
     <scm>
