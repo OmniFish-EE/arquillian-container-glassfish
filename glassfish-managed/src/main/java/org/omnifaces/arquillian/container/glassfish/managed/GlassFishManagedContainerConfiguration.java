@@ -54,7 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
 import static org.jboss.arquillian.container.spi.client.deployment.Validate.configurationDirectoryExists;
@@ -81,6 +81,8 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private boolean outputToConsole = Boolean.valueOf(System.getProperty("glassfish.outputToConsole", "true"));
     private boolean allowConnectingToRunningServer = Boolean.valueOf(System.getProperty("glassfish.allowConnectingToRunningServer", "false"));
     private boolean enableDerby = Boolean.valueOf(System.getProperty("glassfish.enableDerby", "false"));
+    private String maxHeapSize = System.getProperty("glassfish.maxHeapSize");
+    private String enableAssertions = System.getProperty("glassfish.enableAssertions");
 
     public String getGlassFishHome() {
         return glassFishHome;
@@ -128,6 +130,26 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     public void setEnableDerby(boolean enableDerby) {
         this.enableDerby = enableDerby;
+    }
+
+    public String getMaxHeapSize() {
+        return maxHeapSize;
+    }
+
+    public void setMaxHeapSize(String maxHeapSize) {
+        this.maxHeapSize = maxHeapSize;
+    }
+
+    public String getEnableAssertions() {
+        return enableAssertions;
+    }
+
+    public void setEnableAssertions(String enableAssertions) {
+        this.enableAssertions = enableAssertions;
+    }
+
+    public String getDomainXmlPath() {
+        return getGlassFishHome() + "/glassfish/domains/" + (getDomain() == null? "domain1" : getDomain()) + "/config/domain.xml";
     }
 
     @Override

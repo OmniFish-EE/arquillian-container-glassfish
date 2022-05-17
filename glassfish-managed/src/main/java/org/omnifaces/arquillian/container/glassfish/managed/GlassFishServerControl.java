@@ -54,10 +54,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
 import static java.lang.Runtime.getRuntime;
+import static java.nio.file.Files.readString;
+import static java.nio.file.Files.writeString;
 import static java.util.Arrays.asList;
 import static java.util.Arrays.copyOfRange;
 import static java.util.logging.Level.SEVERE;
@@ -65,9 +67,15 @@ import static java.util.logging.Level.SEVERE;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 import org.omnifaces.arquillian.container.glassfish.process.CloseableProcess;
@@ -107,6 +115,19 @@ class GlassFishServerControl {
 
         if (config.isEnableDerby()) {
             startDerbyDatabase();
+        }
+
+        Map<String, String> vmOptions = new LinkedHashMap<String, String>();
+        if (config.getMaxHeapSize() != null) {
+            vmOptions.put("-Xmx", config.getMaxHeapSize());
+        }
+
+        if (config.getEnableAssertions() != null) {
+            vmOptions.put("-ea", config.getEnableAssertions());
+        }
+
+        if (!vmOptions.isEmpty()) {
+            setVmOptionsInDomain(vmOptions);
         }
 
         final List<String> args = new ArrayList<>();
@@ -193,6 +214,32 @@ class GlassFishServerControl {
         });
 
         getRuntime().addShutdownHook(shutdownHook);
+    }
+
+    private void setVmOptionsInDomain(Map<String, String> vmOptions) {
+        // Quick and dirty replacements via regexp for now.
+        // Eventually a fully parsed domain.xml editing may be better.
+        try {
+            String content = readString(Paths.get(config.getDomainXmlPath()));
+
+            for (Entry<String, String> vmOption :  vmOptions.entrySet()) {
+
+                Matcher vmOptionMatcher = Pattern.compile("<jvm-options>" + Pattern.quote(vmOption.getKey()) + "(.*)</jvm-options>")
+                                                 .matcher(content);
+
+                if (vmOptionMatcher.find()) {
+                    content  = vmOptionMatcher.replaceAll("<jvm-options>" + vmOption.getKey() + vmOption.getValue() + "</jvm-options>");
+                } else {
+                    content  = content.replaceAll(
+                                    "</java-config>",
+                                    "<jvm-options>" + vmOption.getKey() + vmOption.getValue() + "</jvm-options>\n</java-config>");
+                }
+            }
+
+            writeString(Paths.get(config.getDomainXmlPath()), content);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private void executeAdminDomainCommand(String description, String adminCmd, List<String> args, ProcessOutputConsumer consumer) throws LifecycleException {
