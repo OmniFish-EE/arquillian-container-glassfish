@@ -89,11 +89,13 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     private String type = System.getProperty("glassfish.type");
     private String domain = System.getProperty("glassfish.domain");
     private String postBootCommands = System.getProperty("glassfish.postBootCommands");
+    private String systemProperties = System.getProperty("glassfish.systemProperties");
 
     private boolean debug = Boolean.valueOf(System.getProperty("glassfish.debug", "false"));
     private boolean suspend = Boolean.valueOf(System.getProperty("glassfish.suspend", "false"));
 
     private List<String> postBootCommandList = Collections.emptyList();
+    private List<String> systemProperyList = Collections.emptyList();
 
     public CommonGlassFishConfiguration() {
         super();
@@ -289,6 +291,18 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
         return postBootCommandList;
     }
 
+    public String getSystemProperties() {
+        return systemProperties;
+    }
+
+    public void setSystemProperties(String jvmOptions) {
+        this.systemProperties = jvmOptions;
+    }
+
+    public List<String> getSystemProperyList() {
+        return systemProperyList;
+    }
+
     /**
      * @param domain The GlassFish domain to use or the default domain if not specified
      */
@@ -336,6 +350,14 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
                                 .map(e -> e.trim())
                                 .filter(e -> !e.startsWith("#"))
                                 .collect(toList());
+        }
+
+        if (systemProperties != null) {
+            systemProperyList =
+                systemProperties.lines()
+                                 .map(e -> e.trim())
+                                 .filter(e -> !e.startsWith("#"))
+                                 .collect(toList());
         }
 
     }

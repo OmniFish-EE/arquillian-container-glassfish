@@ -126,6 +126,10 @@ class GlassFishServerControl {
             vmOptions.put("-ea", config.getEnableAssertions());
         }
 
+        for (String systemProperty : config.getSystemProperyList()) {
+            vmOptions.put("-D" + systemProperty, "");
+        }
+
         if (!vmOptions.isEmpty()) {
             setVmOptionsInDomain(vmOptions);
         }
