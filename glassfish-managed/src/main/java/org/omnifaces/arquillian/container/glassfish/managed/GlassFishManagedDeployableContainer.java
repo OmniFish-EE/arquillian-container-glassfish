@@ -134,7 +134,7 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
             }
             glassFishManager.start();
         } catch (LifecycleException ex) {
-            throw new DeploymentException("Cannot start Payara", ex);
+            throw new DeploymentException("Cannot start GlassFish", ex);
         }
         return glassFishManager.deploy(archive);
     }

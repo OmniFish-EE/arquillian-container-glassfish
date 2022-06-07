@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -75,8 +75,8 @@ public interface GlassFishClient {
 
     /**
      * Start-up the server
-     * 
-     * 
+     *
+     *
      * <ul>
      *   <li>   Get the node addresses list associated with the target
      *   <li>    Check the status of the target server instance
@@ -88,7 +88,7 @@ public interface GlassFishClient {
 
     /**
      * Do deploy an application defined by a multipart form's data to the target server or cluster
-     * of Payara
+     * of GlassFish
      *
      * @param name - name of the application form - a form of MediaType.MULTIPART_FORM_DATA_TYPE
      * @param form - form containing data to be deployed
