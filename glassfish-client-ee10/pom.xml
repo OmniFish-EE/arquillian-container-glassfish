@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
+  Copyright (c) 2023 OmniFish and/or its affiliates. All rights reserved.
   Copyright (c) [2021] Payara Foundation and/or its affiliates. All rights reserved.
  
   The contents of this file are subject to the terms of either the GNU
@@ -45,7 +46,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>glassfish-client-ee10</artifactId>
-    <version>1.2</version>
+    <version>1.3-SNAPSHOT</version>
 
     <name>GlassFish client libs for Jakarta EE 10</name>
     <description>
@@ -81,7 +82,7 @@
     </scm>
 
     <properties>
-        <version.jersey>3.1.0-M8</version.jersey>
+        <version.jersey>3.1.1</version.jersey>
     </properties>
 
     <dependencies>
@@ -90,14 +91,14 @@
         <dependency>
             <groupId>org.eclipse</groupId>
             <artifactId>yasson</artifactId>
-            <version>3.0.2</version>
+            <version>3.0.3</version>
         </dependency>
         
         <!-- Jaxb-osgi (JAX-B RI) -->
         <dependency>
             <groupId>com.sun.xml.bind</groupId>
             <artifactId>jaxb-osgi</artifactId>
-            <version>4.0.1</version>
+            <version>4.0.2</version>
         </dependency>
 
         <!-- WebSocket client dependencies -->
