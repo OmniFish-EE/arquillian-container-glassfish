@@ -78,24 +78,14 @@
     <url>https://github.com/omnifaces/</url>
 
     <properties>
-        <version.arquillian_core>1.7.0.Alpha10</version.arquillian_core>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        
         <version.jersey>3.0.3</version.jersey>
+        <version.arquillian>1.7.0.Alpha14</version.arquillian>
         <version.jakartaee>9</version.jakartaee>
         <version.jakartaee.api>9.1.0</version.jakartaee.api>
-        <version.maven.surefire.plugin>3.0.0-M5</version.maven.surefire.plugin>
-        <version.maven.source.plugin>3.2.1</version.maven.source.plugin>
-        <version.maven.jar.plugin>3.2.0</version.maven.jar.plugin>
-        <version.maven.gpg.plugin>1.6</version.maven.gpg.plugin>
-        <version.maven.javadoc.plugin>3.3.1</version.maven.javadoc.plugin>
-        <version.maven.shade.plugin>3.2.4</version.maven.shade.plugin>
-        <version.maven.enforcer.plugin>3.0.0</version.maven.enforcer.plugin>
-        <version.maven.deploy.plugin>3.0.0-M1</version.maven.deploy.plugin>
-
-        <version.java>11</version.java>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.target>11</maven.compiler.target>
-        <maven.compiler.source>11</maven.compiler.source>
-        <version.maven.enforcer.java.limit>17</version.maven.enforcer.java.limit>
+        
+        <maven.compiler.release>11</maven.compiler.release>
         <docs.phase>deploy</docs.phase>
 
         <version.glassfish>6.2.5</version.glassfish>
@@ -218,7 +208,7 @@
             <dependency>
                 <groupId>org.jboss.arquillian</groupId>
                 <artifactId>arquillian-bom</artifactId>
-                <version>${version.arquillian_core}</version>
+                <version>${version.arquillian}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -226,7 +216,7 @@
             <dependency>
                 <groupId>org.jboss.arquillian</groupId>
                 <artifactId>arquillian-build</artifactId>
-                <version>${version.arquillian_core}</version>
+                <version>${version.arquillian}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -258,7 +248,7 @@
             <!-- Configure the jar with the binaries. -->
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>${version.maven.jar.plugin}</version>
+                <version>3.3.0</version>
                 <configuration>
                     <forceCreation>true</forceCreation>
                     <archive>
@@ -277,7 +267,7 @@
             <!-- Configure the jar with the sources. -->
             <plugin>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>${version.maven.source.plugin}</version>
+                <version>3.2.1</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -292,9 +282,8 @@
             <!-- Configure the jar with the javadoc. -->
             <plugin>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${version.maven.javadoc.plugin}</version>
+                <version>3.5.0</version>
                 <configuration>
-                    <javadocVersion>${version.java}</javadocVersion>
                     <notimestamp>true</notimestamp>
                     <splitindex>true</splitindex>
                     <doctitle>Arquillian connector</doctitle>
@@ -317,7 +306,7 @@
             <plugin>
                 <groupId>org.sonatype.plugins</groupId>
                 <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>1.6.8</version>
+                <version>1.6.13</version>
                 <extensions>true</extensions>
                 <configuration>
                     <serverId>ossrh</serverId>
@@ -330,8 +319,12 @@
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.0.0</version>
+                </plugin>
+                <plugin>
                     <artifactId>maven-shade-plugin</artifactId>
-                    <version>${version.maven.shade.plugin}</version>
+                    <version>3.4.1</version>
                     <executions>
                         <execution>
                             <phase>package</phase>
@@ -487,7 +480,7 @@
                     <!-- Signing with GPG is a requirement for a release deployment to Maven central. -->
                     <plugin>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>${version.maven.gpg.plugin}</version>
+                        <version>3.0.1</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
