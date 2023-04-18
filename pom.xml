@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
+  Copyright (c) 2023 OmniFish and/or its affiliates. All rights reserved.
   Copyright (c) [2017-2021] Payara Foundation and/or its affiliates. All rights reserved.
 
   The contents of this file are subject to the terms of either the GNU
@@ -104,10 +105,18 @@
         <skipITs>false</skipITs>
     </properties>
 
+    <developers>
+        <developer>
+            <name>OmniFish Team</name>
+            <organization>OmniFish</organization>
+            <organizationUrl>https://omnifish.ee</organizationUrl>
+        </developer>
+    </developers>
+
     <scm>
-        <connection>scm:git:git@github.com:payara/ecosystem-arquillian-connectors.git</connection>
-        <url>scm:git:git@github.com:payara/ecosystem-arquillian-connectors.git</url>
-        <developerConnection>scm:git:git@github.com:payara/ecosystem-arquillian-connectors.git</developerConnection>
+        <connection>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</connection>
+        <url>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</url>
+        <developerConnection>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</developerConnection>
         <tag>${project.version}</tag>
     </scm>
 
@@ -119,14 +128,6 @@
             <comments>A business-friendly OSS license</comments>
         </license>
     </licenses>
-
-    <developers>
-        <developer>
-            <name>OmniFaces Team</name>
-            <organization>OmniFaces</organization>
-            <organizationUrl>http://omnifaces.org</organizationUrl>
-        </developer>
-    </developers>
 
     <modules>
         <module>glassfish-common</module>

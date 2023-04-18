@@ -55,7 +55,7 @@
         Based on the Payara Payara container integrations.
     </description>
     
-    <url>https://github.com/omnifaces</url>
+    <url>https://github.com/OmniFish-EE</url>
     
     <licenses>
         <license>
@@ -68,16 +68,16 @@
 
     <developers>
         <developer>
-            <name>OmniFaces Team</name>
-            <organization>OmniFaces</organization>
-            <organizationUrl>http://omnifaces.org</organizationUrl>
+            <name>OmniFish Team</name>
+            <organization>OmniFish</organization>
+            <organizationUrl>https://omnifish.ee</organizationUrl>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:git@github.com:payara/ecosystem-arquillian-connectors.git</connection>
-        <url>scm:git:git@github.com:payara/ecosystem-arquillian-connectors.git</url>
-        <developerConnection>scm:git:git@github.com:payara/ecosystem-arquillian-connectors.git</developerConnection>
+        <connection>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</connection>
+        <url>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</url>
+        <developerConnection>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</developerConnection>
         <tag>${project.version}</tag>
     </scm>
 
