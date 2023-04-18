@@ -82,6 +82,7 @@
     </scm>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <version.jersey>3.1.1</version.jersey>
     </properties>
 

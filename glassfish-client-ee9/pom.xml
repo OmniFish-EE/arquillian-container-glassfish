@@ -46,7 +46,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>glassfish-client-ee9</artifactId>
-    <version>1.2</version>
+    <version>1.3-SNAPSHOT</version>
 
     <name>GlassFish client libs for Jakarta EE 9</name>
     <description>
@@ -82,6 +82,7 @@
     </scm>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <version.jersey>3.0.10</version.jersey>
     </properties>
 
