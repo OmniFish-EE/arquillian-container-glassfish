@@ -54,9 +54,7 @@
         Based on the JBoss GlassFish container integrations.
         Based on the Payara Payara container integrations.
     </description>
-    
     <url>https://github.com/OmniFish-EE</url>
-    
     <licenses>
         <license>
             <name>CDDL + GPLv2 with classpath exception</name>
