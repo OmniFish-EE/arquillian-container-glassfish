@@ -85,7 +85,6 @@
         <version.jakartaee>9</version.jakartaee>
         <version.jakartaee.api>9.1.0</version.jakartaee.api>
         
-        <maven.compiler.release>11</maven.compiler.release>
         <docs.phase>deploy</docs.phase>
 
         <version.glassfish>6.2.5</version.glassfish>
@@ -243,6 +242,15 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <release>11</release>
+                    <compilerArgument>-Xlint:unchecked</compilerArgument>
+                </configuration>
             </plugin>
         
             <!-- Configure the jar with the binaries. -->
