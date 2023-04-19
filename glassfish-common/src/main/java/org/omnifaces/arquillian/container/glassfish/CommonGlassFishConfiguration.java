@@ -54,6 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2023] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish;
 
@@ -74,10 +75,10 @@ import org.jboss.arquillian.container.spi.client.deployment.Validate;
  * @author Vineet Reynolds
  */
 public class CommonGlassFishConfiguration implements ContainerConfiguration {
-    protected String adminHost = "localhost";
-    protected int adminPort = 4848;
+    private String adminHost = System.getProperty("glassfish.adminHost", "localhost");
+    private int adminPort = Integer.valueOf(System.getProperty("glassfish.adminPort", "4848"));
 
-    protected boolean adminHttps = Boolean.valueOf(System.getProperty("glassfish.adminHttps", "false"));
+    private boolean adminHttps = Boolean.valueOf(System.getProperty("glassfish.adminHttps", "false"));
     private boolean authorisation = Boolean.valueOf(System.getProperty("glassfish.authorisation", "false"));
     private boolean ignoreCertificates = Boolean.valueOf(System.getProperty("glassfish.ignoreCertificates", "false"));
 

@@ -54,6 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2023] [OmniFish and/or its affiliates]
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
@@ -83,6 +84,8 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private boolean enableDerby = Boolean.valueOf(System.getProperty("glassfish.enableDerby", "false"));
     private String maxHeapSize = System.getProperty("glassfish.maxHeapSize");
     private String enableAssertions = System.getProperty("glassfish.enableAssertions");
+    private int httpPort = Integer.valueOf(System.getProperty("glassfish.httpPort", "8080"));
+    private int httpsPort = Integer.valueOf(System.getProperty("glassfish.httpsPort", "8181"));
 
     public String getGlassFishHome() {
         return glassFishHome;
@@ -146,6 +149,22 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
 
     public void setEnableAssertions(String enableAssertions) {
         this.enableAssertions = enableAssertions;
+    }
+
+    public int getHttpPort() {
+        return httpPort;
+    }
+
+    public void setHttpPort(int httpPort) {
+        this.httpPort = httpPort;
+    }
+
+    public int getHttpsPort() {
+        return httpsPort;
+    }
+
+    public void setHttpsPort(int httpsPort) {
+        this.httpsPort = httpsPort;
     }
 
     public String getDomainXmlPath() {

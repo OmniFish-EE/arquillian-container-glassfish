@@ -54,6 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2023] [OmniFish and/or its affiliates]
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
@@ -133,6 +134,8 @@ class GlassFishServerControl {
         if (!vmOptions.isEmpty()) {
             setVmOptionsInDomain(vmOptions);
         }
+
+        setPortsInDomain(config.getAdminPort(), config.getHttpPort(), config.getHttpsPort());
 
         final List<String> args = new ArrayList<>();
         if (config.isDebug()) {
@@ -244,6 +247,46 @@ class GlassFishServerControl {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private void setPortsInDomain(int adminPort, int httpPort, int httpsPort) {
+        // Quick and dirty replacements via regexp for now.
+        // Eventually a fully parsed domain.xml editing may be better.
+        try {
+            String content = readString(Paths.get(config.getDomainXmlPath()));
+            boolean contentChanged = false;
+
+            String newContent = null;
+
+            for (var entry : Map.of("admin-listener", adminPort, "http-listener-1", httpPort, "http-listener-2", httpsPort).entrySet()) {
+                newContent = updateNetworkListener(content, entry.getKey(), entry.getValue());
+                if (newContent != null) {
+                    content = newContent;
+                    contentChanged = true;
+                }
+            }
+
+            if (contentChanged) {
+                writeString(Paths.get(config.getDomainXmlPath()), content);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private String updateNetworkListener(String domainXml, String name, int port) {
+        Matcher networkMatcher = Pattern.compile("(<network-listener.* port=\\\")(.*?)(\\\" .*" + name + ".*>)")
+                                     .matcher(domainXml);
+
+        if (networkMatcher.find()) {
+            String originalPort = networkMatcher.group(2);
+            if (!originalPort.startsWith("${") && !originalPort.equals(port + "")) {
+                return networkMatcher.replaceAll("$1" + port + "$3");
+            }
+        }
+
+        return null;
+
     }
 
     private void executeAdminDomainCommand(String description, String adminCmd, List<String> args, ProcessOutputConsumer consumer) throws LifecycleException {

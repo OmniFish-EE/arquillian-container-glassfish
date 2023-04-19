@@ -54,6 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2023] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
@@ -63,7 +64,6 @@ import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 import org.jboss.arquillian.container.spi.client.protocol.ProtocolDescription;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.ProtocolMetaData;
 import org.jboss.shrinkwrap.api.Archive;
-import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 import org.omnifaces.arquillian.container.glassfish.CommonGlassFishManager;
 
 /**
@@ -144,13 +144,4 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
         glassFishManager.undeploy(archive);
     }
 
-    @Override
-    public void deploy(Descriptor descriptor) throws DeploymentException {
-        throw new UnsupportedOperationException("Not implemented");
-    }
-
-    @Override
-    public void undeploy(Descriptor descriptor) throws DeploymentException {
-        throw new UnsupportedOperationException("Not implemented");
-    }
 }
