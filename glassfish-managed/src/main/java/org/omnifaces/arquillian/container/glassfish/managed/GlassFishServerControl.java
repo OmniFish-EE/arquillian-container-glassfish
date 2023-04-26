@@ -172,7 +172,11 @@ class GlassFishServerControl {
         } catch (LifecycleException failedStoppingContainer) {
             logger.log(SEVERE, "Failed stopping container.", failedStoppingContainer);
         } finally {
-            stopDerbyDatabase();
+            try {
+                stopDerbyDatabase();
+            } catch (LifecycleException failedStoppingDatabase) {
+                logger.log(SEVERE, "Failed stopping database.", failedStoppingDatabase);
+            }
         }
     }
 
