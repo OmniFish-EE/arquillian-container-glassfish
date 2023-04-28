@@ -112,7 +112,9 @@ class GlassFishServerControl {
     }
 
     void start() throws LifecycleException {
-        registerShutdownHook();
+        if (!config.isKeepServerRunning()) {
+            registerShutdownHook();
+        }
 
         if (config.isEnableDerby()) {
             startDerbyDatabase();
@@ -357,10 +359,12 @@ class GlassFishServerControl {
         if (asJavaCommand != null) {
             return asJavaCommand;
         }
+
         final File javaHomeCommand = getJavaProgramFromEnv("JAVA_HOME");
         if (javaHomeCommand != null) {
             return javaHomeCommand;
         }
+
         return null;
     }
 
@@ -369,12 +373,15 @@ class GlassFishServerControl {
         if (property == null) {
             return null;
         }
+
         final Path mainFolder = new File(property).toPath();
         final File java = mainFolder.resolve("bin").resolve(JAVA_COMMAND_FILENAME).toFile();
+
         // note: if it is executable will be tested by it's execution
         if (java.exists()) {
             return java;
         }
+
         // nothing usable found
         return null;
     }

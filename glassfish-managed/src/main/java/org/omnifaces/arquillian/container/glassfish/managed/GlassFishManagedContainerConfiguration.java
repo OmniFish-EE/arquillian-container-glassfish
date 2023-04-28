@@ -81,6 +81,8 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
 
     private boolean outputToConsole = Boolean.valueOf(System.getProperty("glassfish.outputToConsole", "true"));
     private boolean allowConnectingToRunningServer = Boolean.valueOf(System.getProperty("glassfish.allowConnectingToRunningServer", "false"));
+    private boolean keepServerRunning = Boolean.valueOf(System.getProperty("glassfish.keepServerRunning", "false"));
+    private boolean keepDeployment = Boolean.valueOf(System.getProperty("glassfish.keepDeployment", "false"));
     private boolean enableDerby = Boolean.valueOf(System.getProperty("glassfish.enableDerby", "false"));
     private String maxHeapSize = System.getProperty("glassfish.maxHeapSize");
     private String enableAssertions = System.getProperty("glassfish.enableAssertions");
@@ -122,6 +124,34 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     public void setAllowConnectingToRunningServer(boolean allowConnectingToRunningServer) {
         this.allowConnectingToRunningServer = allowConnectingToRunningServer;
+    }
+
+    /**
+     * @return the keepServerRunning
+     */
+    public boolean isKeepServerRunning() {
+        return keepServerRunning;
+    }
+
+    /**
+     * @param keepServerRunning starts the server if needed, but it keeps it running after tests
+     */
+    public void setKeepServerRunning(boolean keepServerRunning) {
+        this.keepServerRunning = keepServerRunning;
+    }
+
+    /**
+     * @return the keepDeployment
+     */
+    public boolean isKeepDeployment() {
+        return keepDeployment;
+    }
+
+    /**
+     * @param keepDeployment the keepDeployment to set
+     */
+    public void setKeepDeployment(boolean keepDeployment) {
+        this.keepDeployment = keepDeployment;
     }
 
     public boolean isEnableDerby() {

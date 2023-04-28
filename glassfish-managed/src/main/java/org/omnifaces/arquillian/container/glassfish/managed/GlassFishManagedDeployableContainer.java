@@ -86,6 +86,11 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
     }
 
     @Override
+    public ProtocolDescription getDefaultProtocol() {
+        return new ProtocolDescription("Servlet 5.0");
+    }
+
+    @Override
     public void setup(GlassFishManagedContainerConfiguration configuration) {
         if (configuration == null) {
             throw new IllegalArgumentException("configuration must not be null");
@@ -98,50 +103,52 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
 
     @Override
     public void start() throws LifecycleException {
-        if (glassFishManager.isDASRunning()) {
-            if (configuration.isAllowConnectingToRunningServer()) {
-                // If we are allowed to connect to a running server, then do not issue the 'asadmin start-domain' command.
-                connectedToRunningServer = true;
-            } else {
-                throw new LifecycleException(
-                    "The server is already running! " +
-                    "Managed containers do not support connecting to running server instances due to the " +
-                    "possible harmful effect of connecting to the wrong server. Please stop server before running or " +
-                    "change to another type of container.\n" + "To disable this check and allow Arquillian to connect to a running server, " +
-                    "set allowConnectingToRunningServer to true in the container configuration");
-            }
+        if (!glassFishManager.isDASRunning()) {
+            // We don't start GlassFish when starting, but on demand when deploying
+            return;
         }
-    }
 
-    @Override
-    public void stop() throws LifecycleException {
-        if (!connectedToRunningServer) {
-            glassFishServerControl.stop();
+        if (configuration.isAllowConnectingToRunningServer() || configuration.isKeepServerRunning()) {
+            // If we are allowed to connect to a running server, then do not issue the 'asadmin start-domain' command
+            // and do not issue the 'asadmin stop-domain' command.
+            connectedToRunningServer = true;
+        } else {
+            throw new LifecycleException(
+                "The server is already running! " +
+                "Managed containers do not support connecting to running server instances due to the " +
+                "possible harmful effect of connecting to the wrong server. Please stop server before running or " +
+                "change to another type of container.\n" + "To disable this check and allow Arquillian to connect to a running server, " +
+                "set allowConnectingToRunningServer to true in the container configuration");
         }
-    }
-
-    @Override
-    public ProtocolDescription getDefaultProtocol() {
-        return new ProtocolDescription("Servlet 5.0");
     }
 
     @Override
     public ProtocolMetaData deploy(Archive<?> archive) throws DeploymentException {
         try {
-            if (connectedToRunningServer || glassFishManager.isDASRunning()) {
-            } else {
+            if (!connectedToRunningServer && !glassFishManager.isDASRunning()) {
                 glassFishServerControl.start();
             }
+
             glassFishManager.start();
         } catch (LifecycleException ex) {
             throw new DeploymentException("Cannot start GlassFish", ex);
         }
+
         return glassFishManager.deploy(archive);
     }
 
     @Override
     public void undeploy(Archive<?> archive) throws DeploymentException {
-        glassFishManager.undeploy(archive);
+        if (!configuration.isKeepDeployment()) {
+            glassFishManager.undeploy(archive);
+        }
+    }
+
+    @Override
+    public void stop() throws LifecycleException {
+        if (!connectedToRunningServer && !configuration.isKeepServerRunning()) {
+            glassFishServerControl.stop();
+        }
     }
 
 }
