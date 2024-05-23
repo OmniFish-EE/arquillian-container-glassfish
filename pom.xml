@@ -64,7 +64,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.5-SNAPSHOT</version>
+    <version>1.5</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
@@ -81,7 +81,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
         <version.jersey>3.0.3</version.jersey>
-        <version.arquillian>1.7.0.Alpha14</version.arquillian>
+        <version.arquillian>1.8.0.Final</version.arquillian>
         <version.jakartaee>9</version.jakartaee>
         <version.jakartaee.api>9.1.0</version.jakartaee.api>
         
