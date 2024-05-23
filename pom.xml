@@ -57,14 +57,14 @@
   limitations under the License.
 
 -->
-<!-- Portions Copyright [2023, 2023] [OmniFish and/or its affiliates] -->
+<!-- Portions Copyright [2023, 2024] [OmniFish and/or its affiliates] -->
 <!-- Portions Copyright [2021, 2022] [OmniFaces and/or its affiliates] -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.4</version>
+    <version>1.5-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
