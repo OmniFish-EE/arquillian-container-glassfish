@@ -54,7 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2023] [OmniFish and/or its affiliates]
+// Portions Copyright [2023, 2024] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish;
 
@@ -91,6 +91,8 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     private String domain = System.getProperty("glassfish.domain");
     private String postBootCommands = System.getProperty("glassfish.postBootCommands");
     private String systemProperties = System.getProperty("glassfish.systemProperties");
+
+    private boolean httpsPortAsDefault = Boolean.valueOf(System.getProperty("glassfish.httpsPortAsDefault", "false"));
 
     private boolean debug = Boolean.valueOf(System.getProperty("glassfish.debug", "false"));
     private boolean suspend = Boolean.valueOf(System.getProperty("glassfish.suspend", "false"));
@@ -302,6 +304,20 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
 
     public List<String> getSystemProperyList() {
         return systemProperyList;
+    }
+
+    /**
+     * @return the httpsPortAsDefault
+     */
+    public boolean isHttpsPortAsDefault() {
+        return httpsPortAsDefault;
+    }
+
+    /**
+     * @param httpsPortAsDefault the httpsPortAsDefault to set
+     */
+    public void setHttpsPortAsDefault(boolean httpsPortAsDefault) {
+        this.httpsPortAsDefault = httpsPortAsDefault;
     }
 
     /**

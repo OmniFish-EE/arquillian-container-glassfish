@@ -54,6 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2024] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.clientutils;
 
@@ -114,14 +115,16 @@ public class GlassFishClientService implements GlassFishClient {
 
     private static final String APPLICATION_SERVLETS        = "/applications/application/{application}/list-sub-components?appname={application}&id={module}&type=servlets";
 
-    private static final String CLUSTERED_SERVER_INSTANCES  = "/clusters/cluster";
 
-    private static final String MEMBER_SERVERS_RESOURCE     = "/clusters/cluster/{target}/server-ref";
+    private static final String CLUSTERED_SERVER_INSTANCES  = "/clusters/cluster";
 
     /**
      * the REST resource path template for cluster attributes object
      */
     private static final String CLUSTER_RESOURCE            = "/clusters/cluster/{cluster}";
+
+    private static final String MEMBER_SERVERS_RESOURCE     = "/clusters/cluster/{target}/server-ref";
+
 
     private static final String STANDALONE_SERVER_INSTANCES = "/servers/server";
 
@@ -130,7 +133,7 @@ public class GlassFishClientService implements GlassFishClient {
      */
     private static final String SERVER_RESOURCE             = "/servers/server/{server}";
 
-    private static final String SERVER_VM_REPORT             = "/servers/server/{server}/generate-jvm-report";
+    private static final String SERVER_VM_REPORT            = "/servers/server/{server}/generate-jvm-report";
 
     private static final String SERVER_PROPERTY             = "/servers/server/{server}/system-property/{system-property}";
 
@@ -156,7 +159,7 @@ public class GlassFishClientService implements GlassFishClient {
     private final String adminBaseUrl;
     private final String DASUrl;
     private final GlassFishClientUtil clientUtil;
-    private final Map<String,String> deploymentAliases = new ConcurrentHashMap<>();
+    private final Map<String, String> deploymentAliases = new ConcurrentHashMap<>();
     private final CommonGlassFishConfiguration configuration;
 
     private String target = ADMINSERVER;
@@ -199,7 +202,7 @@ public class GlassFishClientService implements GlassFishClient {
             standaloneServers = getServersList();
         } catch (ProcessingException ch) {
             String message = "";
-            if(ch.getCause() != null && ch.getCause().getMessage() != null) {
+            if (ch.getCause() != null && ch.getCause().getMessage() != null) {
                 message = " | " + ch.getCause().getMessage();
             }
             throw new GlassFishClientException("Could not connect to DAS on: " + getDASUrl() + message);
@@ -326,6 +329,7 @@ public class GlassFishClientService implements GlassFishClient {
             : null;
 
         name = registerDeployedName(name, deployedName);
+
         // Fetch the list of SubComponents of the application
         Map<String, Object> subComponentsResponse = getClientUtil().GETRequest(APPLICATION_COMPONENTS.replace("{application}", name));
 
@@ -333,7 +337,13 @@ public class GlassFishClientService implements GlassFishClient {
         Map<String, String> subComponents = (Map<String, String>) subComponentsResponse.get("properties");
 
         // Build up the HTTPContext object using the nodeAddress information
-        HTTPContext httpContext = new HTTPContext(nodeAddress.getHost(), nodeAddress.getHttpPort());
+        HTTPContext httpContext = null;
+        if (configuration.isHttpsPortAsDefault()) {
+            httpContext = new HTTPContext(nodeAddress.getHost(), nodeAddress.getHttpsPort(), true);
+        } else {
+            httpContext = new HTTPContext(nodeAddress.getHost(), nodeAddress.getHttpPort(), false);
+        }
+
 
         // Add the servlets to the HTTPContext
         String contextRoot = getApplicationContextRoot(name);
