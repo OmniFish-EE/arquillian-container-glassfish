@@ -46,7 +46,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>glassfish-client-ee9</artifactId>
-    <version>1.6-SNAPSHOT</version>
+    <version>1.6</version>
 
     <name>GlassFish client libs for Jakarta EE 9</name>
     <description>
