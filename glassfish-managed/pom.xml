@@ -65,7 +65,7 @@
     <parent>
         <groupId>org.omnifaces.arquillian</groupId>
         <artifactId>parent-glassfish-containers</artifactId>
-        <version>1.5-SNAPSHOT</version>
+        <version>1.6-SNAPSHOT</version>
     </parent>
 
     <artifactId>arquillian-glassfish-server-managed</artifactId>
@@ -157,6 +157,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.7.1</version>
                 <executions>
                     <execution>
                         <id>setup-glassfish</id>

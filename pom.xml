@@ -64,7 +64,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.5</version>
+    <version>1.6-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
@@ -124,6 +124,7 @@
         <module>glassfish-embedded</module>
         <module>glassfish-client-ee9</module>
         <module>glassfish-client-ee10</module>
+        <module>glassfish-client-ee11</module>
         <module>environment-setup</module>
         <module>integration-tests</module>
     </modules>
@@ -226,7 +227,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.0.0</version>
+                <version>3.5.0</version>
                 <executions>
                     <execution>
                         <id>enforce-java</id>
@@ -236,7 +237,7 @@
                         <configuration>
                             <rules>
                                 <requireMavenVersion>
-                                    <version>3.6</version>
+                                    <version>3.8.7</version>
                                 </requireMavenVersion>
                             </rules>
                         </configuration>
@@ -246,7 +247,7 @@
             
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
                 <configuration>
                     <release>11</release>
                     <compilerArgument>-Xlint:unchecked</compilerArgument>
@@ -256,7 +257,7 @@
             <!-- Configure the jar with the binaries. -->
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.4.2</version>
                 <configuration>
                     <forceCreation>true</forceCreation>
                     <archive>
@@ -275,7 +276,7 @@
             <!-- Configure the jar with the sources. -->
             <plugin>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>3.2.1</version>
+                <version>3.3.1</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -290,7 +291,7 @@
             <!-- Configure the jar with the javadoc. -->
             <plugin>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.5.0</version>
+                <version>3.7.0</version>
                 <configuration>
                     <notimestamp>true</notimestamp>
                     <splitindex>true</splitindex>
@@ -314,7 +315,7 @@
             <plugin>
                 <groupId>org.sonatype.plugins</groupId>
                 <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>1.6.13</version>
+                <version>1.7.0</version>
                 <extensions>true</extensions>
                 <configuration>
                     <serverId>ossrh</serverId>
@@ -328,11 +329,11 @@
             <plugins>
                 <plugin>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.0.0</version>
+                    <version>3.3.0</version>
                 </plugin>
                 <plugin>
                     <artifactId>maven-shade-plugin</artifactId>
-                    <version>3.4.1</version>
+                    <version>3.6.0</version>
                     <executions>
                         <execution>
                             <phase>package</phase>
@@ -488,7 +489,7 @@
                     <!-- Signing with GPG is a requirement for a release deployment to Maven central. -->
                     <plugin>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.0.1</version>
+                        <version>3.2.4</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>

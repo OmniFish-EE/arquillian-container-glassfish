@@ -40,23 +40,21 @@
  
 -->
 <!-- Portions Copyright [2023, 2023] [OmniFish and/or its affiliates] -->
-<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
+<!-- Portions Copyright [2021, 2022] [OmniFaces and/or its affiliates] -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.omnifaces.arquillian</groupId>
-    <artifactId>glassfish-client-ee9</artifactId>
+    <artifactId>glassfish-client-ee11</artifactId>
     <version>1.6-SNAPSHOT</version>
 
-    <name>GlassFish client libs for Jakarta EE 9</name>
+    <name>GlassFish client libs for Jakarta EE 11</name>
     <description>
         GlassFish Container integrations for the Arquillian Project.
         Based on the JBoss GlassFish container integrations.
         Based on the Payara Payara container integrations.
     </description>
-    
-    <url>https://github.com/omnifaces</url>
-    
+    <url>https://github.com/OmniFish-EE</url>
     <licenses>
         <license>
             <name>CDDL + GPLv2 with classpath exception</name>
@@ -83,7 +81,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <version.jersey>3.0.10</version.jersey>
+        <version.jersey>4.0.0-M1</version.jersey>
     </properties>
 
     <dependencies>
@@ -92,19 +90,26 @@
         <dependency>
             <groupId>org.eclipse</groupId>
             <artifactId>yasson</artifactId>
-            <version>2.0.4</version>
+            <version>3.0.4</version>
+        </dependency>
+        
+        <!-- Jaxb-osgi (JAX-B RI) -->
+        <dependency>
+            <groupId>com.sun.xml.bind</groupId>
+            <artifactId>jaxb-osgi</artifactId>
+            <version>4.0.5</version>
         </dependency>
 
         <!-- WebSocket client dependencies -->
         <dependency>
             <groupId>org.glassfish.tyrus</groupId>
             <artifactId>tyrus-client</artifactId>
-            <version>2.0.4</version>
+            <version>2.2.0-M1</version>
         </dependency>
         <dependency>
             <groupId>org.glassfish.tyrus</groupId>
             <artifactId>tyrus-container-grizzly-client</artifactId>
-            <version>2.0.4</version>
+            <version>2.2.0-M1</version>
         </dependency>
 
         <!-- Jakarta REST client API dependencies -->
@@ -131,6 +136,11 @@
             <artifactId>jersey-media-json-processing</artifactId>
             <version>${version.jersey}</version>
         </dependency>
+        <dependency>
+            <groupId>org.glassfish.jersey.media</groupId>
+            <artifactId>jersey-media-json-binding</artifactId>
+            <version>${version.jersey}</version>
+        </dependency>
 
         <!-- Jakarta REST client supporting XML responses -->
         <dependency>
@@ -144,6 +154,14 @@
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-sse</artifactId>
             <version>${version.jersey}</version>
+        </dependency>
+        
+        <!-- Jakarta REST client able to work with MultiPart -->
+        <dependency>
+            <groupId>org.glassfish.jersey.media</groupId>
+            <artifactId>jersey-media-multipart</artifactId>
+            <version>${version.jersey}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -161,7 +179,7 @@
                         <configuration>
                             <rules>
                                 <requireMavenVersion>
-                                    <version>3.8.7</version>
+                                    <version>3.6</version>
                                 </requireMavenVersion>
                             </rules>
                         </configuration>
