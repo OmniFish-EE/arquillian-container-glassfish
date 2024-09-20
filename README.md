@@ -17,7 +17,7 @@ Then forked from:
  <dependency>
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>arquillian-glassfish-server-managed</artifactId>
-    <version>1.4</version>
+    <version>1.6</version>
  </dependency>
 ```
  
