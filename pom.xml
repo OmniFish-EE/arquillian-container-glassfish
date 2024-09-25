@@ -64,7 +64,7 @@
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.6</version>
+    <version>1.7-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
