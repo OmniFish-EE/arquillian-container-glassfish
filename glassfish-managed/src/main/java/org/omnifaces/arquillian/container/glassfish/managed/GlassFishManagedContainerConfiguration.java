@@ -54,7 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2023] [OmniFish and/or its affiliates]
+// Portions Copyright [2023,2024] [OmniFish and/or its affiliates]
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
@@ -84,6 +84,8 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private boolean keepServerRunning = Boolean.valueOf(System.getProperty("glassfish.keepServerRunning", "false"));
     private boolean keepDeployment = Boolean.valueOf(System.getProperty("glassfish.keepDeployment", "false"));
     private boolean enableDerby = Boolean.valueOf(System.getProperty("glassfish.enableDerby", "false"));
+    private String derbyDatabaseName = System.getProperty("glassfish.derbyDatabaseName");
+    private String derbySQLFile = System.getProperty("glassfish.derbySQLFile");
     private String maxHeapSize = System.getProperty("glassfish.maxHeapSize");
     private String enableAssertions = System.getProperty("glassfish.enableAssertions");
     private int httpPort = Integer.valueOf(System.getProperty("glassfish.httpPort", "8080"));
@@ -163,6 +165,34 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     public void setEnableDerby(boolean enableDerby) {
         this.enableDerby = enableDerby;
+    }
+
+    /**
+     * @return the derbyDatabaseName
+     */
+    public String getDerbyDatabaseName() {
+        return derbyDatabaseName;
+    }
+
+    /**
+     * @param derbyDatabaseName the derbyDatabaseName to set
+     */
+    public void setDerbyDatabaseName(String derbyDatabaseName) {
+        this.derbyDatabaseName = derbyDatabaseName;
+    }
+
+    /**
+     * @return the derbySQLFile
+     */
+    public String getDerbySQLFile() {
+        return derbySQLFile;
+    }
+
+    /**
+     * @param derbySQLFile the derbySQLFile to set
+     */
+    public void setDerbySQLFile(String derbySQLFile) {
+        this.derbySQLFile = derbySQLFile;
     }
 
     public String getMaxHeapSize() {

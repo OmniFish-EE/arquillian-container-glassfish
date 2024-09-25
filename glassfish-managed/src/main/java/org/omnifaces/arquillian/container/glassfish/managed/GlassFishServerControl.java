@@ -54,7 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2023] [OmniFish and/or its affiliates]
+// Portions Copyright [2023,2024] [OmniFish and/or its affiliates]
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
@@ -192,7 +192,13 @@ class GlassFishServerControl {
         }
 
         try {
-            executeAdminDomainCommand("Starting database", "start-database", NO_ARGS, createProcessOutputConsumer());
+            List<String> args = NO_ARGS;
+            if (config.getDerbyDatabaseName() != null && config.getDerbySQLFile() != null) {
+                args = new ArrayList<>();
+                args.add("--dbname=" + config.getDerbyDatabaseName());
+                args.add("--sqlfilename=" + config.getDerbySQLFile());
+            }
+            executeAdminCommand("Starting database", "start-database", args, createProcessOutputConsumer());
         } catch (LifecycleException e) {
             logger.warning(DERBY_MISCONFIGURED_HINT);
             throw e;
