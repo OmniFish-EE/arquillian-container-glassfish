@@ -58,13 +58,6 @@
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
-import static java.lang.Runtime.getRuntime;
-import static java.nio.file.Files.readString;
-import static java.nio.file.Files.writeString;
-import static java.util.Arrays.asList;
-import static java.util.Arrays.copyOfRange;
-import static java.util.logging.Level.SEVERE;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -84,6 +77,13 @@ import org.omnifaces.arquillian.container.glassfish.process.ConsoleReader;
 import org.omnifaces.arquillian.container.glassfish.process.OutputLoggingConsumer;
 import org.omnifaces.arquillian.container.glassfish.process.ProcessOutputConsumer;
 import org.omnifaces.arquillian.container.glassfish.process.SilentOutputConsumer;
+
+import static java.lang.Runtime.getRuntime;
+import static java.nio.file.Files.readString;
+import static java.nio.file.Files.writeString;
+import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOfRange;
+import static java.util.logging.Level.SEVERE;
 
 /**
  * A class for issuing asadmin commands using the admin-cli.jar of the GlassFish distribution.
@@ -192,12 +192,17 @@ class GlassFishServerControl {
         }
 
         try {
-            List<String> args = NO_ARGS;
+            List<String> args = new ArrayList<>();
             if (config.getDerbyDatabaseName() != null && config.getDerbySQLFile() != null) {
-                args = new ArrayList<>();
                 args.add("--dbname=" + config.getDerbyDatabaseName());
                 args.add("--sqlfilename=" + config.getDerbySQLFile());
             }
+
+            if (config.getDerbyUser() != null && config.getDerbyPasswordFile() != null) {
+                args.add("--dbuser=" + config.getDerbyUser());
+                args.add("--passwordfile=" + config.getDerbyPasswordFile());
+            }
+
             executeAdminCommand("Starting database", "start-database", args, createProcessOutputConsumer());
         } catch (LifecycleException e) {
             logger.warning(DERBY_MISCONFIGURED_HINT);

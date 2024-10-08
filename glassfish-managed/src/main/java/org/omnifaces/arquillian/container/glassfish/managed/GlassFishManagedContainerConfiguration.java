@@ -86,6 +86,8 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private boolean enableDerby = Boolean.valueOf(System.getProperty("glassfish.enableDerby", "false"));
     private String derbyDatabaseName = System.getProperty("glassfish.derbyDatabaseName");
     private String derbySQLFile = System.getProperty("glassfish.derbySQLFile");
+    private String derbyUser = System.getProperty("glassfish.derbyUser");
+    private String derbyPasswordFile = System.getProperty("glassfish.derbyPasswordFile");
     private String maxHeapSize = System.getProperty("glassfish.maxHeapSize");
     private String enableAssertions = System.getProperty("glassfish.enableAssertions");
     private int httpPort = Integer.valueOf(System.getProperty("glassfish.httpPort", "8080"));
@@ -193,6 +195,34 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     public void setDerbySQLFile(String derbySQLFile) {
         this.derbySQLFile = derbySQLFile;
+    }
+
+    /**
+     * @return the derbyUser
+     */
+    public String getDerbyUser() {
+        return derbyUser;
+    }
+
+    /**
+     * @param derbyUser the derbyUser to set
+     */
+    public void setDerbyUser(String derbyUser) {
+        this.derbyUser = derbyUser;
+    }
+
+    /**
+     * @return the derbyPasswordFile
+     */
+    public String getDerbyPasswordFile() {
+        return derbyPasswordFile;
+    }
+
+    /**
+     * @param derbyPasswordFile the derbyPasswordFile to set
+     */
+    public void setDerbyPasswordFile(String derbyPasswordFile) {
+        this.derbyPasswordFile = derbyPasswordFile;
     }
 
     public String getMaxHeapSize() {
