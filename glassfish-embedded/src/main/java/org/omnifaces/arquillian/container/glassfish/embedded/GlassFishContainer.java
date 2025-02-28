@@ -210,6 +210,26 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                 throw new RuntimeException("Could not deploy sun-reosurces file: " + resource, e);
             }
         }
+
+        for (String commandLine : configuration.getPostBootCommandList()) {
+            String[] commandParts = commandLine.split(" ");
+
+            List<String> arguments = List.of();
+
+            if (commandParts.length > 1) {
+                arguments = asList(copyOfRange(commandParts, 1, commandParts.length));
+            }
+
+
+            try {
+                log.info("Executing post boot command: " + commandLine);
+                CommandRunner commandRunner = glassfish.getCommandRunner();
+                commandRunner.run(commandParts[0], arguments.toArray(String[]::new));
+            } catch (GlassFishException e) {
+                log.log(Level.WARNING, "Unable to execute: " + commandLine, e);
+            }
+        }
+
     }
 
     @Override
