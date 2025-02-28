@@ -58,6 +58,7 @@
 package org.omnifaces.arquillian.container.glassfish.embedded;
 
 import static java.util.Arrays.asList;
+import static java.util.stream.Collectors.toList;
 
 import java.io.File;
 import java.io.FileFilter;
@@ -87,6 +88,8 @@ public class GlassFishConfiguration implements ContainerConfiguration {
     private String configurationXml;
     private String resourcesXml;
     private boolean cleanup = true;
+    private String postBootCommands = System.getProperty("glassfish.postBootCommands");
+    private List<String> postBootCommandList = Collections.emptyList();
 
     @Override
     public void validate() throws ConfigurationException {
@@ -171,6 +174,18 @@ public class GlassFishConfiguration implements ContainerConfiguration {
 
     public boolean getCleanup() {
         return cleanup;
+    }
+
+    public String getPostBootCommands() {
+        return postBootCommands;
+    }
+
+    public void setPostBootCommands(String postBootCommands) {
+        this.postBootCommands = postBootCommands;
+    }
+
+    public List<String> getPostBootCommandList() {
+        return postBootCommandList;
     }
 
     /**
@@ -272,6 +287,15 @@ public class GlassFishConfiguration implements ContainerConfiguration {
                     verifyResourcesXml(resourceXml);
                 }
             }
+
+            if (postBootCommands != null) {
+                postBootCommandList =
+                    postBootCommands.lines()
+                        .map(String::trim)
+                        .filter(e -> !e.startsWith("#"))
+                        .collect(toList());
+            }
+
         }
 
         /**
