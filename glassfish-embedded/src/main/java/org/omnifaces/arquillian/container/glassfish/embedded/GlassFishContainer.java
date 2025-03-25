@@ -62,6 +62,8 @@ import static java.lang.Runtime.getRuntime;
 import static java.lang.System.getProperty;
 import static org.jboss.shrinkwrap.api.Filters.include;
 import static org.omnifaces.arquillian.container.glassfish.embedded.ShrinkWrapUtil.toURL;
+import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOfRange;
 
 import java.io.File;
 import java.util.ArrayList;
