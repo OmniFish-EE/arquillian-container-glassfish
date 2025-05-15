@@ -54,7 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2023, 2024] [OmniFish and/or its affiliates]
+// Portions Copyright [2023, 2025] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish;
 
@@ -96,6 +96,7 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
 
     private boolean debug = Boolean.valueOf(System.getProperty("glassfish.debug", "false"));
     private boolean suspend = Boolean.valueOf(System.getProperty("glassfish.suspend", "false"));
+    private boolean addDeployName = Boolean.valueOf(System.getProperty("glassfish.addDeployName", "false"));
 
     private List<String> postBootCommandList = Collections.emptyList();
     private List<String> systemProperyList = Collections.emptyList();
@@ -348,6 +349,20 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
      */
     public void setSuspend(boolean suspend) {
         this.suspend = suspend;
+    }
+
+    /**
+     * @return the addDeployName
+     */
+    public boolean isAddDeployName() {
+        return addDeployName;
+    }
+
+    /**
+     * @param addDeployName the addDeployName to set
+     */
+    public void setAddDeployName(boolean addDeployName) {
+        this.addDeployName = addDeployName;
     }
 
     /**

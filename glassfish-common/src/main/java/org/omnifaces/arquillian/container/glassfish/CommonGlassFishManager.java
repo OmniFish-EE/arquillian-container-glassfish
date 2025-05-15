@@ -207,7 +207,11 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
     private void addDeployFormFields(String name, FormDataMultiPart deployform) {
 
         // Add the name field, the name is the archive filename without extension
-        deployform.field("name", name, TEXT_PLAIN_TYPE);
+        // We add this conditionally, since when setting it the name can not be set
+        // in application.xml anymore.
+        if (configuration.isAddDeployName()) {
+            deployform.field("name", name, TEXT_PLAIN_TYPE);
+        }
 
         // Add the target field (the default is "server" - Admin Server)
         deployform.field("target", configuration.getTarget(), TEXT_PLAIN_TYPE);
