@@ -65,7 +65,7 @@
     <parent>
         <groupId>org.omnifaces.arquillian</groupId>
         <artifactId>parent-glassfish-containers</artifactId>
-        <version>1.8-SNAPSHOT</version>
+        <version>1.8</version>
     </parent>
 
     <artifactId>arquillian-glassfish-server-managed</artifactId>
