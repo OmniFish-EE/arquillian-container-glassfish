@@ -62,6 +62,8 @@ import static java.lang.Runtime.getRuntime;
 import static java.lang.System.getProperty;
 import static org.jboss.shrinkwrap.api.Filters.include;
 import static org.omnifaces.arquillian.container.glassfish.embedded.ShrinkWrapUtil.toURL;
+import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOfRange;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -210,6 +212,26 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                 throw new RuntimeException("Could not deploy sun-reosurces file: " + resource, e);
             }
         }
+
+        for (String commandLine : configuration.getPostBootCommandList()) {
+            String[] commandParts = commandLine.split(" ");
+
+            List<String> arguments = List.of();
+
+            if (commandParts.length > 1) {
+                arguments = asList(copyOfRange(commandParts, 1, commandParts.length));
+            }
+
+
+            try {
+                log.info("Executing post boot command: " + commandLine);
+                CommandRunner commandRunner = glassfish.getCommandRunner();
+                commandRunner.run(commandParts[0], arguments.toArray(String[]::new));
+            } catch (GlassFishException e) {
+                log.log(Level.WARNING, "Unable to execute: " + commandLine, e);
+            }
+        }
+
     }
 
     @Override
