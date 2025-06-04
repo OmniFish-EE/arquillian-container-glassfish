@@ -57,14 +57,14 @@
   limitations under the License.
 
 -->
-<!-- Portions Copyright [2023, 2024] [OmniFish and/or its affiliates] -->
+<!-- Portions Copyright [2023, 2025] [OmniFish and/or its affiliates] -->
 <!-- Portions Copyright [2021, 2022] [OmniFaces and/or its affiliates] -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.omnifaces.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
-    <version>1.9-SNAPSHOT</version>
+    <version>2.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Arquillian Container Parent GlassFish</name>
@@ -80,15 +80,16 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
-        <version.jersey>3.0.3</version.jersey>
-        <version.arquillian>1.8.0.Final</version.arquillian>
-        <version.jakartaee>9</version.jakartaee>
-        <version.jakartaee.api>9.1.0</version.jakartaee.api>
+        <version.jersey>3.1.10</version.jersey>
+        <parsson.version>1.1.7</parsson.version>
+        <version.arquillian>1.9.4.Final</version.arquillian>
+        <version.jakartaee>10</version.jakartaee>
+        <version.jakartaee.api>10.0.0</version.jakartaee.api>
         
         <docs.phase>deploy</docs.phase>
 
-        <version.glassfish>6.2.5</version.glassfish>
-        <glassfish.home>glassfish6</glassfish.home>
+        <version.glassfish>7.0.25</version.glassfish>
+        <glassfish.home>glassfish7</glassfish.home>
 
         <skipITs>false</skipITs>
     </properties>
@@ -185,12 +186,29 @@
                 <version>${version.jersey}</version>
             </dependency>
 
+            <dependency>
+                <groupId>org.glassfish.jersey.media</groupId>
+                <artifactId>jersey-media-json-processing</artifactId>
+                <version>${version.jersey}</version>
+            </dependency>
             
             <dependency>
                 <groupId>org.glassfish.jersey.media</groupId>
                 <artifactId>jersey-media-json-processing</artifactId>
                 <version>${version.jersey}</version>
             </dependency>
+            
+            <dependency>
+                <groupId>org.eclipse.parsson</groupId>
+                <artifactId>parsson</artifactId>
+                <version>${parsson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.eclipse.parsson</groupId>
+                <artifactId>parsson-media</artifactId>
+                <version>${parsson.version}</version>
+            </dependency>
+            
 
             <!-- Note: indirectly depends on javax.* -->
             <dependency>
@@ -219,6 +237,30 @@
                 <version>${version.arquillian}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jboss.arquillian.protocol</groupId>
+                <artifactId>arquillian-protocol-servlet-jakarta</artifactId>
+                <version>10.0.0.Final</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jboss.arquillian.testenricher</groupId>
+                <artifactId>arquillian-testenricher-cdi-jakarta</artifactId>
+                <version>10.0.0.Final</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jboss.arquillian.testenricher</groupId>
+                <artifactId>arquillian-testenricher-ejb-jakarta</artifactId>
+                <version>10.0.0.Final</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.jboss.arquillian.testenricher</groupId>
+                <artifactId>arquillian-testenricher-resource-jakarta</artifactId>
+                <version>10.0.0.Final</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -253,7 +295,7 @@
                     <compilerArgument>-Xlint:unchecked</compilerArgument>
                 </configuration>
             </plugin>
-        
+
             <!-- Configure the jar with the binaries. -->
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -310,7 +352,7 @@
                     </execution>
                 </executions>
             </plugin>
-            
+
             <!-- Configure snapshot deployment to Sonatype. -->
             <plugin>
                 <groupId>org.sonatype.plugins</groupId>
@@ -331,6 +373,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.3.0</version>
                 </plugin>
+                
                 <plugin>
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>3.6.0</version>
@@ -356,7 +399,7 @@
                                         
                                         <include>javax.xml.bind:*</include>
                                         <include>javax.activation:*</include>
-                                    
+
                                         <!-- GlassFish -->
                                         <include>org.glassfish:*</include>
                                         <include>org.glassfish.hk2</include>
@@ -367,6 +410,11 @@
                                         <include>org.glassfish.jersey.ext:*</include>
                                         <include>org.glassfish:jakarta.json:*</include>
                                         
+                                        <include>org.eclipse.parsson:parsson:*</include>
+                                        <include>org.eclipse.parsson:parsson-media:*</include>
+                                        
+                                        
+
                                         <!-- Other -->
                                         <include>org.javassist:*</include>
                                         <include>com.fasterxml.jackson.core:*</include>
@@ -428,7 +476,7 @@
                                         <pattern>javax.activation</pattern>
                                         <shadedPattern>org.omnifaces.arquillian.javax.activation</shadedPattern>
                                     </relocation>
-                                
+
                                     <!-- GlassFish -->
                                     <relocation>
                                         <pattern>org.glassfish.hk2</pattern>

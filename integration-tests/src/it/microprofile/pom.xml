@@ -69,7 +69,7 @@
         <dependency>
             <groupId>jakarta.platform</groupId>
             <artifactId>jakarta.jakartaee-api</artifactId>
-            <version>9.1.0</version>
+            <version>10.0.0</version>
             <scope>provided</scope>
         </dependency>
 
@@ -100,7 +100,7 @@
             <plugins>
                 <plugin>
                     <artifactId>maven-war-plugin</artifactId>
-                    <version>3.3.2</version>
+                    <version>3.4.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -108,7 +108,7 @@
             <!-- Run integration tests -->
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.0.0-M3</version>
+                <version>3.5.3</version>
                 <executions>
                     <execution>
                         <goals>
@@ -122,9 +122,8 @@
                 </executions>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
-                <version>3.0.0-M1</version>
+                <version>3.1.4</version>
                 <configuration>
                     <skip>true</skip>
                 </configuration>
@@ -218,9 +217,8 @@
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <configuration>
                             <systemPropertyVariables>
-                                <!-- Pass location of server installation 
-                                    to arquillian container -->
-                                <glassfish.home>${session.executionRootDirectory}/target/glassfish6</glassfish.home>
+                                <!-- Pass location of server installation to arquillian container -->
+                                <glassfish.home>${session.executionRootDirectory}/target/glassfish7</glassfish.home>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>

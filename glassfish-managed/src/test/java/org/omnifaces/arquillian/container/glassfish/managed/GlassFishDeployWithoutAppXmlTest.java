@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -67,6 +67,7 @@ import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Inject;
 
 import static org.junit.Assert.assertNotNull;
@@ -87,16 +88,17 @@ import static org.junit.Assert.assertNotNull;
  */
 @RunWith(Arquillian.class)
 public class GlassFishDeployWithoutAppXmlTest {
+
     @Inject
     private Client client;
 
     @Deployment
     public static EnterpriseArchive createTestArchive() {
-        JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "test.jar")
-            .addClasses(Client.class, GlassFishDeployWithoutAppXmlTest.class)
-            .addAsManifestResource(EmptyAsset.INSTANCE, ArchivePaths.create("beans.xml"));
-        EnterpriseArchive ear = ShrinkWrap.create(EnterpriseArchive.class, "test.ear").addAsLibrary(jar);
-        return ear;
+        return
+            ShrinkWrap.create(EnterpriseArchive.class, "test.ear")
+                      .addAsLibrary(ShrinkWrap.create(JavaArchive.class, "test.jar")
+                              .addClasses(Client.class, GlassFishDeployWithoutAppXmlTest.class)
+                              .addAsManifestResource(EmptyAsset.INSTANCE, ArchivePaths.create("beans.xml")));
     }
 
     @Test
@@ -105,6 +107,7 @@ public class GlassFishDeployWithoutAppXmlTest {
     }
 }
 
+@Dependent
 class Client {
 
 }
