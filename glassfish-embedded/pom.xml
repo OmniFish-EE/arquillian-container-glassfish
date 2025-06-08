@@ -76,8 +76,26 @@
         Based on the Payara Payara Embedded Container.
     </description>
 
-    <!-- Dependencies -->
     <dependencies>
+        <dependency>
+            <groupId>org.glassfish.main.extras</groupId>
+            <artifactId>glassfish-embedded-all</artifactId>
+            <version>${version.glassfish}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.main.jdbc.jdbc-ra.jdbc40</groupId>
+            <artifactId>jdbc40</artifactId>
+            <version>${version.glassfish}</version>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.glassfish.main</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>org.jboss.arquillian.container</groupId>
             <artifactId>arquillian-container-spi</artifactId>
@@ -113,27 +131,16 @@
             <artifactId>arquillian-testenricher-initialcontext</artifactId>
         </dependency>
 
-        <!-- Test -->
-
         <dependency>
             <groupId>org.jboss.arquillian.junit</groupId>
             <artifactId>arquillian-junit-container</artifactId>
             <scope>test</scope>
-            <optional>true</optional>
         </dependency>
 
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <scope>test</scope>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>org.glassfish.main.extras</groupId>
-            <artifactId>glassfish-embedded-all</artifactId>
-            <version>${version.glassfish}</version>
-            <scope>provided</scope>
         </dependency>
     </dependencies>
 
@@ -143,11 +150,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>
-                        --add-opens=jdk.management/com.sun.management.internal=ALL-UNNAMED
-                        --add-opens=java.base/sun.net.www.protocol.jrt=ALL-UNNAMED
                         --add-opens=java.base/java.lang=ALL-UNNAMED
-                        --add-opens=java.base/java.util=ALL-UNNAMED
-                        --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED
                         --add-opens=java.naming/javax.naming.spi=ALL-UNNAMED
                     </argLine>
                 </configuration>

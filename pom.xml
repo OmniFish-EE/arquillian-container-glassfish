@@ -79,19 +79,27 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        
+
         <version.jersey>3.1.10</version.jersey>
         <parsson.version>1.1.7</parsson.version>
         <version.arquillian>1.9.4.Final</version.arquillian>
         <version.jakartaee>10</version.jakartaee>
         <version.jakartaee.api>10.0.0</version.jakartaee.api>
-        
+
         <docs.phase>deploy</docs.phase>
 
         <version.glassfish>7.0.25</version.glassfish>
+        <version.gjule>${version.glassfish}</version.gjule>
         <glassfish.home>glassfish7</glassfish.home>
 
         <skipITs>false</skipITs>
+        <test.logManager>org.glassfish.main.jul.GlassFishLogManager</test.logManager>
+        <test.logLevel>INFO</test.logLevel>
+        <test.enableDefaultLogCfg>true</test.enableDefaultLogCfg>
+        <maven.test.jvmoptions.add-opens>--add-opens java.base/java.lang=ALL-UNNAMED --add-opens=java.naming/javax.naming.spi=ALL-UNNAMED</maven.test.jvmoptions.add-opens>
+        <maven.test.jvmoptions>${maven.test.jvmoptions.add-opens}</maven.test.jvmoptions>
+        <surefire.argLine>${maven.test.jvmoptions}</surefire.argLine>
+        <failsafe.argLine>${maven.test.jvmoptions}</failsafe.argLine>
     </properties>
 
     <developers>
@@ -191,13 +199,13 @@
                 <artifactId>jersey-media-json-processing</artifactId>
                 <version>${version.jersey}</version>
             </dependency>
-            
             <dependency>
-                <groupId>org.glassfish.jersey.media</groupId>
-                <artifactId>jersey-media-json-processing</artifactId>
-                <version>${version.jersey}</version>
+                <groupId>org.glassfish.main</groupId>
+                <artifactId>glassfish-jul-extension</artifactId>
+                <version>${version.gjule}</version>
+                <scope>test</scope>
             </dependency>
-            
+
             <dependency>
                 <groupId>org.eclipse.parsson</groupId>
                 <artifactId>parsson</artifactId>
@@ -208,7 +216,6 @@
                 <artifactId>parsson-media</artifactId>
                 <version>${parsson.version}</version>
             </dependency>
-            
 
             <!-- Note: indirectly depends on javax.* -->
             <dependency>
@@ -221,6 +228,11 @@
                 <groupId>jakarta.platform</groupId>
                 <artifactId>jakarta.jakartaee-api</artifactId>
                 <version>${version.jakartaee.api}</version>
+            </dependency>
+            <dependency>
+                <groupId>jakarta.xml.bind</groupId>
+                <artifactId>jakarta.xml.bind-api</artifactId>
+                <version>3.0.1</version>
             </dependency>
 
             <dependency>
@@ -286,10 +298,10 @@
                     </execution>
                 </executions>
             </plugin>
-            
+
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.14.0</version>
                 <configuration>
                     <release>11</release>
                     <compilerArgument>-Xlint:unchecked</compilerArgument>
@@ -333,7 +345,7 @@
             <!-- Configure the jar with the javadoc. -->
             <plugin>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.7.0</version>
+                <version>3.11.2</version>
                 <configuration>
                     <notimestamp>true</notimestamp>
                     <splitindex>true</splitindex>
@@ -366,14 +378,25 @@
                 </configuration>
             </plugin>
         </plugins>
-        
+
         <pluginManagement>
             <plugins>
                 <plugin>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.3.0</version>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.8.1</version>
                 </plugin>
-                
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.3</version>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <java.util.logging.manager>${test.logManager}</java.util.logging.manager>
+                            <java.util.logging.config.useDefaults>${test.enableDefaultLogCfg}</java.util.logging.config.useDefaults>
+                            <java.util.logging.config.defaultLevel>${test.logLevel}</java.util.logging.config.defaultLevel>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+
                 <plugin>
                     <artifactId>maven-shade-plugin</artifactId>
                     <version>3.6.0</version>
@@ -393,10 +416,10 @@
                                         <include>jakarta.ws.rs:jakarta.ws.rs-api:*</include>
                                         <include>jakarta.inject:*</include>
                                         <include>jakarta.json:*</include>
-                                        
+
                                         <include>jakarta.xml.bind:*</include>
                                         <include>com.sun.activation:*</include>
-                                        
+
                                         <include>javax.xml.bind:*</include>
                                         <include>javax.activation:*</include>
 
@@ -409,11 +432,8 @@
                                         <include>org.glassfish.jersey.media:*</include>
                                         <include>org.glassfish.jersey.ext:*</include>
                                         <include>org.glassfish:jakarta.json:*</include>
-                                        
                                         <include>org.eclipse.parsson:parsson:*</include>
                                         <include>org.eclipse.parsson:parsson-media:*</include>
-                                        
-                                        
 
                                         <!-- Other -->
                                         <include>org.javassist:*</include>
@@ -451,23 +471,25 @@
                                         <pattern>jakarta.json</pattern>
                                         <shadedPattern>org.omnifaces.arquillian.jakarta.json</shadedPattern>
                                     </relocation>
-                                    
+
                                     <relocation>
                                         <pattern>jakarta.xml.bind</pattern>
                                         <shadedPattern>org.omnifaces.arquillian.jakarta.xml.bind</shadedPattern>
                                     </relocation>
                                     <relocation>
-                                        <pattern>jakarta.activation</pattern> <!-- 1st package in com.sun.activation:jakarta.activation -->
+                                        <!-- 1st package in com.sun.activation:jakarta.activation -->
+                                        <pattern>jakarta.activation</pattern>
                                         <pattern>com.sun.activation.registries</pattern>
                                         <shadedPattern>org.omnifaces.arquillian.jakarta.activation</shadedPattern>
                                     </relocation>
-                                    <relocation> <!-- 2nd package in com.sun.activation:jakarta.activation -->
+                                    <!-- 2nd package in com.sun.activation:jakarta.activation -->
+                                    <relocation>
                                         <pattern>com.sun.activation.registries</pattern>
                                         <shadedPattern>org.omnifaces.arquillian.com.sun.activation.registries</shadedPattern>
                                     </relocation>
-                                    
-                                    
-                                    
+
+
+
                                     <relocation>
                                         <pattern>javax.xml.bind</pattern>
                                         <shadedPattern>org.omnifaces.arquillian.javax.xml.bind</shadedPattern>
@@ -537,7 +559,7 @@
                     <!-- Signing with GPG is a requirement for a release deployment to Maven central. -->
                     <plugin>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.4</version>
+                        <version>3.2.7</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
@@ -551,7 +573,16 @@
                 </plugins>
             </build>
         </profile>
-        
+
+        <profile>
+            <id>glassfish8</id>
+            <properties>
+                <version.glassfish>8.0.0-M12</version.glassfish>
+                <version.gjule>8.0.0-M12</version.gjule>
+                <glassfish.home>glassfish8</glassfish.home>
+            </properties>
+        </profile>
+
         <profile>
             <id>skipTests</id>
             <activation>

@@ -58,15 +58,15 @@
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish;
 
-import static java.util.stream.Collectors.toList;
-import static org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
-
 import java.util.Collections;
 import java.util.List;
 
 import org.jboss.arquillian.container.spi.ConfigurationException;
 import org.jboss.arquillian.container.spi.client.container.ContainerConfiguration;
 import org.jboss.arquillian.container.spi.client.deployment.Validate;
+
+import static java.util.stream.Collectors.toList;
+import static org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
 
 /**
  * The common set of properties for a GlassFish container.
