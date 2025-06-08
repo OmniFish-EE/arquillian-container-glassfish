@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2009, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,12 +55,8 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded.app;
-
-import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
-import static org.jboss.shrinkwrap.api.asset.EmptyAsset.INSTANCE;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 import jakarta.ejb.EJB;
 
@@ -72,6 +68,10 @@ import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 /**
  * JBossEmbeddedIntegrationTestCase
  *
@@ -80,7 +80,7 @@ import org.junit.runner.RunWith;
  */
 @RunWith(Arquillian.class)
 public class IntegrationEarTestCase {
-    
+
     @Deployment
     public static EnterpriseArchive createDeployment() throws Exception {
         return create(EnterpriseArchive.class)
@@ -89,11 +89,11 @@ public class IntegrationEarTestCase {
                     .addClasses(
                         NoInterfaceEJB.class,
                         NameProvider.class)
-                    .addAsManifestResource(INSTANCE, "beans.xml"))
+                    .addAsManifestResource("beans.xml"))
             .addAsModule(
                 create(WebArchive.class)
                     .addClass(IntegrationEarTestCase.class)
-                    .addAsWebInfResource(INSTANCE, "beans.xml"));
+                    .addAsWebInfResource("beans.xml"));
     }
 
     @EJB

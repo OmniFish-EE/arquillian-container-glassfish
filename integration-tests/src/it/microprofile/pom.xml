@@ -39,16 +39,16 @@
   ~    holder.
   -->
 
-<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] --> 
+<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    
+
     <parent>
         <groupId>org.omnifaces.arquillian</groupId>
         <artifactId>parent-glassfish-containers</artifactId>
         <version>@project.version@</version>
     </parent>
-    
+
     <groupId>org.omnifaces.arquillian.test</groupId>
     <artifactId>microprofile-test</artifactId>
     <packaging>war</packaging>
@@ -93,6 +93,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <container.version>@project.version@</container.version>
         <glassfish.version>@glassfish.version@</glassfish.version>
+        <glassfish.home>@glassfish.home@</glassfish.home>
     </properties>
 
     <build>
@@ -161,7 +162,7 @@
                                 --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED
                                 --add-opens=java.naming/javax.naming.spi=ALL-UNNAMED
                             </argLine>
-                            <!-- don't mix compile-time apis and bundled 
+                            <!-- don't mix compile-time apis and bundled
                                 server apis -->
                             <classpathDependencyScopeExclude>compile</classpathDependencyScopeExclude>
                         </configuration>
@@ -218,7 +219,7 @@
                         <configuration>
                             <systemPropertyVariables>
                                 <!-- Pass location of server installation to arquillian container -->
-                                <glassfish.home>${session.executionRootDirectory}/target/glassfish7</glassfish.home>
+                                <glassfish.home>${session.executionRootDirectory}/target/${glassfish.home}</glassfish.home>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>

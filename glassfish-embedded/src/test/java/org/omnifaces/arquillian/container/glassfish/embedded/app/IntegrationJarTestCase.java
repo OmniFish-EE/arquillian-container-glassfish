@@ -55,22 +55,21 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded.app;
-
-import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 import jakarta.ejb.EJB;
 
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.shrinkwrap.api.ArchivePaths;
-import org.jboss.shrinkwrap.api.asset.EmptyAsset;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * JBossEmbeddedIntegrationTestCase
@@ -83,11 +82,8 @@ public class IntegrationJarTestCase {
 
     @Deployment
     public static JavaArchive createDeployment() throws Exception {
-        return create(JavaArchive.class)
-                .addAsManifestResource(EmptyAsset.INSTANCE, ArchivePaths.create("beans.xml"))
-                    .addClasses(
-                        LocalInterfaceEJB.class,
-                        LocalInterfaceEJBBean.class);
+        return create(JavaArchive.class).addClasses(LocalInterfaceEJB.class, LocalInterfaceEJBBean.class)
+            .addAsManifestResource("beans.xml");
     }
 
     @EJB
