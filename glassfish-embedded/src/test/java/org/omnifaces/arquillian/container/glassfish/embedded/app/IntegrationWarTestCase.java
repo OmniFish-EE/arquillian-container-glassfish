@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2009, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,6 +55,7 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded.app;
 
 
@@ -77,12 +78,12 @@ import org.junit.runner.RunWith;
  */
 @RunWith(Arquillian.class)
 public class IntegrationWarTestCase {
-    
+
     @Deployment
     public static WebArchive createDeployment() throws Exception {
         return create(WebArchive.class)
                 .addClasses(NoInterfaceEJB.class, NameProvider.class)
-                .addAsWebInfResource(INSTANCE, "beans.xml");
+                .addAsWebInfResource("beans.xml");
     }
 
     @EJB
@@ -91,7 +92,6 @@ public class IntegrationWarTestCase {
     @Test
     public void shouldBeAbleToInjectEJBAsInstanceVariable() throws Exception {
         Assert.assertNotNull("Verify that the Bean has been injected", bean);
-
         Assert.assertEquals("Arquillian", bean.getName());
     }
 }

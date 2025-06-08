@@ -38,9 +38,12 @@
   ~    only if the new code is made subject to such option by the copyright
   ~    holder.
   -->
-<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] --> 
-<application xmlns="http://java.sun.com/xml/ns/javaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="6"
-             xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/application_6.xsd">
+<!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
+<!-- Portions Copyright [2025] [OmniFish and/or its affiliates] -->
+ <application xmlns="https://jakarta.ee/xml/ns/jakartaee"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/application_10.xsd"
+    version="10">
   <!-- Just to test, that client doesn't try to parse properties in a smart way, this should be a String -->
   <application-name>20190809</application-name>
   <module>

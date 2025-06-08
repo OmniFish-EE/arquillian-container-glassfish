@@ -54,7 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2023,2024] [OmniFish and/or its affiliates]
+// Portions Copyright [2023,2025] [OmniFish and/or its affiliates]
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
@@ -318,13 +318,17 @@ class GlassFishServerControl {
         final List<String> cmd = buildCommand(command, args);
 
         if (config.isOutputToConsole()) {
-            System.out.println(description + " using command: " + cmd.toString());
+            System.out.println(description + " using command: " + cmd);
         }
 
-        int result;
         ProcessBuilder processBuilder = new ProcessBuilder(cmd);
-        // force inheriting environment - JDK bug?
-        processBuilder.environment();
+        Map<String, String> env = processBuilder.environment();
+        String javaHome = getJavaProgram() == null
+            ? System.getProperty("java.home")
+            : getJavaProgram().getParentFile().getParentFile().getAbsolutePath();
+        env.put("AS_JAVA", javaHome);
+        env.put("JAVA_HOME", javaHome);
+        int result;
         try (CloseableProcess process = new CloseableProcess(processBuilder.redirectErrorStream(true).start());
             ConsoleReader consoleReader = new ConsoleReader(process, consumer)) {
 
@@ -333,27 +337,20 @@ class GlassFishServerControl {
 
         } catch (IOException | InterruptedException e) {
             logger.log(SEVERE, description + (e instanceof IOException? " failed." : " interrupted."), e);
-            throw new LifecycleException("Unable to execute " + cmd.toString(), e);
+            throw new LifecycleException("Unable to execute " + cmd, e);
         }
 
         if (result != 0) {
-            throw new LifecycleException("Unable to execute " + cmd.toString());
+            throw new LifecycleException("Unable to execute " + cmd);
         }
     }
 
     private List<String> buildCommand(String command, List<String> args) {
         List<String> cmd = new ArrayList<>();
-        File javaCmd = getJavaProgram();
-        cmd.add(javaCmd == null ? "java" : javaCmd.getAbsolutePath());
-
-        cmd.add("-jar");
-        cmd.add(config.getAdminCliJar().getAbsolutePath());
-
+        cmd.add(config.getAsadmin().getAbsolutePath());
+        cmd.add("--terse");
         cmd.add(command);
         cmd.addAll(args);
-
-        // very concise output data in a format that is optimized for use in scripts instead of for reading by humans
-        cmd.add("-t");
         return cmd;
     }
 

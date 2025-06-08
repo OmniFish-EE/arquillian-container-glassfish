@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,108 +55,99 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded;
 
-import org.junit.Test;
-import org.omnifaces.arquillian.container.glassfish.embedded.GlassFishConfiguration;
+import java.io.File;
+import java.net.URISyntaxException;
+import java.nio.file.FileSystems;
 
-import static org.junit.Assert.assertTrue;
+import org.junit.Test;
+
+import static org.junit.Assert.assertFalse;
 
 public class GlassFishConfigurationTest {
 
+    private static final String ABSOLUTE_PATH_NONEXISTING = FileSystems.getDefault()
+        .getPath("some", "nonexisting", "path").toString();
+
     @Test
     public void testValidInstallRoot() throws Exception {
-        String installRoot = "./src/test/resources/gfconfigs/installRoot";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setInstallRoot(installRoot);
+        config.setInstallRoot(toAbsoluteFilePath("gfconfigs/installRoot"));
         config.validate();
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testInstallRootWithoutDirectories() throws Exception {
-        String installRoot = "./src/test/resources/gfconfigs/";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setInstallRoot(installRoot);
+        config.setInstallRoot(toAbsoluteFilePath("gfconfigs"));
         config.validate();
     }
 
     @Test
     public void testValidInstanceRoot() throws Exception {
-        String instanceRoot = "./src/test/resources/gfconfigs/instanceRoot";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setInstanceRoot(instanceRoot);
+        config.setInstanceRoot(toAbsoluteFilePath("gfconfigs/instanceRoot"));
         config.validate();
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testInstanceRootWithoutDirectories() throws Exception {
-        String instanceRoot = "./src/test/resources/gfconfigs/emptydir";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setInstanceRoot(instanceRoot);
+        config.setInstanceRoot(toAbsoluteFilePath("gfconfigs/emptydir"));
         config.validate();
     }
 
     @Test
     public void testInstanceRootWithoutConfigXml() throws Exception {
-        String instanceRoot = "./src/test/resources/gfconfigs/instanceRootNoConfigxml";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setInstanceRoot(instanceRoot);
+        config.setInstanceRoot(toAbsoluteFilePath("gfconfigs/instanceRootNoConfigxml"));
         config.validate();
     }
 
     @Test
     public void testValidConfigXmlPath() throws Exception {
-        String configXml = "./src/test/resources/gfconfigs/configxml/test-domain.xml";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setConfigurationXml(configXml);
+        config.setConfigurationXml(toAbsoluteFilePath("gfconfigs/configxml/test-domain.xml"));
         config.validate();
 
-        assertTrue(config.getConfigurationXml().startsWith("file:"));
+        assertFalse(config.getConfigurationXml().startsWith("file:"));
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testInvalidConfigXmlPath() throws Exception {
-        String configXml = "./src/test/resources/gfconfigs/emptydir/test-domain.xml";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setConfigurationXml(configXml);
+        config.setConfigurationXml(ABSOLUTE_PATH_NONEXISTING);
         config.validate();
     }
 
     @Test
     public void testInstanceRootAndConfigXml() throws Exception {
-        String instanceRoot = "./src/test/resources/gfconfigs/instanceRoot";
-        String configXml = "./src/test/resources/gfconfigs/configxml/test-domain.xml";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setInstanceRoot(instanceRoot);
-        config.setConfigurationXml(configXml);
+        config.setInstanceRoot(toAbsoluteFilePath("gfconfigs/instanceRoot"));
+        config.setConfigurationXml(toAbsoluteFilePath("gfconfigs/configxml/test-domain.xml"));
         config.validate();
 
-        assertTrue(config.getConfigurationXml().startsWith("file:"));
+        assertFalse(config.getConfigurationXml().startsWith("file:"));
     }
 
     @Test
     public void testValidResourcesXmlPath() throws Exception {
-        String resourcesXml = "./src/test/resources/gfconfigs/resourcesxml/glassfish-resources.xml";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setResourcesXml(resourcesXml);
+        config.setResourcesXml(toAbsoluteFilePath("gfconfigs/resourcesxml/glassfish-resources.xml"));
         config.validate();
     }
 
-    @Test(expected = RuntimeException.class)
+    @Test(expected = IllegalArgumentException.class)
     public void testInvalidResourcesXmlPath() throws Exception {
-        String resourcesXml = "./src/test/resources/gfconfigs/emptydir/glassfish-resources.xml";
-
         GlassFishConfiguration config = new GlassFishConfiguration();
-        config.setResourcesXml(resourcesXml);
+        config.setResourcesXml(ABSOLUTE_PATH_NONEXISTING);
         config.validate();
+    }
+
+    private static String toAbsoluteFilePath(String resourcePath) throws URISyntaxException {
+        return new File(GlassFishConfigurationTest.class.getClassLoader().getResource(resourcePath).toURI()).getAbsolutePath();
+
     }
 }

@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2010, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -54,28 +54,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded;
 
-import static com.sun.enterprise.util.SystemPropertyConstants.INSTANCE_ROOT_PROPERTY;
-import static java.lang.Runtime.getRuntime;
-import static java.lang.System.getProperty;
-import static org.jboss.shrinkwrap.api.Filters.include;
-import static org.omnifaces.arquillian.container.glassfish.embedded.ShrinkWrapUtil.toURL;
-import static java.util.Arrays.asList;
-import static java.util.Arrays.copyOfRange;
+import com.sun.enterprise.web.WebModule;
+
+import jakarta.servlet.ServletRegistration;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
-import jakarta.servlet.ServletRegistration;
 
 import org.apache.catalina.Container;
 import org.glassfish.embeddable.BootstrapProperties;
@@ -101,8 +98,10 @@ import org.jboss.shrinkwrap.api.spec.EnterpriseArchive;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 
-import com.sun.enterprise.web.WebModule;
-import java.util.logging.Level;
+import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOfRange;
+import static org.jboss.shrinkwrap.api.Filters.include;
+import static org.omnifaces.arquillian.container.glassfish.embedded.ShrinkWrapUtil.toURL;
 
 /**
  *
@@ -139,12 +138,12 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
     @Override
     public void setup(GlassFishConfiguration configuration) {
         this.configuration = configuration;
-        
+
         BootstrapProperties bootstrapProps = new BootstrapProperties();
         if (configuration.getInstallRoot() != null) {
             bootstrapProps.setInstallRoot(configuration.getInstallRoot());
         }
-        
+
         try {
             glassfishRuntime = GlassFishRuntime.bootstrap(bootstrapProps);
         } catch (Exception e) {
@@ -162,12 +161,12 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
             serverProps.setInstanceRoot(configuration.getInstanceRoot());
             shouldSetPort = false;
         }
-        
+
         if (configuration.getConfigurationXml() != null) {
-            serverProps.setConfigFileURI(configuration.getConfigurationXml());
+            serverProps.setConfigFile(new File(configuration.getConfigurationXml()));
             shouldSetPort = false;
         }
-        
+
         serverProps.setConfigFileReadOnly(configuration.isConfigurationReadOnly());
         if (shouldSetPort) {
             bindHttpPort = configuration.getBindHttpPort();
@@ -183,12 +182,11 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
         }
 
         if (cleanup) {
-            getRuntime().addShutdownHook(new Thread() {
-                @Override
-                public void run() {
-                    deleteRecursive(new File(getProperty(INSTANCE_ROOT_PROPERTY)));
-                }
-            });
+            // Don't use GlassFishVariable or SystemPropertyConstants, they changed between
+            // GF versions 7.0.25 and 7.1.0
+            Runtime.getRuntime().addShutdownHook(new Thread(
+                () -> deleteRecursive(new File(System.getProperty("com.sun.aas.instanceRoot", "glassfish")))));
+
         }
     }
 
@@ -203,7 +201,7 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
         } catch (Exception e) {
             throw new LifecycleException("Could not start GlassFish Embedded", e);
         }
-        
+
         // Server needs to be started before we can deploy resources
         for (String resource : configuration.getResourcesXml()) {
             try {
@@ -277,10 +275,10 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
             for (ArchivePath path : archive.getContent(include(".*\\.war")).keySet()) {
                 deploymentNames.add(createDeploymentName(path.get()));
             }
-            
+
             return deploymentNames.toArray(new String[0]);
         }
-        
+
         return new String[0];
     }
 
@@ -327,7 +325,7 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                         }
                     }
                 }
-                
+
                 if (webModule == null) {
                     if (server instanceof com.sun.enterprise.web.VirtualServer) {
                         Container child = ((com.sun.enterprise.web.VirtualServer) server).findChild("/" + deploymentName);
@@ -336,7 +334,7 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                         }
                     }
                 }
-                
+
                 if (webModule != null) {
                     for (Map.Entry<String, ? extends ServletRegistration> servletRegistration : webModule.getServletRegistrations()
                         .entrySet()) {
@@ -376,11 +374,11 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
         if (dir == null) {
             throw new IllegalArgumentException("directory cannot be null");
         }
-        
+
         if (!dir.isDirectory()) {
             throw new IllegalArgumentException("directory must be a directory");
         }
-        
+
         if (dir.exists()) {
             for (File file : dir.listFiles()) {
                 if (file.isDirectory()) {
@@ -410,17 +408,16 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
             // Ignore the __asadmin virtual server as no deployments will occur against this
             if (virtualServer.equals("__asadmin")) {
                 continue;
-            } else {
-                // Fetch the network listeners of the virtual server
-                String networkListenerList = fetchAttribute("configs.config." + config + ".http-service.virtual-server."
-                    + virtualServer + ".network-listeners");
+            }
+            // Fetch the network listeners of the virtual server
+            String networkListenerList = fetchAttribute("configs.config." + config + ".http-service.virtual-server."
+                + virtualServer + ".network-listeners");
 
-                // Iterate through the network listeners, resolve the port number of the first one. Ignore the rest.
-                for (String networkListener : networkListenerList.split(",")) {
-                    Integer listenPort = readNetworkListenerPort(config, networkListener);
-                    if (listenPort != null) {
-                        bindHttpPort = listenPort;
-                    }
+            // Iterate through the network listeners, resolve the port number of the first one. Ignore the rest.
+            for (String networkListener : networkListenerList.split(",")) {
+                Integer listenPort = readNetworkListenerPort(config, networkListener);
+                if (listenPort != null) {
+                    bindHttpPort = listenPort;
                 }
             }
         }
@@ -432,7 +429,7 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
     private Integer readNetworkListenerPort(String config, String networkListener) throws LifecycleException {
         boolean enabled = Boolean.parseBoolean(fetchAttribute("configs.config." + config
             + ".network-config.network-listeners.network-listener." + networkListener + ".enabled"));
-        
+
         // Is the listener enabled?
         if (enabled) {
             String protocol =
@@ -440,8 +437,8 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                     + networkListener + ".protocol");
             boolean securityEnabled = Boolean.parseBoolean(fetchAttribute("configs.config." + config
                 + ".network-config.protocols.protocol." + protocol + ".security-enabled"));
-            
-            // Is the protocol secure? If yes, then ignore since Arquillian will not make HTTPS connections (yet) 
+
+            // Is the protocol secure? If yes, then ignore since Arquillian will not make HTTPS connections (yet)
             if (!securityEnabled) {
                 String portNum = fetchAttribute("configs.config." + config
                     + ".network-config.network-listeners.network-listener." + networkListener + ".port");
@@ -457,7 +454,7 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                 }
             }
         }
-        
+
         return null;
     }
 
@@ -477,15 +474,15 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
     private List<String> fetchAttributes(String... parameterList) throws LifecycleException {
         try {
             List<String> result = new ArrayList<String>();
-            
+
             String[] lines = executeCommand("get", parameterList).split("\\n");
-            
+
             // Omit the first line and parse the rest
             for (int ctr = 1; ctr < lines.length; ctr++) {
                 // Obtain the value in the K=V pair
                 result.add(lines[ctr].split("=")[1]);
             }
-            
+
             return result;
         } catch (Throwable ex) {
             throw new LifecycleException("Failed to read the HTTP listener configuration.", ex);

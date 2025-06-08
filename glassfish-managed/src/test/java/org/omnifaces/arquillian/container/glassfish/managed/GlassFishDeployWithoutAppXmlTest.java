@@ -55,20 +55,18 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
+
+import jakarta.inject.Inject;
 
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.shrinkwrap.api.ArchivePaths;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.asset.EmptyAsset;
 import org.jboss.shrinkwrap.api.spec.EnterpriseArchive;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-
-import jakarta.enterprise.context.Dependent;
-import jakarta.inject.Inject;
 
 import static org.junit.Assert.assertNotNull;
 
@@ -88,17 +86,16 @@ import static org.junit.Assert.assertNotNull;
  */
 @RunWith(Arquillian.class)
 public class GlassFishDeployWithoutAppXmlTest {
-
     @Inject
     private Client client;
 
     @Deployment
     public static EnterpriseArchive createTestArchive() {
-        return
-            ShrinkWrap.create(EnterpriseArchive.class, "test.ear")
-                      .addAsLibrary(ShrinkWrap.create(JavaArchive.class, "test.jar")
-                              .addClasses(Client.class, GlassFishDeployWithoutAppXmlTest.class)
-                              .addAsManifestResource(EmptyAsset.INSTANCE, ArchivePaths.create("beans.xml")));
+        JavaArchive jar = ShrinkWrap.create(JavaArchive.class, "test.jar")
+            .addClasses(Client.class, GlassFishDeployWithoutAppXmlTest.class)
+            .addAsManifestResource("beans.xml");
+        EnterpriseArchive ear = ShrinkWrap.create(EnterpriseArchive.class, "test.ear").addAsLibrary(jar);
+        return ear;
     }
 
     @Test
@@ -107,8 +104,6 @@ public class GlassFishDeployWithoutAppXmlTest {
     }
 }
 
-@Dependent
 class Client {
 
 }
-

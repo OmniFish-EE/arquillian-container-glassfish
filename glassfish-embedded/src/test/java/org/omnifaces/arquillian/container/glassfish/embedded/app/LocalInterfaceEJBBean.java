@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2009, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -65,9 +65,11 @@ import jakarta.ejb.Stateless;
  * @author <a href="mailto:aslak@redhat.com">Aslak Knutsen</a>
  * @version $Revision: $
  */
-@Stateless
-@Local(LocalInterfaceEJB.class)
+// FIXME: The name is required - probably a bug in GlassFish
+@Stateless(name = "LocalInterfaceEJB")
+@Local
 public class LocalInterfaceEJBBean implements LocalInterfaceEJB {
+    @Override
     public String getName() {
         return new NameProvider().getName();
     }

@@ -15,11 +15,13 @@
   See the License for the specific language governing permissions and
   limitations under the License.
   -->
- <!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] --> 
-<application xmlns="http://java.sun.com/xml/ns/javaee"
+ <!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
+ <!-- Portions Copyright [2025] [OmniFish and/or its affiliates] -->
+
+<application xmlns="https://jakarta.ee/xml/ns/jakartaee"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/application_5.xsd"
-    version="5">
+    xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/application_10.xsd"
+    version="10">
   <module>
     <web>
       <web-uri>test.war</web-uri>

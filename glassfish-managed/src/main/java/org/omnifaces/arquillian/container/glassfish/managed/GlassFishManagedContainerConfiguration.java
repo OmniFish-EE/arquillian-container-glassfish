@@ -58,14 +58,16 @@
 // Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.managed;
 
-import static org.jboss.arquillian.container.spi.client.deployment.Validate.configurationDirectoryExists;
-import static org.jboss.arquillian.container.spi.client.deployment.Validate.notNull;
-import static org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
-
 import java.io.File;
+import java.nio.file.Path;
+import java.util.List;
 
 import org.jboss.arquillian.container.spi.ConfigurationException;
 import org.omnifaces.arquillian.container.glassfish.CommonGlassFishConfiguration;
+
+import static org.jboss.arquillian.container.spi.client.deployment.Validate.configurationDirectoryExists;
+import static org.jboss.arquillian.container.spi.client.deployment.Validate.notNull;
+import static org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
 
 /**
  * Configuration for Managed GlassFish containers.
@@ -75,7 +77,8 @@ import org.omnifaces.arquillian.container.glassfish.CommonGlassFishConfiguration
  * @author Vineet Reynolds
  */
 public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfiguration {
-    private final String GLASSFISH_HOME_PROPERTY = "glassfish.home";
+
+    private static final String GLASSFISH_HOME_PROPERTY = "glassfish.home";
 
     private String glassFishHome = System.getProperty(GLASSFISH_HOME_PROPERTY);
 
@@ -93,6 +96,7 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private int httpPort = Integer.valueOf(System.getProperty("glassfish.httpPort", "8080"));
     private int httpsPort = Integer.valueOf(System.getProperty("glassfish.httpsPort", "8181"));
 
+
     public String getGlassFishHome() {
         return glassFishHome;
     }
@@ -104,6 +108,15 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
         this.glassFishHome = glashFishHome;
     }
 
+    /**
+     * @return path to the asadmin command
+     */
+    public File getAsadmin() {
+        String extension = System.getProperty("os.name").toLowerCase().contains("win") ? ".bat" : "";
+        return Path.of(getGlassFishHome()).resolve(Path.of("glassfish", "bin", "asadmin" + extension)).toFile();
+    }
+
+
     public boolean isOutputToConsole() {
         return outputToConsole;
     }
@@ -113,10 +126,6 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     public void setOutputToConsole(boolean outputToConsole) {
         this.outputToConsole = outputToConsole;
-    }
-
-    public File getAdminCliJar() {
-        return new File(getGlassFishHome() + "/glassfish/modules/admin-cli.jar");
     }
 
     public boolean isAllowConnectingToRunningServer() {
@@ -271,14 +280,10 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     @Override
     public void validate() throws ConfigurationException {
-        notNull(getGlassFishHome(),
-                String.format("The arquillian.xml property glassfishHome must be specified or " + "the %s system property must be set",
-                        GLASSFISH_HOME_PROPERTY));
+        notNull(getGlassFishHome(), String.format(
+            "The arquillian.xml property glassfishHome must be specified or the %s system property must be set",
+            GLASSFISH_HOME_PROPERTY));
         configurationDirectoryExists(getGlassFishHome() + "/glassfish", getGlassFishHome() + " is not a valid GlassFish installation");
-
-        if (!getAdminCliJar().isFile()) {
-            throw new IllegalArgumentException("Could not locate admin-cli.jar module in GlassFish installation: " + getGlassFishHome());
-        }
 
         if (getDomain() != null) {
             configurationDirectoryExists(getGlassFishHome() + "/glassfish/domains/" + getDomain(), "Invalid domain: " + getDomain());
