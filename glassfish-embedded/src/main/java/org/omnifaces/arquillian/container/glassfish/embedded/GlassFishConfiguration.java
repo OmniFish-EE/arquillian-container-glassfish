@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,15 +55,12 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded;
-
-import static java.util.Arrays.asList;
-import static java.util.stream.Collectors.toList;
 
 import java.io.File;
 import java.io.FileFilter;
 import java.io.FilenameFilter;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -72,6 +69,9 @@ import java.util.logging.Logger;
 import org.jboss.arquillian.container.spi.ConfigurationException;
 import org.jboss.arquillian.container.spi.client.container.ContainerConfiguration;
 
+import static java.util.Arrays.asList;
+import static java.util.stream.Collectors.toList;
+
 /**
  * GlassfishConfiguration
  *
@@ -79,7 +79,7 @@ import org.jboss.arquillian.container.spi.client.container.ContainerConfiguratio
  * @version $Revision: $
  */
 public class GlassFishConfiguration implements ContainerConfiguration {
-    
+
     private int bindHttpPort = 8181;
     private int bindHttpsPort = 8182;
     private String instanceRoot;
@@ -244,7 +244,7 @@ public class GlassFishConfiguration implements ContainerConfiguration {
     class GlassFishConfigProcessor {
 
         /**
-         * Processes a {@link GlassfishConfiguration} object, to ensure that
+         * Processes a {@link GlassFishConfiguration} object, to ensure that
          * configuration properties have valid values. Values may also be
          * converted from a canonical form specified in arquillian.xml, to a form
          * expected by the Glassfish container.
@@ -260,7 +260,7 @@ public class GlassFishConfiguration implements ContainerConfiguration {
             if (installRoot != null) {
                 verifyInstallRoot(installRoot);
             }
-            
+
             if (instanceRoot != null) {
                 if (configurationXml != null) {
                     verifyInstanceRoot(instanceRoot, false);
@@ -268,17 +268,9 @@ public class GlassFishConfiguration implements ContainerConfiguration {
                     verifyInstanceRoot(instanceRoot, true);
                 }
             }
-            
+
             if (configurationXml != null) {
                 verifyConfigurationXml(configurationXml);
-                /*
-                 * Convert the configurationXml property from
-                 * an abstract file path (/opt/glassfish3/... or C:\\glassfish3\... or
-                 * C:/glassfish3/...) to a file URI (file:/...).
-                 * This will mutate the GlassFishConfiguration object.
-                 */
-                URI configurationXmlURI = convertFilePathToURI(configurationXml);
-                configurationXml = configurationXmlURI.toString();
             }
 
             List<String> resourcesXml = getResourcesXml();
@@ -308,14 +300,15 @@ public class GlassFishConfiguration implements ContainerConfiguration {
          */
         private void verifyInstallRoot(String installRoot) {
             File installRootPath = new File(installRoot);
-            if (installRootPath.isDirectory()) {
-                File[] requiredDirs = installRootPath.listFiles(new InstallRootFilter());
-                if (requiredDirs.length != 2) {
-                    throw new RuntimeException(
-                        "The GlassFish installRoot directory does not appear to be valid. It does not contain the 'domains' and 'lib' sub-directories.");
-                }
-            } else {
-                throw new RuntimeException("The installRoot property should be a directory. Instead, it was a file.");
+            if (!installRootPath.isDirectory()) {
+                throw new IllegalArgumentException(
+                    "The installRoot property should be a directory. Instead, it was a file.");
+            }
+            File[] requiredDirs = installRootPath.listFiles(new InstallRootFilter());
+            if (requiredDirs.length != 2) {
+                throw new IllegalArgumentException(
+                    "The GlassFish installRoot directory does not appear to be valid."
+                    + " It does not contain the 'domains' and 'lib' sub-directories.");
             }
         }
 
@@ -336,14 +329,19 @@ public class GlassFishConfiguration implements ContainerConfiguration {
          */
         private void verifyInstanceRoot(String instanceRoot, boolean ignoreConfigXml) {
             File instanceRootPath = new File(instanceRoot);
-            if (instanceRootPath.isDirectory()) {
-                File[] requiredDirs = instanceRootPath.listFiles(new InstanceRootFilter(ignoreConfigXml));
-                if (requiredDirs.length != 2) {
-                    throw new RuntimeException(
-                        "The GlassFish instanceRoot directory does not appear to be valid. It should contain the 'config' and 'docroot' sub-directories. The 'config' sub-directory must also contain a domain.xml file, if the configurationXml property is ommitted from the arquillian config. Other files specified in domain.xml may also be required for initializing the Glassfish runtime.");
-                }
-            } else {
-                throw new RuntimeException("The instanceRoot property should be a directory. Instead, it was a file.");
+            if (!instanceRootPath.isDirectory()) {
+                throw new IllegalArgumentException(
+                    "The instanceRoot property should be a directory. Instead, it was a file.");
+            }
+            File[] requiredDirs = instanceRootPath.listFiles(new InstanceRootFilter(ignoreConfigXml));
+            if (requiredDirs.length != 2) {
+                throw new IllegalArgumentException(
+                    "The GlassFish instanceRoot directory " + instanceRoot + " does not appear to be valid."
+                        + " It should contain the 'config' and 'docroot' sub-directories."
+                        + " The 'config' sub-directory must also contain a domain.xml file,"
+                        + " if the configurationXml property is ommitted from the arquillian config."
+                        + " Other files specified in domain.xml may also be required for initializing"
+                        + " the Glassfish runtime.");
             }
         }
 
@@ -356,19 +354,14 @@ public class GlassFishConfiguration implements ContainerConfiguration {
          *     The location of the configurationXml file.
          */
         private void verifyConfigurationXml(String configurationXml) {
-            try {
-                File configXmlPath = new File(configurationXml);
-                if (!configXmlPath.exists()) {
-                    throw new RuntimeException("The configurationXml property does not appear to be a valid file path.");
-                }
-                
-                URI configXmlURI = configXmlPath.toURI();
-                if (!configXmlURI.isAbsolute()) {
-                    throw new RuntimeException("The configurationXml property should contain a URI scheme.");
-                }
-            } catch (IllegalArgumentException argEx) {
-                throw new RuntimeException(
-                    "A valid URI could not be composed from the provided configurationXml property.", argEx);
+            File configXmlFile = new File(configurationXml);
+            if (!configXmlFile.isAbsolute()) {
+                throw new IllegalArgumentException(
+                    "The configurationXml property should be absolute: " + configXmlFile);
+            }
+            if (!configXmlFile.exists()) {
+                throw new IllegalArgumentException(
+                    "The configurationXml property does not appear to be a valid file path: " + configXmlFile);
             }
         }
 
@@ -384,19 +377,9 @@ public class GlassFishConfiguration implements ContainerConfiguration {
         private void verifyResourcesXml(String resourcesXml) {
             File resourcesXmlPath = new File(resourcesXml);
             if (!resourcesXmlPath.exists()) {
-                throw new RuntimeException("The resourcesXml property does not appear to be a valid file path.");
+                throw new IllegalArgumentException(
+                    "The resourcesXml property does not appear to be a valid file path: " + resourcesXmlPath);
             }
-        }
-
-        /**
-         * Converts a file path to a {@link URI} (usually with a <code>file:</code> scheme).
-         *
-         * @param path The filepath to be converted
-         *
-         * @return A URI representing the file path
-         */
-        private URI convertFilePathToURI(String path) {
-            return new File(path).toURI();
         }
     }
 }
@@ -428,7 +411,7 @@ class InstallRootFilter implements FilenameFilter {
  * @author Vineet Reynolds
  */
 class InstanceRootFilter implements FileFilter {
-    
+
     private static final Logger logger = Logger.getLogger(InstanceRootFilter.class.getName());
 
     /**
@@ -458,19 +441,18 @@ class InstanceRootFilter implements FileFilter {
         if (pathname.getName().equals("docroot")) {
             return true;
         }
-        
+
         if (pathname.getName().equals("config") && pathname.isDirectory()) {
             if (ignoreConfigXml) {
                 return true;
-            } else {
-                if (asList(pathname.list()).contains("domain.xml")) {
-                    logger.warning(
-                        "A domain.xml file was found in the instanceRoot. The file specified in the configurationXml property of arquillian.xml might be ignored by embedded GlassFish.");
-                }
-                return true;
             }
+            if (asList(pathname.list()).contains("domain.xml")) {
+                logger.warning(
+                    "A domain.xml file was found in the instanceRoot. The file specified in the configurationXml property of arquillian.xml might be ignored by embedded GlassFish.");
+            }
+            return true;
         }
-        
+
         return false;
     }
 }
