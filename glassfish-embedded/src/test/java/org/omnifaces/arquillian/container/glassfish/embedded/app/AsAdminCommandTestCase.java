@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,16 +55,12 @@
  * limitations under the License.
  */
 
-// Portions Copyright [2021] [OmniFaces and/or its affiliates] 
+// Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish.embedded.app;
 
-import static org.glassfish.embeddable.CommandResult.ExitStatus.SUCCESS;
-import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
-import static org.jboss.shrinkwrap.api.asset.EmptyAsset.INSTANCE;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-
 import jakarta.annotation.Resource;
+
 import javax.naming.InitialContext;
 
 import org.glassfish.embeddable.CommandResult;
@@ -74,6 +70,11 @@ import org.jboss.arquillian.junit.Arquillian;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
+import static org.glassfish.embeddable.CommandResult.ExitStatus.SUCCESS;
+import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * Tests that GlassFish 'asadmin' commands can be executed against an Embedded GlassFish instance using
@@ -88,11 +89,8 @@ public class AsAdminCommandTestCase {
 
     @Deployment
     public static WebArchive createDeployment() throws Exception {
-        return create(WebArchive.class)
-                   .addClasses(
-                       NoInterfaceEJB.class, 
-                       NameProvider.class)
-                   .addAsWebInfResource(INSTANCE, "beans.xml");
+        return create(WebArchive.class).addClasses(NoInterfaceEJB.class, NameProvider.class)
+            .addAsWebInfResource("beans.xml");
     }
 
     @Resource(mappedName = "org.glassfish.embeddable.CommandRunner")
@@ -100,23 +98,23 @@ public class AsAdminCommandTestCase {
 
     @Test
     public void shouldBeAbleToIssueAsAdminCommand() throws Exception {
-//        assertNotNull("Verify that the asadmin CommandRunner resource is available", commandRunner);
-//
-//        CommandResult result = commandRunner.run("create-jdbc-connection-pool", "--datasourceclassname=org.apache.derby.jdbc.EmbeddedXADataSource",
-//                "--restype=javax.sql.XADataSource",
-//                "--property=portNumber=1527:password=APP:user=APP" + ":serverName=localhost:databaseName=my_database" + ":connectionAttributes=create\\=true",
-//                "my_derby_pool");
-//
-//        assertEquals("Verify 'create-jdbc-connection-pool' asadmin command", SUCCESS, result.getExitStatus());
-//
-//        result = commandRunner.run("create-jdbc-resource", "--connectionpoolid", "my_derby_pool", "jdbc/my_database");
-//
-//        assertEquals("Verify 'create-jdbc-resource' asadmin command", SUCCESS, result.getExitStatus());
-//
-//        result = commandRunner.run("ping-connection-pool", "my_derby_pool");
-//
-//        assertEquals("Verify asadmin command 'ping-connection-pool'", SUCCESS, result.getExitStatus());
-//
-//        assertNotNull(new InitialContext().lookup("jdbc/my_database"));
+        assertNotNull("Verify that the asadmin CommandRunner resource is available", commandRunner);
+
+        CommandResult result = commandRunner.run("create-jdbc-connection-pool", "--datasourceclassname=org.apache.derby.jdbc.EmbeddedXADataSource",
+                "--restype=javax.sql.XADataSource",
+                "--property=portNumber=1527:password=APP:user=APP:serverName=localhost:databaseName=my_database:connectionAttributes=create\\=true",
+                "my_derby_pool");
+
+        assertEquals("Verify 'create-jdbc-connection-pool' asadmin command", SUCCESS, result.getExitStatus());
+
+        result = commandRunner.run("create-jdbc-resource", "--connectionpoolid", "my_derby_pool", "jdbc/my_database");
+
+        assertEquals("Verify 'create-jdbc-resource' asadmin command", SUCCESS, result.getExitStatus());
+
+        result = commandRunner.run("ping-connection-pool", "my_derby_pool");
+
+        assertEquals("Verify asadmin command 'ping-connection-pool'", SUCCESS, result.getExitStatus());
+
+        assertNotNull(new InitialContext().lookup("jdbc/my_database"));
     }
 }
