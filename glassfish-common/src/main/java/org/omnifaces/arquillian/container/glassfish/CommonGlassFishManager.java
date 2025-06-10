@@ -54,18 +54,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package org.omnifaces.arquillian.container.glassfish;
 
-import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN_TYPE;
-import static java.util.logging.Level.FINE;
-
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.System.Logger;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Logger;
 
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.file.StreamDataBodyPart;
@@ -80,6 +78,9 @@ import org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClient;
 import org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClientException;
 import org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClientService;
 
+import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN_TYPE;
+import static java.lang.System.Logger.Level.INFO;
+
 /**
  * A class to aid in deployment and undeployment of archives involving a GlassFish container.
  * This class encapsulates the operations involving the GlassFishClient class.
@@ -92,7 +93,7 @@ import org.omnifaces.arquillian.container.glassfish.clientutils.GlassFishClientS
  */
 public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
 
-    private static final Logger log = Logger.getLogger(CommonGlassFishManager.class.getName());
+    private static final Logger LOG = System.getLogger(CommonGlassFishManager.class.getName());
 
     private static final String DELETE_OPERATION = "__deleteoperation";
     private static final Lock deployLock;
@@ -101,12 +102,14 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
     private final C configuration;
     private final GlassFishClient glassFishClient;
     private static final AtomicInteger deploySequence = new AtomicInteger();
+    private final ThreadLocal<String> deploymentNameTL = new ThreadLocal<>();
 
     static {
         prependDeploySequence = Boolean.getBoolean("org.omnifaces.arquillian.prependDeploySequence");
-        deployLock = Boolean.getBoolean("org.omnifaces.arquillian.deployLock") ? new ReentrantLock() : new NoOpLock();
+        boolean lockDeployment = Boolean.getBoolean("org.omnifaces.arquillian.deployLock");
+        deployLock = lockDeployment ? new ReentrantLock() : new NoOpLock();
         if (deployLock instanceof ReentrantLock) {
-            log.info("Serializing Deployments and Undeployments (org.omnifaces.arquillian.deployLock)");
+            LOG.log(INFO, "Serializing Deployments and Undeployments (org.omnifaces.arquillian.deployLock)");
         }
     }
 
@@ -121,8 +124,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         try {
             glassFishClient.startUp();
         } catch (GlassFishClientException e) {
-            log.severe(e.getMessage());
-            throw new LifecycleException(e.getMessage());
+            throw new LifecycleException(e.getMessage(), e);
         }
     }
 
@@ -132,16 +134,14 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         }
 
         final String archiveName = archive.getName();
-        final String deploymentName = createDeploymentName(prependDeploySequence ?
-                String.format("r%d-%s", deploySequence.incrementAndGet(), archiveName) : archiveName);
-
-        log.log(FINE, "Deploying {0}", new Object[] { deploymentName });
-
-        final ProtocolMetaData protocolMetaData = new ProtocolMetaData();
+        final String deploymentName = createDeploymentName(archiveName);
+        deploymentNameTL.set(deploymentName);
+        LOG.log(INFO, "Deploying {0} as {1}", archiveName, deploymentName);
 
         try (InputStream deployment = archive.as(ZipExporter.class).exportAsInputStream()) {
             // Build up the POST form to send to GlassFish
             final FormDataMultiPart form = new FormDataMultiPart();
+            form.field("name", deploymentName);
             form.bodyPart(new StreamDataBodyPart("id", deployment, archiveName));
 
             addDeployFormFields(deploymentName, form);
@@ -150,25 +150,26 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             HTTPContext httpContext;
             deployLock.lock();
             try {
-                httpContext = glassFishClient.doDeploy(createDeploymentName(archiveName), form);
+                httpContext = glassFishClient.doDeploy(deploymentName, form);
             } finally {
                 deployLock.unlock();
             }
+            final ProtocolMetaData protocolMetaData = new ProtocolMetaData();
             protocolMetaData.addContext(httpContext);
+            return protocolMetaData;
         } catch (GlassFishClientException | IOException | ContainerException e) {
-            throw new DeploymentException("Could not deploy " + archiveName, e);
+            throw new DeploymentException("Could not deploy " + archiveName + " as " + deploymentName, e);
         }
-
-        return protocolMetaData;
     }
 
     public void undeploy(Archive<?> archive) throws DeploymentException {
-
         if (archive == null) {
             throw new IllegalArgumentException("archive must not be null");
         }
 
-        String deploymentName = createDeploymentName(archive.getName());
+        String deploymentName = deploymentNameTL.get();
+        deploymentNameTL.remove();
+        LOG.log(INFO, "Undeploying {0}", deploymentName);
 
         try {
             // Build up the POST form to send to GlassFish
@@ -200,7 +201,9 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         if (correctedName.contains(".")) {
             correctedName = correctedName.substring(0, correctedName.lastIndexOf("."));
         }
-
+        if (prependDeploySequence) {
+            return String.format("r%d-%s", deploySequence.incrementAndGet(), correctedName);
+        }
         return correctedName;
     }
 
