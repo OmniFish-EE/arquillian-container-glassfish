@@ -61,6 +61,8 @@ package org.omnifaces.arquillian.container.glassfish;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.System.Logger;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -102,7 +104,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
     private final C configuration;
     private final GlassFishClient glassFishClient;
     private static final AtomicInteger deploySequence = new AtomicInteger();
-    private final ThreadLocal<String> deploymentNameTL = new ThreadLocal<>();
+    private final ThreadLocal<Map<String, String>> deploymentNameTL = ThreadLocal.withInitial(HashMap::new);
 
     static {
         prependDeploySequence = Boolean.getBoolean("org.omnifaces.arquillian.prependDeploySequence");
@@ -132,12 +134,9 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         if (archive == null) {
             throw new IllegalArgumentException("archive must not be null");
         }
-
         final String archiveName = archive.getName();
-        final String deploymentName = createDeploymentName(archiveName);
-        deploymentNameTL.set(deploymentName);
+        final String deploymentName = rememberArchive(archive);
         LOG.log(INFO, "Deploying {0} as {1}", archiveName, deploymentName);
-
         try (InputStream deployment = archive.as(ZipExporter.class).exportAsInputStream()) {
             // Build up the POST form to send to GlassFish
             final FormDataMultiPart form = new FormDataMultiPart();
@@ -167,8 +166,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             throw new IllegalArgumentException("archive must not be null");
         }
 
-        String deploymentName = deploymentNameTL.get();
-        deploymentNameTL.remove();
+        String deploymentName = forgetArchive(archive);
         LOG.log(INFO, "Undeploying {0}", deploymentName);
 
         try {
@@ -190,21 +188,6 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
 
     public boolean isDASRunning() {
         return glassFishClient.isDASRunning();
-    }
-
-    private String createDeploymentName(String archiveName) {
-        String correctedName = archiveName;
-        if (correctedName.startsWith("/")) {
-            correctedName = correctedName.substring(1);
-        }
-
-        if (correctedName.contains(".")) {
-            correctedName = correctedName.substring(0, correctedName.lastIndexOf("."));
-        }
-        if (prependDeploySequence) {
-            return String.format("r%d-%s", deploySequence.incrementAndGet(), correctedName);
-        }
-        return correctedName;
     }
 
     private void addDeployFormFields(String name, FormDataMultiPart deployform) {
@@ -233,5 +216,35 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         if (configuration.getType() != null && "osgi".equals(configuration.getType())) {
             deployform.field("type", configuration.getType(), TEXT_PLAIN_TYPE);
         }
+    }
+
+
+    private String rememberArchive(final Archive<?> archive) {
+        final String deploymentName = createDeploymentName(archive.getName());
+        deploymentNameTL.get().put(archive.getId(), deploymentName);
+        return deploymentName;
+    }
+
+    private String forgetArchive(final Archive<?> archive) {
+        final Map<String, String> map = deploymentNameTL.get();
+        final String deploymentName = map.remove(archive.getId());
+        if (map.isEmpty()) {
+            deploymentNameTL.remove();
+        }
+        return deploymentName;
+    }
+
+    private String createDeploymentName(String archiveName) {
+        String correctedName = archiveName;
+        if (correctedName.startsWith("/")) {
+            correctedName = correctedName.substring(1);
+        }
+        if (correctedName.contains(".")) {
+            correctedName = correctedName.substring(0, correctedName.lastIndexOf("."));
+        }
+        if (prependDeploySequence) {
+            return String.format("r%d-%s", deploySequence.incrementAndGet(), correctedName);
+        }
+        return correctedName;
     }
 }
