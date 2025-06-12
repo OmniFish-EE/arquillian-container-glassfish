@@ -3,7 +3,7 @@ name: Build on Windows
 
 on:
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 jobs:
   build:
