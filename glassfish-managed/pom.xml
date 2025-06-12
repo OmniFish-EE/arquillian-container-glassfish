@@ -74,9 +74,8 @@
 
     <name>Arquillian Container GlassFish Managed</name>
     <description>
-        Payara Managed Container integration for the Arquillian Project.
-        Based on the JBoss GlassFish Managed Container.
-        Based on the Payara Payara Embedded Container.
+        The Arquillian connector for Eclipse GlassFish.
+        This lets Arquillian start and stop GlassFish, and deploy and undeploy war files to it.
     </description>
 
     <dependencies>
@@ -84,6 +83,12 @@
             <groupId>org.omnifaces.arquillian</groupId>
             <artifactId>glassfish-container-common</artifactId>
             <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
@@ -118,12 +123,6 @@
         <dependency>
             <groupId>org.jboss.arquillian.testenricher</groupId>
             <artifactId>arquillian-testenricher-initialcontext</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>jakarta.platform</groupId>
-            <artifactId>jakarta.jakartaee-api</artifactId>
-            <optional>true</optional>
         </dependency>
 
         <dependency>
