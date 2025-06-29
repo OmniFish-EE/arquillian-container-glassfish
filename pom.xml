@@ -62,7 +62,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.omnifaces.arquillian</groupId>
+    <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>parent-glassfish-containers</artifactId>
     <version>2.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -465,90 +465,90 @@
                                     <!-- Jakarta EE -->
                                     <relocation>
                                         <pattern>jakarta.validation</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.validation</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.validation</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.annotation</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.annotation</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.annotation</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.ws</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.ws</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.ws</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.inject</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.inject</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.inject</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.json</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.jakarta.json</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jakarta.json</shadedPattern>
                                     </relocation>
 
                                     <relocation>
                                         <pattern>jakarta.xml.bind</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.jakarta.xml.bind</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jakarta.xml.bind</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <!-- 1st package in com.sun.activation:jakarta.activation -->
                                         <pattern>jakarta.activation</pattern>
                                         <pattern>com.sun.activation.registries</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.jakarta.activation</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jakarta.activation</shadedPattern>
                                     </relocation>
                                     <!-- 2nd package in com.sun.activation:jakarta.activation -->
                                     <relocation>
                                         <pattern>com.sun.activation.registries</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.com.sun.activation.registries</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.com.sun.activation.registries</shadedPattern>
                                     </relocation>
 
 
 
                                     <relocation>
                                         <pattern>javax.xml.bind</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.javax.xml.bind</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.javax.xml.bind</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>javax.activation</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.javax.activation</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.javax.activation</shadedPattern>
                                     </relocation>
 
                                     <!-- GlassFish -->
                                     <relocation>
                                         <pattern>org.glassfish.hk2</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.hk2</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.hk2</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>org.glassfish.jersey</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.jersey</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jersey</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>org.glassfish.json</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.json</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.json</shadedPattern>
                                     </relocation>
 
                                     <!-- Other -->
                                     <relocation>
                                         <pattern>javassist</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.javassist</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.javassist</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>com.fasterxml</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.faster</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.faster</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jersey.repackaged</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.jersey.repackaged</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jersey.repackaged</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>com.sun.research</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.research</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.research</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>org.jvnet</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.jvnet</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jvnet</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>org.aopalliance</pattern>
-                                        <shadedPattern>org.omnifaces.arquillian.aopalliance</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.aopalliance</shadedPattern>
                                     </relocation>
                                 </relocations>
                             </configuration>

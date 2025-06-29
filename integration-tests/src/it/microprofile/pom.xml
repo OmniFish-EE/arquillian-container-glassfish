@@ -44,12 +44,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.omnifaces.arquillian</groupId>
+        <groupId>ee.omnifish.arquillian</groupId>
         <artifactId>parent-glassfish-containers</artifactId>
         <version>@project.version@</version>
     </parent>
 
-    <groupId>org.omnifaces.arquillian.test</groupId>
+    <groupId>ee.omnifish.arquillian.test</groupId>
     <artifactId>microprofile-test</artifactId>
     <packaging>war</packaging>
 
@@ -137,7 +137,7 @@
             <id>glassfish-server-embedded</id>
             <dependencies>
                 <dependency>
-                    <groupId>org.omnifaces.arquillian</groupId>
+                    <groupId>ee.omnifish.arquillian</groupId>
                     <artifactId>arquillian-glassfish-server-embedded</artifactId>
                     <version>${container.version}</version>
                     <scope>test</scope>
@@ -175,7 +175,7 @@
             <id>glassfish-server-managed</id>
             <dependencies>
                 <dependency>
-                    <groupId>org.omnifaces.arquillian</groupId>
+                    <groupId>ee.omnifish.arquillian</groupId>
                     <artifactId>arquillian-glassfish-server-managed</artifactId>
                     <version>${container.version}</version>
                     <scope>test</scope>
