@@ -161,6 +161,9 @@
                     <execution>
                         <id>setup-glassfish</id>
                         <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
                         <configuration>
                             <artifactItems>
                                 <artifactItem>
@@ -172,9 +175,6 @@
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
-                        <goals>
-                            <goal>unpack</goal>
-                        </goals>
                     </execution>
                 </executions>
             </plugin>
