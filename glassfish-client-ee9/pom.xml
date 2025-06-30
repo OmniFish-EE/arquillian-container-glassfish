@@ -2,7 +2,7 @@
 <!--
 
   Copyright (c) [2021] Payara Foundation and/or its affiliates. All rights reserved.
- 
+
   The contents of this file are subject to the terms of either the GNU
   General Public License Version 2 only ("GPL") or the Common Development
   and Distribution License("CDDL") (collectively, the "License").  You
@@ -11,20 +11,20 @@
   https://github.com/payara/Payara/blob/master/LICENSE.txt
   See the License for the specific
   language governing permissions and limitations under the License.
- 
+
   When distributing the software, include this License Header Notice in each
   file and include the License file at glassfish/legal/LICENSE.txt.
- 
+
   GPL Classpath Exception:
   The Payara Foundation designates this particular file as subject to the "Classpath"
   exception as provided by the Payara Foundation in the GPL Version 2 section of the License
   file that accompanied this code.
- 
+
   Modifications:
   If applicable, add the following below the License Header, with the fields
   enclosed by brackets [] replaced by your own identifying information:
   "Portions Copyright [year] [name of copyright owner]"
- 
+
   Contributor(s):
   If you wish your version of this file to be governed by only the CDDL or
   only the GPL Version 2, indicate your decision by adding "[Contributor]
@@ -36,8 +36,8 @@
   and therefore, elected the GPL Version 2 license, then the option applies
   only if the new code is made subject to such option by the copyright
   holder.
- 
- 
+
+
 -->
 <!-- Portions Copyright [2023, 2023] [OmniFish and/or its affiliates] -->
 <!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
@@ -54,9 +54,9 @@
         Based on the JBoss GlassFish container integrations.
         Based on the Payara Payara container integrations.
     </description>
-    
+
     <url>https://github.com/omnifaces</url>
-    
+
     <licenses>
         <license>
             <name>CDDL + GPLv2 with classpath exception</name>
@@ -84,6 +84,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <version.jersey>3.0.10</version.jersey>
+        <deployAtEnd>true</deployAtEnd>
     </properties>
 
     <dependencies>
@@ -168,23 +169,9 @@
                     </execution>
                 </executions>
             </plugin>
-            
-            <!-- Configure snapshot deployment to Sonatype. -->
-            <plugin>
-                <groupId>org.sonatype.plugins</groupId>
-                <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>1.7.0</version>
-                <extensions>true</extensions>
-                <configuration>
-                    <serverId>ossrh</serverId>
-                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
-                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 
-    <!-- Release deploy: mvn clean deploy -P release -->
     <profiles>
         <profile>
             <id>release</id>
@@ -192,9 +179,8 @@
                 <plugins>
                     <!-- Signing with GPG is a requirement for a release deployment to Maven central. -->
                     <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.4</version>
+                        <version>3.2.7</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
