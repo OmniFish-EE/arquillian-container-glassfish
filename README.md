@@ -15,7 +15,7 @@ Then forked from:
 
 ```xml
  <dependency>
-    <groupId>org.omnifaces.arquillian</groupId>
+    <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>arquillian-glassfish-server-managed</artifactId>
     <version>2.0</version>
  </dependency>
