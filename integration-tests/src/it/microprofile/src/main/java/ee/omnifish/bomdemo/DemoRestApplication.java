@@ -38,6 +38,7 @@
  *    holder.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package ee.omnifish.bomdemo;
 
 import jakarta.enterprise.context.ApplicationScoped;

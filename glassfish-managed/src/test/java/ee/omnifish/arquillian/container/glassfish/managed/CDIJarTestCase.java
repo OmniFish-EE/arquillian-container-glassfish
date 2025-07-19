@@ -61,14 +61,15 @@ package ee.omnifish.arquillian.container.glassfish.managed;
 import jakarta.inject.Inject;
 
 import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-@RunWith(Arquillian.class)
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+@ExtendWith(ArquillianExtension.class)
 public class CDIJarTestCase {
 
     @Inject
@@ -82,7 +83,7 @@ public class CDIJarTestCase {
 
     @Test
     public void test() {
-        Assert.assertNotNull(foo);
+        assertNotNull(foo);
     }
 }
 

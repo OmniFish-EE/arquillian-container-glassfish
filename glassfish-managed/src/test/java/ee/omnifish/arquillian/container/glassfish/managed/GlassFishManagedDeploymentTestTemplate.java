@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2011, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,16 +55,18 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.managed;
 
-import org.jboss.arquillian.test.api.ArquillianResource;
-import org.junit.Test;
-
 import jakarta.servlet.annotation.WebServlet;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.net.URLConnection;
+
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsEqual.equalTo;

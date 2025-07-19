@@ -65,8 +65,9 @@
 
     <parent>
         <groupId>ee.omnifish.arquillian</groupId>
-        <artifactId>parent-glassfish-containers</artifactId>
+        <artifactId>glassfish-containers-dependencies</artifactId>
         <version>2.0.0-SNAPSHOT</version>
+        <relativePath>../dependencies</relativePath>
     </parent>
 
     <artifactId>arquillian-glassfish-server-embedded</artifactId>
@@ -101,48 +102,56 @@
         <dependency>
             <groupId>org.jboss.arquillian.container</groupId>
             <artifactId>arquillian-container-spi</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jboss.arquillian.container</groupId>
-            <artifactId>arquillian-container-test-spi</artifactId>
+            <scope>compile</scope>
         </dependency>
 
         <dependency>
             <groupId>org.jboss.arquillian.protocol</groupId>
             <artifactId>arquillian-protocol-servlet-jakarta</artifactId>
+            <scope>runtime</scope>
         </dependency>
-
         <dependency>
             <groupId>org.jboss.arquillian.testenricher</groupId>
             <artifactId>arquillian-testenricher-cdi-jakarta</artifactId>
+            <scope>runtime</scope>
         </dependency>
-
         <dependency>
             <groupId>org.jboss.arquillian.testenricher</groupId>
             <artifactId>arquillian-testenricher-ejb-jakarta</artifactId>
+            <scope>runtime</scope>
         </dependency>
-
-        <dependency>
-            <groupId>org.jboss.arquillian.testenricher</groupId>
-            <artifactId>arquillian-testenricher-resource-jakarta</artifactId>
-        </dependency>
-
         <dependency>
             <groupId>org.jboss.arquillian.testenricher</groupId>
             <artifactId>arquillian-testenricher-initialcontext</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.testenricher</groupId>
+            <artifactId>arquillian-testenricher-resource-jakarta</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
-            <groupId>org.jboss.arquillian.junit</groupId>
-            <artifactId>arquillian-junit-container</artifactId>
-            <scope>test</scope>
+            <groupId>org.jboss.shrinkwrap</groupId>
+            <artifactId>shrinkwrap-impl-base</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.test</groupId>
+            <artifactId>arquillian-test-impl-base</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.core</groupId>
+            <artifactId>arquillian-core-impl-base</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
         </dependency>
     </dependencies>
 

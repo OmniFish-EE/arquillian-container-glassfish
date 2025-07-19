@@ -59,24 +59,24 @@
 package ee.omnifish.arquillian.container.glassfish.embedded.app;
 
 
-import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
-import static org.jboss.shrinkwrap.api.asset.EmptyAsset.INSTANCE;
-
 import jakarta.ejb.EJB;
 
 import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  *
  * @author <a href="mailto:aslak@redhat.com">Aslak Knutsen</a>
  * @version $Revision: $
  */
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
 public class IntegrationWarTestCase {
 
     @Deployment
@@ -91,7 +91,7 @@ public class IntegrationWarTestCase {
 
     @Test
     public void shouldBeAbleToInjectEJBAsInstanceVariable() throws Exception {
-        Assert.assertNotNull("Verify that the Bean has been injected", bean);
-        Assert.assertEquals("Arquillian", bean.getName());
+        assertNotNull(bean, "bean injected");
+        assertEquals("Arquillian", bean.getName());
     }
 }

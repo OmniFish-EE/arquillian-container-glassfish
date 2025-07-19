@@ -61,16 +61,16 @@ package ee.omnifish.arquillian.container.glassfish.embedded.app;
 import jakarta.ejb.EJB;
 
 import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.junit.Arquillian;
+import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.shrinkwrap.api.spec.EnterpriseArchive;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * JBossEmbeddedIntegrationTestCase
@@ -78,7 +78,7 @@ import static org.junit.Assert.assertNotNull;
  * @author <a href="mailto:aslak@redhat.com">Aslak Knutsen</a>
  * @version $Revision: $
  */
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
 public class IntegrationEarTestCase {
 
     @Deployment
@@ -101,8 +101,7 @@ public class IntegrationEarTestCase {
 
     @Test
     public void shouldBeAbleToInjectEJBAsInstanceVariable() throws Exception {
-        assertNotNull("Verify that the Bean has been injected", bean);
-
+        assertNotNull(bean, "bean injected");
         assertEquals("Arquillian", bean.getName());
     }
 }

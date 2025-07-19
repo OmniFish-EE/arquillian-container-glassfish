@@ -38,20 +38,21 @@
  *    holder.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.managed;
 
 import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.shrinkwrap.descriptor.api.application6.ApplicationDescriptor;
+import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
 import org.jboss.shrinkwrap.api.asset.StringAsset;
 import org.jboss.shrinkwrap.api.spec.EnterpriseArchive;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptors;
-import org.junit.runner.RunWith;
+import org.jboss.shrinkwrap.descriptor.api.application6.ApplicationDescriptor;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
 public class GlassFishEarWithNameTest extends GlassFishManagedDeploymentTestTemplate {
 
     @Deployment(testable = false)

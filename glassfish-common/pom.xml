@@ -67,8 +67,9 @@
 
     <parent>
         <groupId>ee.omnifish.arquillian</groupId>
-        <artifactId>parent-glassfish-containers</artifactId>
+        <artifactId>glassfish-containers-dependencies</artifactId>
         <version>2.0.0-SNAPSHOT</version>
+        <relativePath>../dependencies</relativePath>
     </parent>
 
     <artifactId>glassfish-container-common</artifactId>
@@ -80,7 +81,6 @@
             <groupId>org.jboss.arquillian.container</groupId>
             <artifactId>arquillian-container-spi</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.jboss.arquillian.container</groupId>
             <artifactId>arquillian-container-test-spi</artifactId>
@@ -91,52 +91,54 @@
             <artifactId>jersey-client</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.inject</groupId>
             <artifactId>jersey-hk2</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
             <artifactId>jersey-common</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
             <artifactId>jersey-server</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-sse</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-multipart</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-jaxb</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-json-processing</artifactId>
             <optional>true</optional>
         </dependency>
-
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-json-jackson</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.parsson</groupId>
+            <artifactId>parsson-media</artifactId>
             <optional>true</optional>
         </dependency>
 
@@ -147,9 +149,12 @@
         </dependency>
 
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.main</groupId>
+            <artifactId>glassfish-jul-extension</artifactId>
         </dependency>
     </dependencies>
 

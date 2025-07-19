@@ -38,7 +38,7 @@
  *
  * This file incorporates work covered by the following copyright and
  * permission notice:
- * 
+ *
  * JBoss, Home of Professional Open Source
  * Copyright 2010, Red Hat Middleware LLC, and individual contributors
  * by the @authors tag. See the copyright.txt in the distribution for a
@@ -55,20 +55,23 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.embedded.app;
-
-import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.spec.WebArchive;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.URI;
 import java.net.URL;
+
+import org.jboss.arquillian.container.test.api.Deployment;
+import org.jboss.arquillian.junit5.ArquillianExtension;
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.spec.WebArchive;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * GlassFishEmbeddedContainerTestCase
@@ -76,9 +79,9 @@ import java.net.URL;
  * @author <a href="mailto:aslak@redhat.com">Aslak Knutsen</a>
  * @version $Revision: $
  */
-@RunWith(Arquillian.class)
+@ExtendWith(ArquillianExtension.class)
 public class ResourceXmlClientTestCase {
-    
+
     /**
      * Deployment for the test
      */
@@ -89,9 +92,9 @@ public class ResourceXmlClientTestCase {
 
     @Test
     public void shouldBeAbleToDeployWebArchive(@ArquillianResource(MyServlet.class) URL baseURL) throws Exception {
-        String body = readAllAndClose(new URL(baseURL, "Test").openStream());
+        String body = readAllAndClose(URI.create(baseURL + "Test").toURL().openStream());
 
-        Assert.assertEquals("Verify that the servlet was deployed and returns expected result", MyServlet.MESSAGE, body);
+        assertEquals(MyServlet.MESSAGE, body, "application response body");
     }
 
     private String readAllAndClose(InputStream is) throws Exception {
@@ -100,7 +103,7 @@ public class ResourceXmlClientTestCase {
             while ((read = is.read()) != -1) {
                 out.write(read);
             }
-            
+
             return out.toString();
         }
     }

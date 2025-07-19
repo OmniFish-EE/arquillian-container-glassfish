@@ -62,9 +62,10 @@ import java.io.File;
 import java.net.URISyntaxException;
 import java.nio.file.FileSystems;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class GlassFishConfigurationTest {
 
@@ -78,11 +79,11 @@ public class GlassFishConfigurationTest {
         config.validate();
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testInstallRootWithoutDirectories() throws Exception {
         GlassFishConfiguration config = new GlassFishConfiguration();
         config.setInstallRoot(toAbsoluteFilePath("gfconfigs"));
-        config.validate();
+        assertThrows(IllegalArgumentException.class, config::validate);
     }
 
     @Test
@@ -92,11 +93,11 @@ public class GlassFishConfigurationTest {
         config.validate();
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testInstanceRootWithoutDirectories() throws Exception {
         GlassFishConfiguration config = new GlassFishConfiguration();
         config.setInstanceRoot(toAbsoluteFilePath("gfconfigs/emptydir"));
-        config.validate();
+        assertThrows(IllegalArgumentException.class, config::validate);
     }
 
     @Test
@@ -115,11 +116,11 @@ public class GlassFishConfigurationTest {
         assertFalse(config.getConfigurationXml().startsWith("file:"));
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testInvalidConfigXmlPath() throws Exception {
         GlassFishConfiguration config = new GlassFishConfiguration();
         config.setConfigurationXml(ABSOLUTE_PATH_NONEXISTING);
-        config.validate();
+        assertThrows(IllegalArgumentException.class, config::validate);
     }
 
     @Test
@@ -139,11 +140,11 @@ public class GlassFishConfigurationTest {
         config.validate();
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testInvalidResourcesXmlPath() throws Exception {
         GlassFishConfiguration config = new GlassFishConfiguration();
         config.setResourcesXml(ABSOLUTE_PATH_NONEXISTING);
-        config.validate();
+        assertThrows(IllegalArgumentException.class, config::validate);
     }
 
     private static String toAbsoluteFilePath(String resourcePath) throws URISyntaxException {

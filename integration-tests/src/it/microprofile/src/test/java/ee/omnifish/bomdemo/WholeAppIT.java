@@ -38,39 +38,33 @@
  *    holder.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package ee.omnifish.bomdemo;
 
-import org.jboss.arquillian.container.test.api.Deployment;
-import org.jboss.arquillian.container.test.api.RunAsClient;
-import org.jboss.arquillian.junit.Arquillian;
-import org.jboss.arquillian.test.api.ArquillianResource;
-import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.spec.WebArchive;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-import jakarta.json.JsonObject;
-import jakarta.json.JsonValue;
-import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
-import jakarta.ws.rs.client.WebTarget;
-import jakarta.ws.rs.core.MediaType;
+
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import org.jboss.arquillian.container.test.api.Deployment;
+import org.jboss.arquillian.junit5.ArquillianExtension;
+import org.jboss.arquillian.test.api.ArquillianResource;
+import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.spec.WebArchive;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
-@RunWith(Arquillian.class)
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+@ExtendWith(ArquillianExtension.class)
 public class WholeAppIT {
-    
+
     @ArquillianResource
     URI baseUrl;
-    
+
     @Deployment
     public static WebArchive deployWholeApp() throws IOException {
         Path packageResult = Files.list(Paths.get("target"))
@@ -84,5 +78,5 @@ public class WholeAppIT {
         String greeting = ClientBuilder.newClient().target(baseUrl).path("data/hello").request().get(String.class);
         assertEquals("Hello World", greeting);
     }
-    
+
 }
