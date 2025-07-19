@@ -39,52 +39,28 @@
 
 
 -->
-<!-- Portions Copyright [2023, 2023] [OmniFish and/or its affiliates] -->
+<!-- Portions Copyright [2023, 2025] [OmniFish and/or its affiliates] -->
 <!-- Portions Copyright [2021, 2022] [OmniFaces and/or its affiliates] -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>ee.omnifish.arquillian</groupId>
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
     <artifactId>glassfish-client-ee11</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
 
     <name>GlassFish client libs for Jakarta EE 11</name>
     <description>
-        GlassFish Container integrations for the Arquillian Project.
-        Based on the JBoss GlassFish container integrations.
-        Based on the Payara Payara container integrations.
+        These provide dependencies on implementations of e.g. the REST client, that lets tests do REST requests.
     </description>
-    <url>https://github.com/OmniFish-EE</url>
-    <licenses>
-        <license>
-            <name>CDDL + GPLv2 with classpath exception</name>
-            <url>http://glassfish.java.net/nonav/public/CDDL+GPL.html</url>
-            <distribution>repo</distribution>
-            <comments>A business-friendly OSS license</comments>
-        </license>
-    </licenses>
-
-    <developers>
-        <developer>
-            <name>OmniFish Team</name>
-            <organization>OmniFish</organization>
-            <organizationUrl>https://omnifish.ee</organizationUrl>
-        </developer>
-    </developers>
-
-    <scm>
-        <connection>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</connection>
-        <url>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</url>
-        <developerConnection>scm:git:git@github.com:OmniFish-EE/arquillian-container-glassfish.git</developerConnection>
-        <tag>${project.version}</tag>
-    </scm>
 
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <version.jersey>4.0.0-M2</version.jersey>
-        <deployAtEnd>true</deployAtEnd>
     </properties>
 
     <dependencies>
@@ -166,52 +142,4 @@
             <version>${version.jersey}</version>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <id>enforce-maven</id>
-                        <goals>
-                            <goal>enforce</goal>
-                        </goals>
-                        <configuration>
-                            <rules>
-                                <requireMavenVersion>
-                                    <version>3.8.7</version>
-                                </requireMavenVersion>
-                            </rules>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-
-    <profiles>
-        <profile>
-            <id>release</id>
-            <build>
-                <plugins>
-                    <!-- Signing with GPG is a requirement for a release deployment to Maven central. -->
-                    <plugin>
-                        <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.7</version>
-                        <executions>
-                            <execution>
-                                <id>sign-artifacts</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 </project>

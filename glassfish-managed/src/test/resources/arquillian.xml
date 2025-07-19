@@ -10,7 +10,7 @@
   </engine>
   -->
 
-  <container qualifier="payara" default="true">
+  <container qualifier="glassfish" default="true">
     <configuration>
       <property name="glassFishHome">target/${glassfish.home}</property>
       <property name="adminHost">localhost</property>
@@ -20,7 +20,7 @@
     </configuration>
   </container>
 
-  <container qualifier="payara-auth">
+  <container qualifier="glassfish-auth">
     <configuration>
       <property name="glassFishHome">target/${glassfish.home}</property>
       <property name="adminHost">localhost</property>
