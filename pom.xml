@@ -134,7 +134,6 @@
         <module>glassfish-managed</module>
         <module>glassfish-remote</module>
         <module>glassfish-embedded</module>
-        <module>glassfish-client-ee9</module>
         <module>glassfish-client-ee10</module>
         <module>glassfish-client-ee11</module>
         <module>environment-setup</module>
