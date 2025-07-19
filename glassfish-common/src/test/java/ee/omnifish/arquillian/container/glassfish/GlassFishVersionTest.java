@@ -36,13 +36,14 @@
  * holder.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import org.junit.jupiter.api.Test;
 
-import org.junit.Test;
-import ee.omnifish.arquillian.container.glassfish.GlassFishVersion;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class GlassFishVersionTest {
 
@@ -53,58 +54,59 @@ public class GlassFishVersionTest {
     public void moreRecentVersionTest() {
         v1 = new GlassFishVersion("4.1.2.174");
         v2 = new GlassFishVersion("4.1.2.181");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
 
         v1 = new GlassFishVersion("4.1.2.181");
         v2 = new GlassFishVersion("4.1.3.181");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
 
         v1 = new GlassFishVersion("4.1.2.181");
         v2 = new GlassFishVersion("4.2.2.181");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
 
         v1 = new GlassFishVersion("4.1.2.174");
         v2 = new GlassFishVersion("4.1.2.181-SNAPSHOT");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
 
         v1 = new GlassFishVersion("4.1.2.181-SNAPSHOT");
         v2 = new GlassFishVersion("4.1.2.181");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
 
         v1 = new GlassFishVersion("5.Beta2");
         v2 = new GlassFishVersion("5.181-SNAPSHOT");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
 
         v1 = new GlassFishVersion("5.181-SNAPSHOT");
         v2 = new GlassFishVersion("5.181");
-        assertTrue("The version check failed.", v2.isMoreRecentThan(v1));
+        assertTrue(v2.isMoreRecentThan(v1), "The version check failed.");
     }
-    
+
     @Test
     public void testVersionBuilderFromProperties() {
-    
+
         GlassFishVersion testVersion = GlassFishVersion.buildVersionFromBrandingProperties("5", "192", "", "", "");
         assertEquals("5.192", testVersion.toString());
-        
+
         testVersion = GlassFishVersion.buildVersionFromBrandingProperties("5", "192", "3", "", "");
         assertEquals("5.192.3", testVersion.toString());
-        
+
         testVersion = GlassFishVersion.buildVersionFromBrandingProperties("4", "1", "2", null, null);
         assertEquals("4.1.2", testVersion.toString());
-        
+
         testVersion = GlassFishVersion.buildVersionFromBrandingProperties("4", "1", "2", "191", "");
         assertEquals("4.1.2.191", testVersion.toString());
-        
+
         testVersion = GlassFishVersion.buildVersionFromBrandingProperties("4", "1", "2", "191", "7");
         assertEquals("4.1.2.191.7", testVersion.toString());
-        
+
         testVersion = GlassFishVersion.buildVersionFromBrandingProperties("4", "1", null, "191", "7");
         assertEquals("4.1", testVersion.toString());
-    
+
     }
-    
-    @Test(expected = IllegalArgumentException.class)
+
+    @Test
     public void whenMajorValueIsNull_thanExpectIllegalArgument() {
-        GlassFishVersion testVersion = GlassFishVersion.buildVersionFromBrandingProperties(null, "192", "", "", "");
+        assertThrows(IllegalArgumentException.class,
+            () -> GlassFishVersion.buildVersionFromBrandingProperties(null, "192", "", "", ""));
     }
 }

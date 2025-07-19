@@ -40,52 +40,47 @@
   -->
 
 <!-- Portions Copyright [2021] [OmniFaces and/or its affiliates] -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
         <groupId>ee.omnifish.arquillian</groupId>
-        <artifactId>parent-glassfish-containers</artifactId>
+        <artifactId>glassfish-containers-main</artifactId>
         <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
     </parent>
 
     <groupId>ee.omnifish.arquillian.test</groupId>
     <artifactId>microprofile-test</artifactId>
     <packaging>war</packaging>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.jboss.arquillian</groupId>
-                <artifactId>arquillian-bom</artifactId>
-                <version>@arquillian.version@</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <name>Integration Test: REST</name>
 
     <dependencies>
         <dependency>
             <groupId>jakarta.platform</groupId>
             <artifactId>jakarta.jakartaee-api</artifactId>
-            <version>10.0.0</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.13.1</version>
-            <scope>test</scope>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
         </dependency>
-
         <dependency>
-            <groupId>org.jboss.arquillian.junit</groupId>
-            <artifactId>arquillian-junit-container</artifactId>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.shrinkwrap</groupId>
+            <artifactId>shrinkwrap-api</artifactId>
             <scope>test</scope>
         </dependency>
-
+        <dependency>
+            <groupId>org.glassfish.main</groupId>
+            <artifactId>glassfish-jul-extension</artifactId>
+        </dependency>
     </dependencies>
 
     <properties>
@@ -97,19 +92,9 @@
     </properties>
 
     <build>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <artifactId>maven-war-plugin</artifactId>
-                    <version>3.4.0</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
         <plugins>
-            <!-- Run integration tests -->
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.5.3</version>
                 <executions>
                     <execution>
                         <goals>
@@ -124,10 +109,12 @@
             </plugin>
             <plugin>
                 <artifactId>maven-deploy-plugin</artifactId>
-                <version>3.1.4</version>
-                <configuration>
-                    <skip>true</skip>
-                </configuration>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
@@ -162,8 +149,7 @@
                                 --add-opens=java.rmi/sun.rmi.transport=ALL-UNNAMED
                                 --add-opens=java.naming/javax.naming.spi=ALL-UNNAMED
                             </argLine>
-                            <!-- don't mix compile-time apis and bundled
-                                server apis -->
+                            <!-- don't mix compile-time apis and bundled server apis -->
                             <classpathDependencyScopeExclude>compile</classpathDependencyScopeExclude>
                         </configuration>
                     </plugin>
@@ -226,7 +212,5 @@
                 </plugins>
             </build>
         </profile>
-
     </profiles>
-
 </project>
