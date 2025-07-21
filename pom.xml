@@ -429,8 +429,8 @@
         <profile>
             <id>glassfish8</id>
             <properties>
-                <version.glassfish>8.0.0</version.glassfish>
-                <version.gjule>8.0.1</version.gjule>
+                <version.glassfish>8.0.5</version.glassfish>
+                <version.gjule>8.0.5</version.gjule>
                 <version.jakartaee>11</version.jakartaee>
                 <glassfish.home>glassfish8</glassfish.home>
             </properties>
