@@ -479,7 +479,7 @@
                     <version>0.8.0</version>
                     <extensions>true</extensions>
                     <configuration>
-                        <deploymentName>${project.name} - ${project.version}</deploymentName>
+                        <deploymentName>GlassFish Containers ${project.version}</deploymentName>
                         <publishingServerId>central</publishingServerId>
                     </configuration>
                 </plugin>
