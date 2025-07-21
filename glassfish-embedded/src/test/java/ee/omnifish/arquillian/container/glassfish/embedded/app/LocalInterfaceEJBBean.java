@@ -65,8 +65,7 @@ import jakarta.ejb.Stateless;
  * @author <a href="mailto:aslak@redhat.com">Aslak Knutsen</a>
  * @version $Revision: $
  */
-// FIXME: The name is required - probably a bug in GlassFish
-@Stateless(name = "LocalInterfaceEJB")
+@Stateless
 @Local
 public class LocalInterfaceEJBBean implements LocalInterfaceEJB {
     @Override
