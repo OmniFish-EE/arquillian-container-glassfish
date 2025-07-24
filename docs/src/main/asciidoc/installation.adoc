@@ -1,0 +1,46 @@
+type=page
+status=published
+title={productName} - Installation
+prev=title.adoc
+next=configuration.adoc
+~~~~~~
+
+== Installation
+
+Add one of the following dependencies to your Maven `pom.xml`, depending on your target container mode.
+
+=== Managed GlassFish
+
+[source,xml]
+----
+<dependency>
+  <groupId>ee.omnifish.arquillian</groupId>
+  <artifactId>arquillian-glassfish-server-managed</artifactId>
+  <version>YOUR_VERSION</version>
+  <scope>test</scope>
+</dependency>
+----
+
+=== Remote GlassFish
+
+[source,xml]
+----
+<dependency>
+  <groupId>ee.omnifish.arquillian</groupId>
+  <artifactId>arquillian-glassfish-server-remote</artifactId>
+  <version>YOUR_VERSION</version>
+  <scope>test</scope>
+</dependency>
+----
+
+=== Embedded GlassFish
+
+[source,xml]
+----
+<dependency>
+  <groupId>ee.omnifish.arquillian</groupId>
+  <artifactId>arquillian-glassfish-server-embedded</artifactId>
+  <version>YOUR_VERSION</version>
+  <scope>test</scope>
+</dependency>
+----
