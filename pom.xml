@@ -132,6 +132,7 @@
         <module>glassfish-client-ee10</module>
         <module>glassfish-client-ee11</module>
         <module>integration-tests</module>
+        <module>docs</module>
     </modules>
 
     <dependencyManagement>

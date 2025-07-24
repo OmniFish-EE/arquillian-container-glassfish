@@ -1,0 +1,34 @@
+type=page
+status=published
+title={productName} - Examples
+prev=configuration.adoc
+~~~~~~
+
+== Usage Examples
+
+=== Example: `arquillian.xml` for Managed GlassFish
+
+[source,xml]
+----
+<arquillian>
+  <container qualifier="glassfish-managed" default="true">
+    <configuration>
+      <property name="adminUser">admin</property>
+      <property name="adminPassword">admin123</property>
+      <property name="glassfishHome">${env.GLASSFISH_HOME}</property>
+      <property name="postBootCommands">
+        create-jdbc-connection-pool --datasourceclassname=com.mysql.cj.jdbc.MysqlDataSource ...
+        create-jdbc-resource --connectionpoolid=MyPool jdbc/MyDS
+      </property>
+    </configuration>
+  </container>
+</arquillian>
+----
+
+=== Example: Passing System Properties
+
+Run tests with:
+
+```
+-Dglassfish.adminUser=admin -Dglassfish.adminPassword=admin123
+```

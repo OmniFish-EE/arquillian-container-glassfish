@@ -1,0 +1,15 @@
+type=page
+status=published
+title={productName} - Documentation
+next=installation.html
+~~~~~~
+
+= Arquillian GlassFish Container
+
+== Overview
+
+This project provides Arquillian container adapters for running tests on Eclipse GlassFish server in different modes:
+
+- **Managed** – Starts and stops a local GlassFish server instance.
+- **Remote** – Connects to a running GlassFish server instance.
+- **Embedded** – Runs Embedded GlassFish in-process in the test JVM.

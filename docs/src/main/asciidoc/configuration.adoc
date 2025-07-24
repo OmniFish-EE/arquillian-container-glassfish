@@ -1,0 +1,59 @@
+type=page
+status=published
+title={productName} - Configuration
+prev=installation.adoc
+next=examples.adoc
+~~~~~~
+
+== Configuration Options
+
+The following configuration options are available for all GlassFish Arquillian containers (managed, remote, embedded). Each option may be set via a system property (`-Dglassfish.X`) or inside `arquillian.xml` as a container `<property>`.
+
+=== Configuration Table
+
+[cols="1,1,1,1,1,3", options="header"]
+|===
+| Property (arquillian.xml)
+| System Property
+| Type
+| Default
+| Modes
+| Description
+
+| `adminHost` | `glassfish.adminHost` | String | `localhost` | Managed, Remote | Admin server host address
+| `adminPort` | `glassfish.adminPort` | int | `4848` | Managed, Remote | Admin console port
+| `adminHttps` | `glassfish.adminHttps` | boolean | `false` | Managed, Remote | Use HTTPS for admin URL
+| `authorisation` | `glassfish.authorisation` | boolean | `false` | Managed, Remote | Enable login with admin credentials
+| `ignoreCertificates` | `glassfish.ignoreCertificates` | boolean | `false` | All | If SSL certificates are ignored
+| `adminUser` | `glassfish.adminUser` | String | _none_ | Managed, Remote | Admin username (required if `authorisation=true`)
+| `adminPassword` | `glassfish.adminPassword` | String | _none_ | Managed, Remote | Admin password (required if `authorisation=true`)
+| `target` | `glassfish.target` | String | `server` | All | Deployment target (e.g., `server`, `cluster`, `instance_name`)
+| `libraries` | `glassfish.libraries` | String | _none_ | Managed | Comma-separated library JAR paths for deployed applications
+| `properties` | `glassfish.properties` | String | _none_ | All | Additional deployment properties for the deployment -  keyword-value  pairs.
+| `type` | `glassfish.type` | String | _none_ | All | Deployment archive type (e.g., `osgi`)
+| `domain` | `glassfish.domain` | String | _none_ | Managed | GlassFish domain name. The default will be used if not specified
+| `postBootCommands` | `glassfish.postBootCommands` | String | _none_ | Managed | Multiline asadmin commands executed after boot
+| `systemProperties` | `glassfish.systemProperties` | String | _none_ | Managed | Multiline JVM system properties
+| `httpsPortAsDefault` | `glassfish.httpsPortAsDefault` | boolean | `false` | All | Use HTTPS port as default connector
+| `debug` | `glassfish.debug` | boolean | `false` | Managed | Start server in debug mode
+| `suspend` | `glassfish.suspend` | boolean | `false` | Managed | Suspend until debugger connects
+| `addDeployName` | `glassfish.addDeployName` | boolean | `false` | All | Add deploy name to archive
+|===
+
+=== Usage Notes
+
+- System properties must be passed to the JVM, e.g. `-Dglassfish.adminPort=4848`.
+- `arquillian.xml` should define properties under the container configuration:
+
+[source,xml]
+----
+<container qualifier="glassfish-managed" default="true">
+  <configuration>
+    <property name="adminUser">admin</property>
+    <property name="adminPassword">admin123</property>
+  </configuration>
+</container>
+----
+
+- Properties like `postBootCommands` and `systemProperties` support multiline values.
+- When `authorisation` is enabled, both `adminUser` and `adminPassword` must be provided.
