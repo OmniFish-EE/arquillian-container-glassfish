@@ -388,10 +388,9 @@
                                         <pattern>jakarta.xml.bind</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.jakarta.xml.bind</shadedPattern>
                                     </relocation>
+                                    <!-- 1st package in com.sun.activation:jakarta.activation -->
                                     <relocation>
-                                        <!-- 1st package in com.sun.activation:jakarta.activation -->
                                         <pattern>jakarta.activation</pattern>
-                                        <pattern>com.sun.activation.registries</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.jakarta.activation</shadedPattern>
                                     </relocation>
                                     <!-- 2nd package in com.sun.activation:jakarta.activation -->
@@ -449,6 +448,10 @@
                                     <relocation>
                                         <pattern>org.aopalliance</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.aopalliance</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>org.eclipse.parsson</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.parsson</shadedPattern>
                                     </relocation>
                                 </relocations>
                             </configuration>
