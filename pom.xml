@@ -319,10 +319,8 @@
                                         <include>jakarta.json:*</include>
 
                                         <include>jakarta.xml.bind:*</include>
-                                        <include>com.sun.activation:*</include>
 
-                                        <include>javax.xml.bind:*</include>
-                                        <include>javax.activation:*</include>
+                                        <include>jakarta.activation:*</include>
 
                                         <!-- GlassFish -->
                                         <include>org.glassfish:*</include>
@@ -332,7 +330,6 @@
                                         <include>org.glassfish.jersey.inject:*</include>
                                         <include>org.glassfish.jersey.media:*</include>
                                         <include>org.glassfish.jersey.ext:*</include>
-                                        <include>org.glassfish:jakarta.json:*</include>
                                         <include>org.eclipse.parsson:parsson:*</include>
                                         <include>org.eclipse.parsson:parsson-media:*</include>
 
@@ -365,16 +362,12 @@
                                 <relocations>
                                     <!-- Jakarta EE -->
                                     <relocation>
-                                        <pattern>jakarta.validation</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.validation</shadedPattern>
+                                        <pattern>jakarta.activation</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.activation</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.annotation</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.annotation</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>jakarta.ws</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.ws</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.inject</pattern>
@@ -382,33 +375,19 @@
                                     </relocation>
                                     <relocation>
                                         <pattern>jakarta.json</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.jakarta.json</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.json</shadedPattern>
                                     </relocation>
-
+                                    <relocation>
+                                        <pattern>jakarta.validation</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.validation</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>jakarta.ws</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.ws</shadedPattern>
+                                    </relocation>
                                     <relocation>
                                         <pattern>jakarta.xml.bind</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.jakarta.xml.bind</shadedPattern>
-                                    </relocation>
-                                    <!-- 1st package in com.sun.activation:jakarta.activation -->
-                                    <relocation>
-                                        <pattern>jakarta.activation</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.jakarta.activation</shadedPattern>
-                                    </relocation>
-                                    <!-- 2nd package in com.sun.activation:jakarta.activation -->
-                                    <relocation>
-                                        <pattern>com.sun.activation.registries</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.com.sun.activation.registries</shadedPattern>
-                                    </relocation>
-
-
-
-                                    <relocation>
-                                        <pattern>javax.xml.bind</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.javax.xml.bind</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>javax.activation</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.javax.activation</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.xml.bind</shadedPattern>
                                     </relocation>
 
                                     <!-- GlassFish -->
@@ -420,31 +399,23 @@
                                         <pattern>org.glassfish.jersey</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.jersey</shadedPattern>
                                     </relocation>
-                                    <relocation>
-                                        <pattern>org.glassfish.json</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.json</shadedPattern>
-                                    </relocation>
 
                                     <!-- Other -->
                                     <relocation>
-                                        <pattern>javassist</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.javassist</shadedPattern>
-                                    </relocation>
-                                    <relocation>
                                         <pattern>com.fasterxml</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.faster</shadedPattern>
-                                    </relocation>
-                                    <relocation>
-                                        <pattern>jersey.repackaged</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.jersey.repackaged</shadedPattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jackson</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>com.sun.research</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.research</shadedPattern>
                                     </relocation>
                                     <relocation>
-                                        <pattern>org.jvnet</pattern>
-                                        <shadedPattern>ee.omnifish.arquillian.jvnet</shadedPattern>
+                                        <pattern>javassist</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.javassist</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>jersey.repackaged</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jersey.repackaged</shadedPattern>
                                     </relocation>
                                     <relocation>
                                         <pattern>org.aopalliance</pattern>
@@ -453,6 +424,10 @@
                                     <relocation>
                                         <pattern>org.eclipse.parsson</pattern>
                                         <shadedPattern>ee.omnifish.arquillian.parsson</shadedPattern>
+                                    </relocation>
+                                    <relocation>
+                                        <pattern>org.jvnet</pattern>
+                                        <shadedPattern>ee.omnifish.arquillian.jvnet</shadedPattern>
                                     </relocation>
                                 </relocations>
                             </configuration>
