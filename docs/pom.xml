@@ -4,18 +4,20 @@
     <parent>
         <groupId>ee.omnifish.arquillian</groupId>
         <artifactId>glassfish-containers-main</artifactId>
-        <version>2.0.1-SNAPSHOT</version>
+        <version>2.0.2-SNAPSHOT</version>
     </parent>
+
+    <name>Eclipse GlassFish Arquillian Containers</name>
     <artifactId>glassfish-containers-docs</artifactId>
     <packaging>jar</packaging>
-    
+
     <properties>
-        <productName>Eclipse GlassFish Arquillian Containers</productName>
+        <productName>${project.name}</productName>
         <pdf.fileName>${project.artifactId}.pdf</pdf.fileName>
         <pdf.toclevels>3</pdf.toclevels>
         <bookDirectory>${project.build.directory}/book</bookDirectory>
     </properties>
-    
+
     <build>
         <pluginManagement>
             <plugins>
