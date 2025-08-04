@@ -102,8 +102,6 @@ class GlassFishServerControl {
         "It seems that the GlassFish version you are running might have a problem starting embedded "  +
         "Derby database. Please take a look at the server logs. You can also switch off 'enableDerby' property in your 'arquillian.xml' if you don't need it.";
 
-    private static final List<String> NO_ARGS = new ArrayList<>();
-
     private final GlassFishManagedContainerConfiguration config;
     private Thread shutdownHook;
 
@@ -152,10 +150,11 @@ class GlassFishServerControl {
         for (String commandLine : config.getPostBootCommandList()) {
             String[] commandParts = commandLine.split(" ");
 
-            List<String> arguments = NO_ARGS;
-
+            List<String> arguments;
             if (commandParts.length > 1) {
                 arguments = asList(copyOfRange(commandParts, 1, commandParts.length));
+            } else {
+                arguments = List.of();
             }
 
             try {
@@ -167,7 +166,7 @@ class GlassFishServerControl {
 
     }
 
-    void stop() throws LifecycleException {
+    void stop() {
         removeShutdownHook();
         try {
             stopContainer();
@@ -183,7 +182,7 @@ class GlassFishServerControl {
     }
 
     private void stopContainer() throws LifecycleException {
-        executeAdminDomainCommand("Stopping container", "stop-domain", NO_ARGS, createProcessOutputConsumer());
+        executeAdminDomainCommand("Stopping container", "stop-domain", List.of(), createProcessOutputConsumer());
     }
 
     private void startDerbyDatabase() throws LifecycleException {
@@ -192,6 +191,11 @@ class GlassFishServerControl {
         }
 
         try {
+            List<String> asadminArgs = new ArrayList<>();
+            if (config.getDerbyPasswordFile() != null) {
+                asadminArgs.add("--passwordfile=" + config.getDerbyPasswordFile());
+            }
+
             List<String> args = new ArrayList<>();
             if (config.getDerbyDatabaseName() != null && config.getDerbySQLFile() != null) {
                 args.add("--dbname=" + config.getDerbyDatabaseName());
@@ -200,10 +204,9 @@ class GlassFishServerControl {
 
             if (config.getDerbyUser() != null && config.getDerbyPasswordFile() != null) {
                 args.add("--dbuser=" + config.getDerbyUser());
-                args.add("--passwordfile=" + config.getDerbyPasswordFile());
             }
 
-            executeAdminCommand("Starting database", "start-database", args, createProcessOutputConsumer());
+            executeAdminCommand("Starting database", "start-database", asadminArgs, args, createProcessOutputConsumer());
         } catch (LifecycleException e) {
             logger.warning(DERBY_MISCONFIGURED_HINT);
             throw e;
@@ -212,7 +215,7 @@ class GlassFishServerControl {
 
     private void stopDerbyDatabase() throws LifecycleException {
         if (config.isEnableDerby()) {
-            executeAdminDomainCommand("Stopping database", "stop-database", NO_ARGS, createProcessOutputConsumer());
+            executeAdminDomainCommand("Stopping database", "stop-database", List.of(), createProcessOutputConsumer());
         }
     }
 
@@ -311,11 +314,12 @@ class GlassFishServerControl {
             args.add(config.getDomain());
         }
 
-        executeAdminCommand(description, adminCmd, args, consumer);
+        executeAdminCommand(description, adminCmd, List.of(), args, consumer);
     }
 
-    private void executeAdminCommand(String description, String command, List<String> args, ProcessOutputConsumer consumer) throws LifecycleException {
-        final List<String> cmd = buildCommand(command, args);
+    private void executeAdminCommand(String description, String command, List<String> asadminArgs, List<String> args,
+        ProcessOutputConsumer consumer) throws LifecycleException {
+        final List<String> cmd = buildCommand(command, asadminArgs, args);
 
         if (config.isOutputToConsole()) {
             System.out.println(description + " using command: " + cmd);
@@ -345,10 +349,11 @@ class GlassFishServerControl {
         }
     }
 
-    private List<String> buildCommand(String command, List<String> args) {
+    private List<String> buildCommand(String command, List<String> asadminArgs, List<String> args) {
         List<String> cmd = new ArrayList<>();
         cmd.add(config.getAsadmin().getAbsolutePath());
         cmd.add("--terse");
+        cmd.addAll(asadminArgs);
         cmd.add(command);
         cmd.addAll(args);
         return cmd;
