@@ -58,6 +58,8 @@
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish;
 
+import jakarta.ws.rs.ProcessingException;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.System.Logger;
@@ -69,7 +71,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.file.StreamDataBodyPart;
-import org.glassfish.jersey.server.ContainerException;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
@@ -156,7 +157,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             final ProtocolMetaData protocolMetaData = new ProtocolMetaData();
             protocolMetaData.addContext(httpContext);
             return protocolMetaData;
-        } catch (GlassFishClientException | IOException | ContainerException e) {
+        } catch (GlassFishClientException | IOException | ProcessingException e) {
             throw new DeploymentException("Could not deploy " + archiveName + " as " + deploymentName, e);
         }
     }
@@ -181,7 +182,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             } finally {
                 deployLock.unlock();
             }
-        } catch (GlassFishClientException | ContainerException e) {
+        } catch (GlassFishClientException | ProcessingException e) {
             throw new DeploymentException("Could not undeploy " + archive.getName(), e);
         }
     }

@@ -54,6 +54,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2025] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.clientutils;
 
@@ -66,7 +67,6 @@ import static jakarta.ws.rs.core.Response.Status.Family.SUCCESSFUL;
 import static javax.xml.stream.XMLInputFactory.IS_VALIDATING;
 import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
 import static javax.xml.stream.XMLStreamConstants.START_ELEMENT;
-import static org.glassfish.jersey.client.authentication.HttpAuthenticationFeature.basic;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -76,6 +76,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
 import jakarta.ws.rs.client.Invocation.Builder;
@@ -86,10 +87,10 @@ import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
 import org.glassfish.jersey.client.filter.CsrfProtectionFilter;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.MultiPartFeature;
-import org.glassfish.jersey.server.ContainerException;
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
 
 import java.security.KeyManagementException;
@@ -157,7 +158,7 @@ public class GlassFishClientUtil {
                 prepareClient(additionalResourceUrl).get());
     }
 
-    public List<Map<String, Object>> getInstancesList(String additionalResourceUrl) throws ContainerException {
+    public List<Map<String, Object>> getInstancesList(String additionalResourceUrl) {
 
         Map<String, Object> extraProperties = getExtraProperties(GETRequest(additionalResourceUrl));
 
@@ -249,6 +250,7 @@ public class GlassFishClientUtil {
             sslContext = SSLContext.getInstance("TLS");
             sslContext.init(null, trustAllCerts, new SecureRandom());
         } catch (KeyManagementException | NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Unable to create SSLContext", e);
         }
 
         ClientBuilder clientBuilder = ClientBuilder.newBuilder();
@@ -260,7 +262,8 @@ public class GlassFishClientUtil {
         Client client = clientBuilder.build();
 
         if (configuration.isAuthorisation()) {
-            client.register(basic(configuration.getAdminUser(), configuration.getAdminPassword())) ;
+            client.register(
+                HttpAuthenticationFeature.basic(configuration.getAdminUser(), configuration.getAdminPassword()));
         }
 
         client.register(new CsrfProtectionFilter());
@@ -309,7 +312,7 @@ public class GlassFishClientUtil {
         } else {
             message += " [status: " + status.getFamily() + " reason: " + status.getReasonPhrase() + "]";
             log.severe(message);
-            throw new ContainerException(message);
+            throw new ProcessingException(message);
         }
 
         return responseMap;
