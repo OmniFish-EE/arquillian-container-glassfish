@@ -85,50 +85,37 @@
         </dependency>
 
         <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-client</artifactId>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.2</version>
             <optional>true</optional>
         </dependency>
         <dependency>
-            <groupId>org.glassfish.jersey.inject</groupId>
-            <artifactId>jersey-hk2</artifactId>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <version>4.0.0</version>
             <optional>true</optional>
         </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-common</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-server</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-sse</artifactId>
-            <optional>true</optional>
-        </dependency>
+
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-multipart</artifactId>
+            <version>4.0.0-M2</version>
             <optional>true</optional>
         </dependency>
         <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-jaxb</artifactId>
+            <groupId>org.glassfish.jersey.core</groupId>
+            <artifactId>jersey-client</artifactId>
+            <version>4.0.0-M2</version>
             <optional>true</optional>
         </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-json-processing</artifactId>
+         <dependency>
+             <groupId>org.glassfish.jersey.incubator</groupId>
+             <artifactId>jersey-injectless-client</artifactId>
+            <version>4.0.0-M2</version>
             <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-json-jackson</artifactId>
-            <optional>true</optional>
-        </dependency>
+         </dependency>
+
         <dependency>
             <groupId>org.eclipse.parsson</groupId>
             <artifactId>parsson</artifactId>
@@ -137,23 +124,6 @@
         <dependency>
             <groupId>org.eclipse.parsson</groupId>
             <artifactId>parsson-media</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>jakarta.xml.bind</groupId>
-            <artifactId>jakarta.xml.bind-api</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
             <optional>true</optional>
         </dependency>
 
@@ -171,6 +141,121 @@
         <plugins>
             <plugin>
                 <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <!-- Jakarta EE -->
+                                    <include>jakarta.activation:*</include>
+                                    <include>jakarta.annotation:*</include>
+                                    <include>jakarta.inject:*</include>
+                                    <include>jakarta.json:*</include>
+                                    <include>jakarta.validation:*</include>
+                                    <include>jakarta.ws.rs:*</include>
+                                    <include>jakarta.xml.bind:*</include>
+
+                                    <!-- GlassFish -->
+                                    <include>org.glassfish.jersey.core:*</include>
+                                    <include>org.glassfish.jersey.media:*</include>
+                                    <include>org.glassfish.jersey.incubator:*</include>
+                                    <include>org.eclipse.parsson:parsson:*</include>
+                                    <include>org.eclipse.parsson:parsson-media:*</include>
+
+                                    <!-- Other -->
+                                    <include>org.jvnet:*</include>
+                                    <include>org.jvnet.mimepull:*</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/NOTICE*</exclude>
+                                        <exclude>META-INF/LICENSE*</exclude>
+                                        <exclude>META-INF/native-image/**/*</exclude>
+                                        <exclude>META-INF/services/jakarta*</exclude>
+                                        <exclude>META-INF/services/org*</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer" />
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Multi-Release>true</Multi-Release>
+                                    </manifestEntries>
+                                </transformer>
+                            </transformers>
+
+                            <relocations>
+                                <!-- Jakarta EE -->
+                                <relocation>
+                                    <pattern>jakarta.activation</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.activation</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>jakarta.annotation</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.annotation</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>jakarta.inject</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.inject</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>jakarta.json</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.json</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>jakarta.ws</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.ws</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>jakarta.xml.bind</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.xml.bind</shadedPattern>
+                                </relocation>
+
+                                <!-- GlassFish -->
+                                <relocation>
+                                    <pattern>org.glassfish.jersey</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.jersey</shadedPattern>
+                                </relocation>
+
+                                <!-- Other -->
+                                <relocation>
+                                    <pattern>com.fasterxml.jackson</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.jackson</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>com.sun.research</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.research</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.eclipse.parsson</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.parsson</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.jvnet</pattern>
+                                    <shadedPattern>ee.omnifish.arquillian.jvnet</shadedPattern>
+                                </relocation>
+
+                                <relocation>
+                                    <pattern>META-INF/versions/21/org.glassfish.jersey.innate</pattern>
+                                    <shadedPattern>META-INF/versions/21/ee.omnifish.arquillian.jersey.innate</shadedPattern>
+                                </relocation>
+                            </relocations>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
