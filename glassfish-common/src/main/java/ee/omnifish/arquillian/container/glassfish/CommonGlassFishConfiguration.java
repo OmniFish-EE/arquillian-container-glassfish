@@ -65,6 +65,7 @@ import org.jboss.arquillian.container.spi.ConfigurationException;
 import org.jboss.arquillian.container.spi.client.container.ContainerConfiguration;
 import org.jboss.arquillian.container.spi.client.deployment.Validate;
 
+import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.toList;
 import static ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
 
@@ -379,7 +380,8 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
         if (postBootCommands != null) {
             postBootCommandList =
                 postBootCommands.lines()
-                                .map(e -> e.trim())
+                                .map(String::trim)
+                                .filter(not(String::isEmpty))
                                 .filter(e -> !e.startsWith("#"))
                                 .collect(toList());
         }
@@ -387,7 +389,8 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
         if (systemProperties != null) {
             systemProperyList =
                 systemProperties.lines()
-                                 .map(e -> e.trim())
+                                 .map(String::trim)
+                                 .filter(not(String::isEmpty))
                                  .filter(e -> !e.startsWith("#"))
                                  .collect(toList());
         }

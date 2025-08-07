@@ -70,6 +70,7 @@ import org.jboss.arquillian.container.spi.ConfigurationException;
 import org.jboss.arquillian.container.spi.client.container.ContainerConfiguration;
 
 import static java.util.Arrays.asList;
+import static java.util.function.Predicate.not;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -284,6 +285,7 @@ public class GlassFishConfiguration implements ContainerConfiguration {
                 postBootCommandList =
                     postBootCommands.lines()
                         .map(String::trim)
+                        .filter(not(String::isEmpty))
                         .filter(e -> !e.startsWith("#"))
                         .collect(toList());
             }
