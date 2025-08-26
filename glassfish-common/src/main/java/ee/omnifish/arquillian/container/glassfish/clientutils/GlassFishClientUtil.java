@@ -58,24 +58,6 @@
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.clientutils;
 
-import static java.lang.Double.parseDouble;
-import static java.lang.Long.parseLong;
-import static java.util.logging.Level.SEVERE;
-import static jakarta.ws.rs.client.Entity.entity;
-import static jakarta.ws.rs.core.MediaType.APPLICATION_XML_TYPE;
-import static jakarta.ws.rs.core.Response.Status.Family.SUCCESSFUL;
-import static javax.xml.stream.XMLInputFactory.IS_VALIDATING;
-import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
-import static javax.xml.stream.XMLStreamConstants.START_ELEMENT;
-
-import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.logging.Logger;
-
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.client.Client;
 import jakarta.ws.rs.client.ClientBuilder;
@@ -83,6 +65,24 @@ import jakarta.ws.rs.client.Invocation.Builder;
 import jakarta.ws.rs.core.Feature;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.StatusType;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
@@ -91,16 +91,18 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
 import org.glassfish.jersey.client.filter.CsrfProtectionFilter;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.MultiPartFeature;
+
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
 
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-import java.util.logging.Level;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
+import static jakarta.ws.rs.client.Entity.entity;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_XML_TYPE;
+import static jakarta.ws.rs.core.Response.Status.Family.SUCCESSFUL;
+import static java.lang.Double.parseDouble;
+import static java.lang.Long.parseLong;
+import static java.util.logging.Level.SEVERE;
+import static javax.xml.stream.XMLInputFactory.IS_VALIDATING;
+import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
+import static javax.xml.stream.XMLStreamConstants.START_ELEMENT;
 
 /**
  * @author Z.Paulovics
@@ -154,8 +156,9 @@ public class GlassFishClientUtil {
     }
 
     public Map<String, Object> GETRequest(String additionalResourceUrl) {
-        return getResponseMap("<non-application-specific>",
-                prepareClient(additionalResourceUrl).get());
+        return doRestCall(
+            e -> getResponseMap("<non-application-specific>", e.get()),
+            additionalResourceUrl);
     }
 
     public List<Map<String, Object>> getInstancesList(String additionalResourceUrl) {
@@ -199,27 +202,25 @@ public class GlassFishClientUtil {
         return (Map<String, Object>) responseMap.get("extraProperties");
     }
 
-    @SuppressWarnings("unchecked")
     public String getMessage(Map<String, Object> responseMap) {
         return (String) responseMap.get("message");
     }
-
-
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> getInstanceList(Map<String, Object> resultExtraProperties) {
         return (List<Map<String, Object>>) resultExtraProperties.get("instanceList");
     }
 
-    public Map<String, Object> POSTMultiPartRequest(String name, String additionalResourceUrl,
-            FormDataMultiPart form) {
-        return getResponseMap(name,
-                prepareClient(additionalResourceUrl, MultiPartFeature.class)
-                    .post(entity(form, form.getMediaType())));
+    public Map<String, Object> POSTMultiPartRequest(String name, String additionalResourceUrl, FormDataMultiPart form) {
+        return doRestCall(
+                e -> getResponseMap(name, e.post(entity(form, form.getMediaType()))),
+                additionalResourceUrl,
+                MultiPartFeature.class);
+
     }
 
     /**
-     * Basic REST call preparation, with the additional resource url appended
+     * Basic REST call, with the additional resource url appended
      *
      * @param additionalResourceUrl
      *     url portion past the base to use
@@ -227,7 +228,8 @@ public class GlassFishClientUtil {
      * @return the resource builder to execute
      */
     @SafeVarargs
-    private final Builder prepareClient(final String additionalResourceUrl, final Class<? extends Feature>... features) {
+    private final Map<String, Object> doRestCall(Function<Builder, Map<String, Object>> processor, final String additionalResourceUrl, final Class<? extends Feature>... features) {
+
         // Create a trust manager that does not validate certificate chains
         TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager() {
             @Override
@@ -259,26 +261,27 @@ public class GlassFishClientUtil {
         } else if (sslContext == null) {
             log.warning("Unable to ignore SSL certificate information");
         }
-        Client client = clientBuilder.build();
 
-        if (configuration.isAuthorisation()) {
-            client.register(
-                HttpAuthenticationFeature.basic(configuration.getAdminUser(), configuration.getAdminPassword()));
+        try (Client client = clientBuilder.build()) {
+            if (configuration.isAuthorisation()) {
+                client.register(
+                    HttpAuthenticationFeature.basic(configuration.getAdminUser(), configuration.getAdminPassword()));
+            }
+
+            client.register(new CsrfProtectionFilter());
+
+            for (Class<? extends Feature> feature : features) {
+                client.register(feature);
+            }
+
+            return processor.apply(
+                        client.target(adminBaseUrl + additionalResourceUrl)
+                              .request(APPLICATION_XML_TYPE)
+                              .header("X-GlassFish-3", "ignore"));
         }
-
-        client.register(new CsrfProtectionFilter());
-
-        for (Class<? extends Feature> feature : features) {
-            client.register(feature);
-        }
-
-        return client.target(adminBaseUrl + additionalResourceUrl)
-                     .request(APPLICATION_XML_TYPE)
-                     .header("X-GlassFish-3", "ignore");
     }
 
     private Map<String, Object> getResponseMap(String name, Response response) {
-
         Map<String, Object> responseMap = new HashMap<>();
         String message = String.format("While Deploying Application: %s --", name);
         final String xmlDoc = response.readEntity(String.class);
