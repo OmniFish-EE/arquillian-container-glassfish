@@ -77,6 +77,7 @@ import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.ProtocolMetaData;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.exporter.ZipExporter;
+
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClient;
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientException;
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientService;
@@ -135,13 +136,14 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         if (archive == null) {
             throw new IllegalArgumentException("archive must not be null");
         }
+
         final String archiveName = archive.getName();
         final String deploymentName = rememberArchive(archive);
         LOG.log(INFO, "Deploying {0} as {1}", archiveName, deploymentName);
+
         try (InputStream deployment = archive.as(ZipExporter.class).exportAsInputStream()) {
             // Build up the POST form to send to GlassFish
             final FormDataMultiPart form = new FormDataMultiPart();
-            form.field("name", deploymentName);
             form.bodyPart(new StreamDataBodyPart("id", deployment, archiveName));
 
             addDeployFormFields(deploymentName, form);
@@ -196,7 +198,7 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         // Add the name field, the name is the archive filename without extension
         // We add this conditionally, since when setting it the name can not be set
         // in application.xml anymore.
-        if (configuration.isAddDeployName()) {
+        if (configuration.isAddDeployName() || prependDeploySequence) {
             deployform.field("name", name, TEXT_PLAIN_TYPE);
         }
 

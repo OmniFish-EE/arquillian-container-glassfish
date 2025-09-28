@@ -54,13 +54,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2024] [OmniFish and/or its affiliates]
+// Portions Copyright [2024, 2025] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.clientutils;
 
-import static java.lang.Boolean.parseBoolean;
-import static java.util.regex.Pattern.compile;
-import static ee.omnifish.arquillian.container.glassfish.clientutils.NodeAddress.getHttpProtocolPrefix;
+import jakarta.ws.rs.ProcessingException;
 
 import java.net.ConnectException;
 import java.util.ArrayList;
@@ -71,16 +69,19 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.Servlet;
+
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
 
-import jakarta.ws.rs.ProcessingException;
+import static ee.omnifish.arquillian.container.glassfish.clientutils.NodeAddress.getHttpProtocolPrefix;
+import static java.lang.Boolean.parseBoolean;
+import static java.util.logging.Level.INFO;
+import static java.util.regex.Pattern.compile;
 
 /**
  * @author Z.Paulovics
@@ -370,14 +371,17 @@ public class GlassFishClientService implements GlassFishClient {
     }
 
     private String registerDeployedName(String name, String deployedName) {
-        if (deployedName != null && !deployedName.equals(name)) {
-            log.log(Level.FINE, "Deployment {0} resulted in application with different name {1}",
-                    new Object[]{ name, deployedName });
-            deploymentAliases.put(name, deployedName);
-            return deployedName;
-        } else {
+        if (deployedName == null || deployedName.equals(name)) {
             return name;
         }
+
+        log.log(INFO, "Deployment {0} resulted in application with different name {1}",
+                new Object[]{ name, deployedName });
+
+        deploymentAliases.put(name, deployedName);
+
+        return deployedName;
+
     }
 
     private String unregisterDeployedName(String name) {
@@ -399,9 +403,9 @@ public class GlassFishClientService implements GlassFishClient {
      */
     @Override
     public Map<String, Object> doUndeploy(String name, FormDataMultiPart form) {
-        name = unregisterDeployedName(name);
-        log.log(Level.FINE, "Undeploying {0}", new Object[] { name });
-        return getClientUtil().POSTMultiPartRequest(name, APPLICATION_RESOURCE.replace("{name}", name), form);
+        String deploymentName = unregisterDeployedName(name);
+        log.log(INFO, "Undeploying {0} as {1}", new Object[] { name, deploymentName });
+        return getClientUtil().POSTMultiPartRequest(deploymentName, APPLICATION_RESOURCE.replace("{name}", deploymentName), form);
     }
 
     /**
