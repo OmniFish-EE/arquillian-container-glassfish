@@ -2,12 +2,19 @@
 
 Set of tools that provide a GlassFish Server container adapter for Arquillian.
 
+## Documentation
+
+Visit the [Arquillian Container Documentation page](https://omnifish-ee.github.io/arquillian-container-glassfish/glassfish-containers-docs.html).
+
+## History
+
 Originally forked from:
  * https://github.com/arquillian/arquillian-container-glassfish
 
 Then forked from:
  * https://github.com/payara/ecosystem-arquillian-connectors
 
+## Examples
 
  Quick example usage for the managed connector:
 
