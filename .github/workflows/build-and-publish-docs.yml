@@ -35,7 +35,7 @@ jobs:
         java-version: '21'
         distribution: 'temurin'
     - name: Build with Maven
-      run: mvn -am -pl docs -B -e -ntp install -Dasciidoc.pdf.skip=true
+      run: mvn -am -pl docs -B -e -ntp package -Dasciidoc.pdf.skip=true
     - name: Setup Pages
       uses: actions/configure-pages@v5
     - name: Upload docs pages

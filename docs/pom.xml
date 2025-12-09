@@ -148,6 +148,7 @@
                             <goal>attach-artifact</goal>
                         </goals>
                         <configuration>
+                            <skipAttach>${asciidoc.pdf.skip}</skipAttach>
                             <artifacts>
                                 <artifact>
                                     <file>${project.build.directory}/pdf/${pdf.fileName}</file>
