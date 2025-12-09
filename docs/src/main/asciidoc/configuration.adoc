@@ -20,9 +20,12 @@ The following configuration options are available for all GlassFish Arquillian c
 | Modes
 | Description
 
+| `glassFishHome` | `glassfish.home` | String | _none_ | Managed | The local GlassFish installation directory (required)
 | `adminHost` | `glassfish.adminHost` | String | `localhost` | Managed, Remote | Admin server host address
 | `adminPort` | `glassfish.adminPort` | int | `4848` | Managed, Remote | Admin console port
 | `adminHttps` | `glassfish.adminHttps` | boolean | `false` | Managed, Remote | Use HTTPS for admin URL
+| `httpPort` | `glassfish.httpPort` | int | `8080` | Managed, Remote | HTTP port
+| `httpsPort` | `glassfish.httpsPort` | int | `8181` | Managed, Remote | HTTPS port
 | `authorisation` | `glassfish.authorisation` | boolean | `false` | Managed, Remote | Enable login with admin credentials
 | `ignoreCertificates` | `glassfish.ignoreCertificates` | boolean | `false` | All | If SSL certificates are ignored
 | `adminUser` | `glassfish.adminUser` | String | _none_ | Managed, Remote | Admin username (required if `authorisation=true`)
@@ -32,12 +35,31 @@ The following configuration options are available for all GlassFish Arquillian c
 | `properties` | `glassfish.properties` | String | _none_ | All | Additional deployment properties for the deployment -  keyword-value  pairs.
 | `type` | `glassfish.type` | String | _none_ | All | Deployment archive type (e.g., `osgi`)
 | `domain` | `glassfish.domain` | String | _none_ | Managed | GlassFish domain name. The default will be used if not specified
-| `postBootCommands` | `glassfish.postBootCommands` | String | _none_ | Managed | Multiline asadmin commands executed after boot
+| `postBootCommands` | `glassfish.postBootCommands` | String | _none_ | Managed, Embedded | Multiline asadmin commands executed after boot
 | `systemProperties` | `glassfish.systemProperties` | String | _none_ | Managed | Multiline JVM system properties
 | `httpsPortAsDefault` | `glassfish.httpsPortAsDefault` | boolean | `false` | All | Use HTTPS port as default connector
 | `debug` | `glassfish.debug` | boolean | `false` | Managed | Start server in debug mode
 | `suspend` | `glassfish.suspend` | boolean | `false` | Managed | Suspend until debugger connects
 | `addDeployName` | `glassfish.addDeployName` | boolean | `false` | All | Add deploy name to archive
+| `outputToConsole` | `glassfish.outputToConsole` | boolean | `true` | Managed | Show the output of the admin commands on the console
+| `allowConnectingToRunningServer` | `glassfish.allowConnectingToRunningServer` | boolean | `false` | Managed | Allow Arquillian to use an already running GlassFish instance
+| `keepServerRunning` | `glassfish.keepServerRunning` | boolean | `false` | Managed | Starts the server if needed, but keeps it running after tests
+| `keepDeployment` | `glassfish.keepDeployment` | boolean | `false` | Managed | Keep deployment after tests
+| `enableDerby` | `glassfish.enableDerby` | boolean | `false` | Managed | Flag to start/stop the registered Derby server using standard Derby port
+| `derbyDatabaseName` | `glassfish.derbyDatabaseName` | String | _none_ | Managed | Derby database name
+| `derbySQLFile` | `glassfish.derbySQLFile` | String | _none_ | Managed | Derby SQL file to execute
+| `derbyUser` | `glassfish.derbyUser` | String | _none_ | Managed | Derby user
+| `derbyPasswordFile` | `glassfish.derbyPasswordFile` | String | _none_ | Managed | Derby password file
+| `maxHeapSize` | `glassfish.maxHeapSize` | String | _none_ | Managed | JVM max heap size (e.g., `2048m`)
+| `enableAssertions` | `glassfish.enableAssertions` | String | _none_ | Managed | Enable JVM assertions for specific packages (e.g., `:org.jboss.cdi.tck...`)
+| `bindHttpPort` | _none_ | int | `8181` | Embedded | The port number of the http-listener for the embedded GlassFish server
+| `bindHttpsPort` | _none_ | int | `8182` | Embedded | The port number of the https-listener for the embedded GlassFish server
+| `instanceRoot` | _none_ | String | _none_ | Embedded | The instance root directory (parent of server instance directory)
+| `installRoot` | _none_ | String | _none_ | Embedded | The location of the GlassFish installation root directory
+| `configurationReadOnly` | _none_ | boolean | `true` | Embedded | Specifies whether GlassFish should writeback changes to configuration file
+| `configurationXml` | _none_ | String | _none_ | Embedded | Location of configuration file (domain.xml) for the GlassFish server
+| `resourcesXml` | _none_ | String | _none_ | Embedded | Comma-separated list of GlassFish resources.xml files to add using add-resources command
+| `cleanup` | _none_ | boolean | `true` | Embedded | Specifies whether Arquillian should cleanup on shutdown (deletes instanceRoot files)
 |===
 
 === Usage Notes
