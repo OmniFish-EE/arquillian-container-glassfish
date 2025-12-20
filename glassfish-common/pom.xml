@@ -87,7 +87,7 @@
         <dependency>
             <groupId>jakarta.xml.bind</groupId>
             <artifactId>jakarta.xml.bind-api</artifactId>
-            <version>4.0.2</version>
+            <version>4.0.4</version>
             <optional>true</optional>
         </dependency>
         <dependency>
@@ -100,19 +100,19 @@
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-multipart</artifactId>
-            <version>4.0.0-M2</version>
+            <version>4.0.0</version>
             <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
             <artifactId>jersey-client</artifactId>
-            <version>4.0.0-M2</version>
+            <version>4.0.0</version>
             <optional>true</optional>
         </dependency>
          <dependency>
              <groupId>org.glassfish.jersey.incubator</groupId>
              <artifactId>jersey-injectless-client</artifactId>
-            <version>4.0.0-M2</version>
+            <version>4.0.0</version>
             <optional>true</optional>
          </dependency>
 

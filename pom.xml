@@ -83,11 +83,12 @@
         <deployAtEnd>true</deployAtEnd>
 
         <version.arquillian>1.10.0.Final</version.arquillian>
-        <version.glassfish>7.0.25</version.glassfish>
+        <version.glassfish>7.1.0</version.glassfish>
         <version.gjule>${version.glassfish}</version.gjule>
         <version.jakartaee>10</version.jakartaee>
         <version.jakartaee.api>10.0.0</version.jakartaee.api>
-        <version.jackson>2.19.2</version.jackson>
+        <version.jackson>2.20</version.jackson>
+        <version.jackson.xmlbind>2.20.1</version.jackson.xmlbind>
         <version.shrinkwrap>1.2.6</version.shrinkwrap>
         <glassfish.home>glassfish7</glassfish.home>
 
@@ -147,7 +148,7 @@
             <dependency>
                 <groupId>com.fasterxml.jackson.module</groupId>
                 <artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId>
-                <version>${version.jackson}</version>
+                <version>${version.jackson.xmlbind}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
@@ -178,7 +179,7 @@
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
-                <version>5.13.4</version>
+                <version>6.0.1</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
@@ -193,7 +194,7 @@
         <plugins>
             <plugin>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.6.1</version>
+                <version>3.6.2</version>
                 <executions>
                     <execution>
                         <id>enforce-java</id>
@@ -230,13 +231,13 @@
             </plugin>
             <plugin>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>3.4.0</version>
+                <version>3.5.1</version>
             </plugin>
 
             <!-- Configure the jar with the sources. -->
             <plugin>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>3.4.0</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
@@ -251,7 +252,7 @@
             <!-- Configure the jar with the javadoc. -->
             <plugin>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.11.2</version>
+                <version>3.12.0</version>
                 <configuration>
                     <notimestamp>true</notimestamp>
                     <splitindex>true</splitindex>
@@ -276,11 +277,11 @@
             <plugins>
                 <plugin>
                     <artifactId>maven-dependency-plugin</artifactId>
-                    <version>3.8.1</version>
+                    <version>3.9.0</version>
                 </plugin>
                 <plugin>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.14.0</version>
+                    <version>3.14.1</version>
                     <configuration>
                         <release>11</release>
                         <compilerArgument>-Xlint:unchecked</compilerArgument>
@@ -288,11 +289,11 @@
                 </plugin>
                 <plugin>
                     <artifactId>maven-jar-plugin</artifactId>
-                    <version>3.4.2</version>
+                    <version>3.5.0</version>
                 </plugin>
                 <plugin>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.5.3</version>
+                    <version>3.5.4</version>
                     <configuration>
                         <systemPropertyVariables>
                             <java.util.logging.manager>${test.logManager}</java.util.logging.manager>
@@ -303,7 +304,7 @@
                 </plugin>
                 <plugin>
                     <artifactId>maven-failsafe-plugin</artifactId>
-                    <version>3.5.3</version>
+                    <version>3.5.4</version>
                     <configuration>
                         <systemPropertyVariables>
                             <java.util.logging.manager>${test.logManager}</java.util.logging.manager>
@@ -336,10 +337,16 @@
                 <plugin>
                     <artifactId>maven-gpg-plugin</artifactId>
                     <version>3.2.8</version>
+                    <configuration>
+                        <gpgArguments>
+                            <arg>--pinentry-mode</arg>
+                            <arg>loopback</arg>
+                        </gpgArguments>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <artifactId>maven-release-plugin</artifactId>
-                    <version>3.1.1</version>
+                    <version>3.3.0</version>
                     <configuration>
                         <lineSeparator>lf</lineSeparator>
                         <autoResolveSnapshots>true</autoResolveSnapshots>
@@ -358,7 +365,7 @@
                 <plugin>
                     <groupId>org.sonatype.central</groupId>
                     <artifactId>central-publishing-maven-plugin</artifactId>
-                    <version>0.8.0</version>
+                    <version>0.9.0</version>
                     <extensions>true</extensions>
                     <configuration>
                         <deploymentName>GlassFish Containers ${project.version}</deploymentName>
