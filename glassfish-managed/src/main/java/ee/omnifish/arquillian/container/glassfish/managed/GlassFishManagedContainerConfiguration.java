@@ -54,19 +54,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2023,2025] [OmniFish and/or its affiliates]
-// Portions Copyright [2021,2022] [OmniFaces and/or its affiliates]
+// Portions Copyright [2023, 2025] [OmniFish and/or its affiliates]
+// Portions Copyright [2021, 2022] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.managed;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileStore;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 
 import org.jboss.arquillian.container.spi.ConfigurationException;
+
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
 
+import static ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
 import static org.jboss.arquillian.container.spi.client.deployment.Validate.configurationDirectoryExists;
 import static org.jboss.arquillian.container.spi.client.deployment.Validate.notNull;
-import static ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClient.ADMINSERVER;
 
 /**
  * Configuration for Managed GlassFish containers.
@@ -95,24 +100,26 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private int httpPort = Integer.valueOf(System.getProperty("glassfish.httpPort", "8080"));
     private int httpsPort = Integer.valueOf(System.getProperty("glassfish.httpsPort", "8181"));
 
+    private Path asadmin;
 
     public String getGlassFishHome() {
         return glassFishHome;
     }
 
     /**
-     * @param glashFishHome The local GlassFish installation directory
+     * This setter is used to set value from arquillian.xml
+     *
+     * @param glassFishHome The local GlassFish installation directory
      */
-    public void setGlassFishHome(String glashFishHome) {
-        this.glassFishHome = glashFishHome;
+    public void setGlassFishHome(String glassFishHome) {
+        this.glassFishHome = glassFishHome;
     }
 
     /**
      * @return path to the asadmin command
      */
-    public File getAsadmin() {
-        String extension = System.getProperty("os.name").toLowerCase().contains("win") ? ".bat" : "";
-        return Path.of(getGlassFishHome()).resolve(Path.of("glassfish", "bin", "asadmin" + extension)).toFile();
+    public Path getAsadmin() {
+        return asadmin;
     }
 
 
@@ -288,6 +295,27 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
             configurationDirectoryExists(getGlassFishHome() + "/glassfish/domains/" + getDomain(), "Invalid domain: " + getDomain());
         }
 
+        asadmin = prepareAsadmin(glassFishHome);
         super.validate();
+    }
+
+    private static Path prepareAsadmin(String glassFishHome) {
+        String extension = System.getProperty("os.name").toLowerCase().contains("win") ? ".bat" : "";
+        Path asadmin = Path.of(glassFishHome).resolve(Path.of("glassfish", "bin", "asadmin" + extension)).toAbsolutePath();
+        if (Files.isExecutable(asadmin)) {
+            return asadmin;
+        }
+        try {
+            FileStore fileStore = Files.getFileStore(asadmin);
+            boolean isPosixSupported = fileStore.supportsFileAttributeView(PosixFileAttributeView.class);
+            if (isPosixSupported) {
+                Files.setPosixFilePermissions(asadmin, PosixFilePermissions.fromString("rwx------"));
+                return asadmin;
+            }
+            throw new Error("The asadmin file is not executable and the file system does not support"
+                + " POSIX file permissions to set it: " + asadmin);
+        } catch (IOException e) {
+            throw new Error("The asadmin file is not executable and we failed to change it: " + asadmin, e);
+        }
     }
 }
