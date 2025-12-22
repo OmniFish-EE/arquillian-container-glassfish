@@ -72,6 +72,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
+
 import ee.omnifish.arquillian.container.glassfish.process.CloseableProcess;
 import ee.omnifish.arquillian.container.glassfish.process.ConsoleReader;
 import ee.omnifish.arquillian.container.glassfish.process.OutputLoggingConsumer;
@@ -351,7 +352,7 @@ class GlassFishServerControl {
 
     private List<String> buildCommand(String command, List<String> asadminArgs, List<String> args) {
         List<String> cmd = new ArrayList<>();
-        cmd.add(config.getAsadmin().getAbsolutePath());
+        cmd.add(config.getAsadmin().toString());
         cmd.add("--terse");
         cmd.addAll(asadminArgs);
         cmd.add(command);
