@@ -24,7 +24,7 @@ Then forked from:
  <dependency>
     <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>arquillian-glassfish-server-managed</artifactId>
-    <version>2.0</version>
+    <version>2.1.2</version>
  </dependency>
 ```
 
