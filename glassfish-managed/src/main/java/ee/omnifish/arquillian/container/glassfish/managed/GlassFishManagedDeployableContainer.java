@@ -146,7 +146,7 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
 
     @Override
     public void stop() throws LifecycleException {
-        if (!connectedToRunningServer && !configuration.isKeepServerRunning()) {
+        if (!connectedToRunningServer && glassFishManager.isDASRunning() && !configuration.isKeepServerRunning()) {
             glassFishServerControl.stop();
         }
     }
