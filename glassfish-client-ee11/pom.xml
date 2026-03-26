@@ -58,7 +58,7 @@
     </description>
 
     <properties>
-        <version.jersey>4.0.0</version.jersey>
+        <version.jersey>4.0.2</version.jersey>
     </properties>
 
     <dependencies>
@@ -74,7 +74,7 @@
         <dependency>
             <groupId>com.sun.xml.bind</groupId>
             <artifactId>jaxb-osgi</artifactId>
-            <version>4.0.6</version>
+            <version>4.0.7</version>
         </dependency>
 
         <!-- WebSocket client dependencies -->
