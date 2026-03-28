@@ -369,7 +369,7 @@
                     <version>0.10.0</version>
                     <extensions>true</extensions>
                     <configuration>
-                        <deploymentName>GlassFish Containers ${project.version}</deploymentName>
+                        <deploymentName>GlassFish Arquillian Containers ${project.version}</deploymentName>
                         <publishingServerId>central</publishingServerId>
                         <excludeArtifacts>integration-tests</excludeArtifacts>
                     </configuration>
