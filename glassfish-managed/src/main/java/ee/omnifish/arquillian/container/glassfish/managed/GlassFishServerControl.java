@@ -311,11 +311,12 @@ class GlassFishServerControl {
     }
 
     private void executeAdminDomainCommand(String description, String adminCmd, List<String> args, ProcessOutputConsumer consumer) throws LifecycleException {
+        List<String> mutableArgs = new ArrayList<>(args);
         if (config.getDomain() != null) {
-            args.add(config.getDomain());
+            mutableArgs.add(config.getDomain());
         }
 
-        executeAdminCommand(description, adminCmd, List.of(), args, consumer);
+        executeAdminCommand(description, adminCmd, List.of(), mutableArgs, consumer);
     }
 
     private void executeAdminCommand(String description, String command, List<String> asadminArgs, List<String> args,
