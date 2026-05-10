@@ -139,7 +139,17 @@ plus a `<destFileName>`:
 </configuration>
 ```
 
-Skip in CI without editing the pom: `mvn verify -Dgf.pool.overlay.skip=true`.
+| Overlay element | Type    | Default                          | Notes                                                   |
+| --------------- | ------- | -------------------------------- | ------------------------------------------------------- |
+| `groupId` / `artifactId` / `version` / `type` / `classifier` | String  | (GAV)                            | Maven coordinate to resolve.                            |
+| `destFileName`  | String  | source artifact's file name      | File name to copy under `overlayTargetDir`.             |
+| `skip`          | boolean | `false`                          | Skip just this overlay. Property-driven for per-profile toggling, e.g. `<skip>${soteria.noupdate}</skip>`. |
+
+`overlaySkip` is the master kill-switch (skip *all* overlays); per-overlay
+`<skip>` lets you hold back a subset (e.g. keep the API jar pinned but
+opt out of the impl overlay against a SNAPSHOT it doesn't yet match).
+
+Skip everything in CI without editing the pom: `mvn verify -Dgf.pool.overlay.skip=true`.
 
 ## Recipes
 

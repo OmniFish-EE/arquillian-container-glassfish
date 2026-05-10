@@ -94,6 +94,10 @@ public final class PoolStaging {
         Path target = spec.overlayTargetDir();
         Files.createDirectories(target);
         for (OverlayCoord overlay : spec.overlays()) {
+            if (overlay.isSkip()) {
+                LOG.info("Skipping overlay " + overlay.toGav() + " (skip=true)");
+                continue;
+            }
             Path source = resolver.resolve(overlay);
             String fileName = (overlay.getDestFileName() == null || overlay.getDestFileName().isEmpty())
                     ? source.getFileName().toString()

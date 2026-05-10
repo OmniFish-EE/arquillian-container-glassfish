@@ -19,6 +19,7 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 public class OverlayCoord extends ArtifactCoord {
 
     private String destFileName;
+    private boolean skip;
 
     public OverlayCoord() {
     }
@@ -35,5 +36,13 @@ public class OverlayCoord extends ArtifactCoord {
 
     public void setDestFileName(String destFileName) {
         this.destFileName = destFileName;
+    }
+
+    public boolean isSkip() {
+        return skip;
+    }
+
+    public void setSkip(boolean skip) {
+        this.skip = skip;
     }
 }
