@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
+    </parent>
+
+    <groupId>ee.omnifish.arquillian.test</groupId>
+    <artifactId>pool-test</artifactId>
+    <packaging>jar</packaging>
+    <name>Integration Test: GlassFish Server Pool</name>
+
+    <description>
+        End-to-end smoke test for arquillian-glassfish-server-pool.
+        Provisions a 1-slot pool via glassfish-pool-maven-plugin, runs an
+        Arquillian deploy-war test against the leased slot, then tears the
+        pool down. Run via integration-tests' maven-invoker harness.
+    </description>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <container.version>@project.version@</container.version>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+        <glassfish.home>@glassfish.home@</glassfish.home>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>ee.omnifish.arquillian</groupId>
+            <artifactId>arquillian-glassfish-server-pool</artifactId>
+            <version>${container.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.shrinkwrap</groupId>
+            <artifactId>shrinkwrap-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Stage GlassFish under target/dist so the pool plugin can clone it. -->
+            <plugin>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>unpack-glassfish</id>
+                        <phase>process-test-classes</phase>
+                        <goals><goal>unpack</goal></goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.glassfish.main.distributions</groupId>
+                                    <artifactId>glassfish</artifactId>
+                                    <version>${glassfish.version}</version>
+                                    <type>zip</type>
+                                    <outputDirectory>${project.build.directory}/dist</outputDirectory>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!--
+                Provision/start the pool before failsafe, stop it after.
+                pre-integration-test  -> glassfish-pool:up
+                post-integration-test -> glassfish-pool:down
+            -->
+            <plugin>
+                <groupId>ee.omnifish.arquillian</groupId>
+                <artifactId>glassfish-pool-maven-plugin</artifactId>
+                <version>${container.version}</version>
+                <configuration>
+                    <poolDir>${project.build.directory}/pool</poolDir>
+                    <poolSource>${project.build.directory}/dist/${glassfish.home}</poolSource>
+                    <poolSize>1</poolSize>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>pool-up</id>
+                        <goals><goal>up</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>pool-down</id>
+                        <goals><goal>down</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <gf.pool.dir>${project.build.directory}/pool</gf.pool.dir>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

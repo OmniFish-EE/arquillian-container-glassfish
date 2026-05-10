@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+  See the License for the specific
+  language governing permissions and limitations under the License.
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-dependencies</artifactId>
+        <version>2.1.4-SNAPSHOT</version>
+        <relativePath>../dependencies</relativePath>
+    </parent>
+
+    <artifactId>arquillian-glassfish-server-pool</artifactId>
+
+    <name>Arquillian Container GlassFish Pool</name>
+    <description>
+        Pool of pre-started GlassFish instances. Test JVMs running in parallel (e.g. via
+        Maven -T) lease an idle slot for the duration of the JVM and run their Arquillian
+        deployments against it. Provisioning, starting, stopping and the lease protocol
+        are pure Java; no shell scripts.
+    </description>
+
+    <properties>
+        <!--
+            The parent pom defaults this to GlassFish's JUL extension, which is only
+            on the classpath of modules that pull in the embedded GlassFish dist.
+            Pool unit tests are pure JUnit, so fall back to the JDK default and avoid
+            the surefire CNFE on LogManager bootstrap.
+        -->
+        <test.logManager>java.util.logging.LogManager</test.logManager>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>ee.omnifish.arquillian</groupId>
+            <artifactId>glassfish-container-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Used by PoolStaging to preserve POSIX permissions when unzipping.
+             Optional because only the Maven plugin calls PoolStaging; test-JVM
+             consumers of this jar pull in just the runtime types. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.27.1</version>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.arquillian.container</groupId>
+            <artifactId>arquillian-container-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.container</groupId>
+            <artifactId>arquillian-container-test-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.protocol</groupId>
+            <artifactId>arquillian-protocol-servlet-jakarta</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.arquillian.testenricher</groupId>
+            <artifactId>arquillian-testenricher-cdi-jakarta</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.testenricher</groupId>
+            <artifactId>arquillian-testenricher-ejb-jakarta</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.testenricher</groupId>
+            <artifactId>arquillian-testenricher-resource-jakarta</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.testenricher</groupId>
+            <artifactId>arquillian-testenricher-initialcontext</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-dependencies</artifactId>
+        <version>2.1.4-SNAPSHOT</version>
+        <relativePath>../dependencies</relativePath>
+    </parent>
+
+    <artifactId>glassfish-pool-maven-plugin</artifactId>
+    <packaging>maven-plugin</packaging>
+
+    <name>Arquillian Container GlassFish Pool — Maven Plugin</name>
+    <description>
+        Lifecycle goals (up/down/provision/status/nuke) wrapping
+        ee.omnifish.arquillian:arquillian-glassfish-server-pool. Lets a
+        consumer pom bind pool-up to pre-integration-test and pool-down to
+        post-integration-test.
+    </description>
+
+    <prerequisites>
+        <maven>3.9.0</maven>
+    </prerequisites>
+
+    <properties>
+        <version.maven.plugin>3.9.0</version.maven.plugin>
+        <version.maven.plugin.annotations>3.15.1</version.maven.plugin.annotations>
+        <version.maven.plugin.plugin>3.15.1</version.maven.plugin.plugin>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>ee.omnifish.arquillian</groupId>
+            <artifactId>arquillian-glassfish-server-pool</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-plugin-api</artifactId>
+            <version>${version.maven.plugin}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-core</artifactId>
+            <version>${version.maven.plugin}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugin-tools</groupId>
+            <artifactId>maven-plugin-annotations</artifactId>
+            <version>${version.maven.plugin.annotations}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Aether resolver: used by UpMojo/ProvisionMojo to fetch the
+             GlassFish dist + overlay artifacts ahead of slot provisioning. -->
+        <dependency>
+            <groupId>org.apache.maven.resolver</groupId>
+            <artifactId>maven-resolver-api</artifactId>
+            <version>1.9.18</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- glassfish-pool declares commons-compress as optional (test-JVM
+             consumers don't need it). The plugin does, so pull it in directly. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.27.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>${version.maven.plugin.plugin}</version>
+                <configuration>
+                    <goalPrefix>glassfish-pool</goalPrefix>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
