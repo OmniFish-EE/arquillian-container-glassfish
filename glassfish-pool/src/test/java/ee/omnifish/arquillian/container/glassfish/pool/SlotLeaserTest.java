@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -137,8 +138,23 @@ class SlotLeaserTest {
     }
 
     private int openFake() throws IOException {
-        ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
+        // Backlog 50 + an accept-and-close drainer thread so health probes can
+        // hit the same fake port repeatedly without filling the listen queue.
+        // Windows enforces backlog strictly: with backlog 1 and no accept(),
+        // the second probe in a row gets refused.
+        ServerSocket socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         fakes.add(socket);
+        Thread drainer = new Thread(() -> {
+            while (!socket.isClosed()) {
+                try (Socket accepted = socket.accept()) {
+                    // Close immediately — probe just needs the connect to succeed.
+                } catch (IOException e) {
+                    return;
+                }
+            }
+        }, "fake-admin-drainer");
+        drainer.setDaemon(true);
+        drainer.start();
         int port = socket.getLocalPort();
         assertThat(port, greaterThan(0));
         return port;
