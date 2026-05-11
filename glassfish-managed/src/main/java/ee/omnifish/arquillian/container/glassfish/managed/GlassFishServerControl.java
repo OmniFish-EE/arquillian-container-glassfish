@@ -66,13 +66,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 
+import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
 import ee.omnifish.arquillian.container.glassfish.process.CloseableProcess;
 import ee.omnifish.arquillian.container.glassfish.process.ConsoleReader;
 import ee.omnifish.arquillian.container.glassfish.process.OutputLoggingConsumer;
@@ -80,8 +78,6 @@ import ee.omnifish.arquillian.container.glassfish.process.ProcessOutputConsumer;
 import ee.omnifish.arquillian.container.glassfish.process.SilentOutputConsumer;
 
 import static java.lang.Runtime.getRuntime;
-import static java.nio.file.Files.readString;
-import static java.nio.file.Files.writeString;
 import static java.util.Arrays.asList;
 import static java.util.Arrays.copyOfRange;
 import static java.util.logging.Level.SEVERE;
@@ -119,24 +115,7 @@ class GlassFishServerControl {
             startDerbyDatabase();
         }
 
-        Map<String, String> vmOptions = new LinkedHashMap<String, String>();
-        if (config.getMaxHeapSize() != null) {
-            vmOptions.put("-Xmx", config.getMaxHeapSize());
-        }
-
-        if (config.getEnableAssertions() != null) {
-            vmOptions.put("-ea", config.getEnableAssertions());
-        }
-
-        for (String systemProperty : config.getSystemProperyList()) {
-            vmOptions.put("-D" + systemProperty, "");
-        }
-
-        if (!vmOptions.isEmpty()) {
-            setVmOptionsInDomain(vmOptions);
-        }
-
-        setPortsInDomain(config.getAdminPort(), config.getHttpPort(), config.getHttpsPort());
+        applyDomainXmlEdits();
 
         final List<String> args = new ArrayList<>();
         if (config.isDebug()) {
@@ -244,70 +223,24 @@ class GlassFishServerControl {
         getRuntime().addShutdownHook(shutdownHook);
     }
 
-    private void setVmOptionsInDomain(Map<String, String> vmOptions) {
-        // Quick and dirty replacements via regexp for now.
-        // Eventually a fully parsed domain.xml editing may be better.
+    private void applyDomainXmlEdits() {
+        Path domainXml = Paths.get(config.getDomainXmlPath());
         try {
-            String content = readString(Paths.get(config.getDomainXmlPath()));
+            DomainXmlEditor.setPorts(domainXml, config.getAdminPort(), config.getHttpPort(), config.getHttpsPort());
 
-            for (Entry<String, String> vmOption :  vmOptions.entrySet()) {
-
-                Matcher vmOptionMatcher = Pattern.compile("<jvm-options>" + Pattern.quote(vmOption.getKey()) + "(.*)</jvm-options>")
-                                                 .matcher(content);
-
-                if (vmOptionMatcher.find()) {
-                    content  = vmOptionMatcher.replaceAll("<jvm-options>" + vmOption.getKey() + vmOption.getValue() + "</jvm-options>");
-                } else {
-                    content  = content.replaceAll(
-                                    "</java-config>",
-                                    "<jvm-options>" + vmOption.getKey() + vmOption.getValue() + "</jvm-options>\n</java-config>");
-                }
+            Map<String, String> jvmOptions = new LinkedHashMap<>();
+            if (config.getMaxHeapSize() != null) {
+                jvmOptions.put("-Xmx", "-Xmx" + config.getMaxHeapSize());
             }
+            if (config.getEnableAssertions() != null) {
+                jvmOptions.put("-ea", "-ea" + config.getEnableAssertions());
+            }
+            DomainXmlEditor.setJvmOptions(domainXml, jvmOptions);
 
-            writeString(Paths.get(config.getDomainXmlPath()), content);
+            DomainXmlEditor.setSystemProperties(domainXml, config.getSystemProperyList());
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.log(SEVERE, "Failed editing " + domainXml, e);
         }
-    }
-
-    private void setPortsInDomain(int adminPort, int httpPort, int httpsPort) {
-        // Quick and dirty replacements via regexp for now.
-        // Eventually a fully parsed domain.xml editing may be better.
-        try {
-            String content = readString(Paths.get(config.getDomainXmlPath()));
-            boolean contentChanged = false;
-
-            String newContent = null;
-
-            for (var entry : Map.of("admin-listener", adminPort, "http-listener-1", httpPort, "http-listener-2", httpsPort).entrySet()) {
-                newContent = updateNetworkListener(content, entry.getKey(), entry.getValue());
-                if (newContent != null) {
-                    content = newContent;
-                    contentChanged = true;
-                }
-            }
-
-            if (contentChanged) {
-                writeString(Paths.get(config.getDomainXmlPath()), content);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private String updateNetworkListener(String domainXml, String name, int port) {
-        Matcher networkMatcher = Pattern.compile("(<network-listener.* port=\\\")(.*?)(\\\" .*" + name + ".*>)")
-                                     .matcher(domainXml);
-
-        if (networkMatcher.find()) {
-            String originalPort = networkMatcher.group(2);
-            if (!originalPort.startsWith("${") && !originalPort.equals(port + "")) {
-                return networkMatcher.replaceAll("$1" + port + "$3");
-            }
-        }
-
-        return null;
-
     }
 
     private void executeAdminDomainCommand(String description, String adminCmd, List<String> args, ProcessOutputConsumer consumer) throws LifecycleException {

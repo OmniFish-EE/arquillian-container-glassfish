@@ -19,6 +19,8 @@ import java.util.Comparator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
+
 /**
  * Provisions a single slot: clone the source install, patch the per-slot
  * ports into {@code domain.xml}, run {@code asadmin start-domain}, then
@@ -83,7 +85,7 @@ public final class PoolProvisioner {
                 .resolve("glassfish").resolve("domains").resolve("domain1")
                 .resolve("config").resolve("domain.xml");
         DomainXmlEditor.setPorts(domainXml, adminPort, httpPort, httpsPort);
-        DomainXmlEditor.setJvmOptions(domainXml, config.systemProperties());
+        DomainXmlEditor.setSystemProperties(domainXml, config.systemProperties());
 
         AsAdmin asadmin = new AsAdmin(slotInstall);
         try {
