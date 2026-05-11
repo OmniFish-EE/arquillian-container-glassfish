@@ -19,6 +19,8 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.logging.Logger;
 
+import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
+
 /**
  * Clones a source GlassFish install tree into a slot directory using
  * {@link Files#createLink hardlinks} so N slots cost ~one source's worth

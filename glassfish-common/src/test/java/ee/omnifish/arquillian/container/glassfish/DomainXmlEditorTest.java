@@ -1,18 +1,17 @@
 /*
  * Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.arquillian.container.glassfish;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,12 +36,12 @@ class DomainXmlEditorTest {
         DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
 
         String content = Files.readString(domainXml);
-        assertThat(content, containsString("port=\"14948\""));
-        assertThat(content, containsString("port=\"14949\""));
-        assertThat(content, containsString("port=\"14950\""));
-        assertThat(content, not(containsString("port=\"4848\"")));
-        assertThat(content, not(containsString("port=\"8080\"")));
-        assertThat(content, not(containsString("port=\"8181\"")));
+        assertTrue(content.contains("port=\"14948\""), content);
+        assertTrue(content.contains("port=\"14949\""), content);
+        assertTrue(content.contains("port=\"14950\""), content);
+        assertFalse(content.contains("port=\"4848\""), content);
+        assertFalse(content.contains("port=\"8080\""), content);
+        assertFalse(content.contains("port=\"8181\""), content);
     }
 
     @Test
@@ -54,8 +53,8 @@ class DomainXmlEditorTest {
         DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
 
         String content = Files.readString(domainXml);
-        assertThat(content, containsString("port=\"${ADMIN_PORT}\""));
-        assertThat(content, containsString("port=\"14949\""));
+        assertTrue(content.contains("port=\"${ADMIN_PORT}\""), content);
+        assertTrue(content.contains("port=\"14949\""), content);
     }
 
     private static final String JAVA_CONFIG_FRAGMENT =
@@ -65,36 +64,36 @@ class DomainXmlEditorTest {
             + "</java-config>";
 
     @Test
-    void appendsNewJvmOption(@TempDir Path tmp) throws IOException {
+    void appendsNewSystemProperty(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
         Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
 
-        DomainXmlEditor.setJvmOptions(domainXml,
+        DomainXmlEditor.setSystemProperties(domainXml,
                 List.of("javax.net.ssl.trustStorePassword=changeit"));
 
         String content = Files.readString(domainXml);
-        assertThat(content, containsString(
-                "<jvm-options>-Djavax.net.ssl.trustStorePassword=changeit</jvm-options>"));
-        assertThat(content, containsString("<jvm-options>-Xmx512m</jvm-options>"));
+        assertTrue(content.contains(
+                "<jvm-options>-Djavax.net.ssl.trustStorePassword=changeit</jvm-options>"), content);
+        assertTrue(content.contains("<jvm-options>-Xmx512m</jvm-options>"), content);
     }
 
     @Test
-    void replacesExistingJvmOptionWithSameKey(@TempDir Path tmp) throws IOException {
+    void replacesExistingSystemPropertyWithSameKey(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
         Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
 
-        DomainXmlEditor.setJvmOptions(domainXml,
+        DomainXmlEditor.setSystemProperties(domainXml,
                 List.of("javax.net.ssl.trustStore=elsewhere.jks"));
 
         String content = Files.readString(domainXml);
-        assertThat(content, containsString(
-                "<jvm-options>-Djavax.net.ssl.trustStore=elsewhere.jks</jvm-options>"));
-        assertThat(content, not(containsString(
-                "<jvm-options>-Djavax.net.ssl.trustStore=cacerts.p12</jvm-options>")));
+        assertTrue(content.contains(
+                "<jvm-options>-Djavax.net.ssl.trustStore=elsewhere.jks</jvm-options>"), content);
+        assertFalse(content.contains(
+                "<jvm-options>-Djavax.net.ssl.trustStore=cacerts.p12</jvm-options>"), content);
     }
 
     @Test
-    void idempotentWhenAlreadySet(@TempDir Path tmp) throws IOException {
+    void systemPropertyIsIdempotentWhenAlreadySet(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
         Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
         long mtimeBefore = Files.getLastModifiedTime(domainXml).toMillis();
@@ -107,36 +106,88 @@ class DomainXmlEditorTest {
             Thread.currentThread().interrupt();
         }
 
-        DomainXmlEditor.setJvmOptions(domainXml,
+        DomainXmlEditor.setSystemProperties(domainXml,
                 List.of("javax.net.ssl.trustStore=cacerts.p12"));
 
         long mtimeAfter = Files.getLastModifiedTime(domainXml).toMillis();
-        assertThat(mtimeAfter, equalTo(mtimeBefore));
+        assertEquals(mtimeBefore, mtimeAfter);
     }
 
     @Test
-    void bareKeyIsIdempotent(@TempDir Path tmp) throws IOException {
+    void bareSystemPropertyKeyIsIdempotent(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
         Files.writeString(domainXml,
                 "<java-config><jvm-options>-Dsomeflag</jvm-options></java-config>");
 
-        DomainXmlEditor.setJvmOptions(domainXml, List.of("someflag"));
+        DomainXmlEditor.setSystemProperties(domainXml, List.of("someflag"));
 
         // Should still be a single occurrence — no duplicate appended.
         String content = Files.readString(domainXml);
         int count = content.split("-Dsomeflag", -1).length - 1;
-        assertThat(count, equalTo(1));
+        assertEquals(1, count);
     }
 
     @Test
-    void emptyOrNullPropertiesIsNoop(@TempDir Path tmp) throws IOException {
+    void emptyOrNullSystemPropertiesIsNoop(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
         Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
 
-        DomainXmlEditor.setJvmOptions(domainXml, List.of());
+        DomainXmlEditor.setSystemProperties(domainXml, List.of());
+        DomainXmlEditor.setSystemProperties(domainXml, null);
+
+        assertEquals(JAVA_CONFIG_FRAGMENT, Files.readString(domainXml));
+    }
+
+    @Test
+    void replacesExistingJvmOptionByPrefix(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        DomainXmlEditor.setJvmOptions(domainXml, Map.of("-Xmx", "-Xmx2g"));
+
+        String content = Files.readString(domainXml);
+        assertTrue(content.contains("<jvm-options>-Xmx2g</jvm-options>"), content);
+        assertFalse(content.contains("<jvm-options>-Xmx512m</jvm-options>"), content);
+    }
+
+    @Test
+    void appendsNewJvmOptionWhenAbsent(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        DomainXmlEditor.setJvmOptions(domainXml, Map.of("-ea", "-ea"));
+
+        String content = Files.readString(domainXml);
+        assertTrue(content.contains("<jvm-options>-ea</jvm-options>"), content);
+    }
+
+    @Test
+    void jvmOptionIsIdempotentWhenAlreadySet(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+        long mtimeBefore = Files.getLastModifiedTime(domainXml).toMillis();
+
+        try {
+            Thread.sleep(20);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        DomainXmlEditor.setJvmOptions(domainXml, Map.of("-Xmx", "-Xmx512m"));
+
+        long mtimeAfter = Files.getLastModifiedTime(domainXml).toMillis();
+        assertEquals(mtimeBefore, mtimeAfter);
+    }
+
+    @Test
+    void emptyOrNullJvmOptionsIsNoop(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        DomainXmlEditor.setJvmOptions(domainXml, Map.of());
         DomainXmlEditor.setJvmOptions(domainXml, null);
 
-        assertThat(Files.readString(domainXml), equalTo(JAVA_CONFIG_FRAGMENT));
+        assertEquals(JAVA_CONFIG_FRAGMENT, Files.readString(domainXml));
     }
 
     @Test
@@ -159,8 +210,8 @@ class DomainXmlEditorTest {
 
         String slotContent = Files.readString(slot);
         String sourceContent = Files.readString(source);
-        assertThat(slotContent, containsString("port=\"14948\""));
-        assertThat(sourceContent, containsString("port=\"4848\""));
-        assertThat(sourceContent.equals(slotContent), is(false));
+        assertTrue(slotContent.contains("port=\"14948\""), slotContent);
+        assertTrue(sourceContent.contains("port=\"4848\""), sourceContent);
+        assertFalse(sourceContent.equals(slotContent));
     }
 }

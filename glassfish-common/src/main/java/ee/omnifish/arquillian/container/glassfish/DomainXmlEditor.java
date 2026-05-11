@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.arquillian.container.glassfish;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,7 +17,10 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.OutputKeys;
@@ -34,17 +37,21 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 /**
- * DOM-based editor for the per-slot {@code domain.xml}: rewrites the
+ * DOM-based editor for a GlassFish {@code domain.xml}: rewrites the
  * {@code port} attribute on the admin/http/https {@code <network-listener>}
- * elements.
+ * elements, and upserts {@code <jvm-options>} children under each
+ * {@code <java-config>}.
  *
  * <p>Writes go through a sibling tmp file + atomic move so the underlying
- * inode is replaced rather than truncated. That matters because pool slots
- * are produced by hardlinking the source install ({@code Files.createLink}
- * per file); truncating in place would also rewrite the source's
- * {@code domain.xml}, the one that must stay pristine for the next slot.
+ * inode is replaced rather than truncated. That matters for the pool
+ * container, which produces per-slot installs by hardlinking the source
+ * install ({@code Files.createLink} per file); truncating in place would
+ * also rewrite the source's {@code domain.xml}, the one that must stay
+ * pristine for the next slot.
  */
-final class DomainXmlEditor {
+public final class DomainXmlEditor {
+
+    private static final Logger LOG = Logger.getLogger(DomainXmlEditor.class.getName());
 
     private DomainXmlEditor() {
     }
@@ -60,7 +67,7 @@ final class DomainXmlEditor {
      * @param https http-listener-2 port
      * @throws IOException if the file can't be parsed, rewritten, or moved into place
      */
-    static void setPorts(Path domainXml, int admin, int http, int https) throws IOException {
+    public static void setPorts(Path domainXml, int admin, int http, int https) throws IOException {
         Map<String, Integer> wanted = Map.of(
                 "admin-listener", admin,
                 "http-listener-1", http,
@@ -98,15 +105,17 @@ final class DomainXmlEditor {
      *   <li>no existing {@code -Dkey=…}: appended as a new child</li>
      * </ul>
      *
-     * <p>Empty/null inputs are no-ops. Lines starting with {@code #} and blank
-     * lines have already been filtered upstream (mirrors managed's
-     * {@code glassfish.systemProperties} parsing convention).
+     * <p>Inputs are expected to be {@code key=value} (or bare {@code key}) without
+     * the {@code -D} prefix; the editor prepends it. Empty/null inputs are no-ops.
+     * Lines starting with {@code #} and blank lines have already been filtered
+     * upstream (mirrors the {@code glassfish.systemProperties} parsing convention
+     * in {@code CommonGlassFishConfiguration}).
      *
      * <p>Writes go through the same {@link #atomicWrite atomic-move} path as
      * {@link #setPorts}, so the source install's hardlinked {@code domain.xml}
      * stays intact.
      */
-    static void setJvmOptions(Path domainXml, List<String> properties) throws IOException {
+    public static void setSystemProperties(Path domainXml, List<String> properties) throws IOException {
         if (properties == null || properties.isEmpty()) {
             return;
         }
@@ -116,7 +125,7 @@ final class DomainXmlEditor {
         for (int i = 0; i < javaConfigs.getLength(); i++) {
             Element javaConfig = (Element) javaConfigs.item(i);
             for (String prop : properties) {
-                if (upsertJvmOption(javaConfig, prop)) {
+                if (upsertChild(javaConfig, systemPropertyPrefix(prop), "-D" + prop)) {
                     changed = true;
                 }
             }
@@ -128,15 +137,60 @@ final class DomainXmlEditor {
     }
 
     /**
-     * Insert or update one {@code -Dkey=value} entry under a single
-     * {@code <java-config>}. Returns true iff the document changed.
+     * Upsert raw {@code <jvm-options>} entries into every {@code <java-config>}
+     * block. Each map entry is {@code matchPrefix -> fullOption}:
+     * <ul>
+     *   <li>existing child whose text starts with {@code matchPrefix} and equals
+     *       {@code fullOption}: left alone (idempotent)</li>
+     *   <li>existing child whose text starts with {@code matchPrefix} but differs:
+     *       textContent replaced with {@code fullOption}</li>
+     *   <li>no existing child starting with {@code matchPrefix}: {@code fullOption}
+     *       appended as a new child</li>
+     * </ul>
+     *
+     * <p>Use this for options that don't follow the {@code -Dkey=value} convention,
+     * e.g. {@code Map.of("-Xmx", "-Xmx512m", "-ea", "-ea")}. For system properties,
+     * prefer {@link #setSystemProperties}.
+     *
+     * <p>Empty/null inputs are no-ops.
      */
-    private static boolean upsertJvmOption(Element javaConfig, String keyValue) {
-        String desired = "-D" + keyValue;
-        // Bare key (no value) becomes a flag; match it exactly.
-        // key=value matches by prefix so a stale value gets overwritten.
+    public static void setJvmOptions(Path domainXml, Map<String, String> options) throws IOException {
+        if (options == null || options.isEmpty()) {
+            return;
+        }
+        Document doc = parse(domainXml);
+        boolean changed = false;
+        NodeList javaConfigs = doc.getElementsByTagName("java-config");
+        for (int i = 0; i < javaConfigs.getLength(); i++) {
+            Element javaConfig = (Element) javaConfigs.item(i);
+            for (Map.Entry<String, String> entry : options.entrySet()) {
+                if (upsertChild(javaConfig, entry.getKey(), entry.getValue())) {
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) {
+            return;
+        }
+        atomicWrite(domainXml, doc);
+    }
+
+    /**
+     * Match-prefix for a {@code -Dkey=value} option: {@code "-Dkey="} so the
+     * value gets overwritten on update. For a bare {@code key} (no value), the
+     * prefix is the full {@code "-Dkey"} so we only collide with that exact flag.
+     */
+    private static String systemPropertyPrefix(String keyValue) {
         int eq = keyValue.indexOf('=');
-        String prefix = (eq < 0) ? desired : "-D" + keyValue.substring(0, eq + 1);
+        return (eq < 0) ? "-D" + keyValue : "-D" + keyValue.substring(0, eq + 1);
+    }
+
+    /**
+     * Insert or update one {@code <jvm-options>} child under a single
+     * {@code <java-config>}, matching by {@code prefix}. Returns true iff the
+     * document changed.
+     */
+    private static boolean upsertChild(Element javaConfig, String prefix, String desired) {
         for (Element existing : directChildren(javaConfig, "jvm-options")) {
             String text = existing.getTextContent();
             if (text != null && text.startsWith(prefix)) {
@@ -171,18 +225,29 @@ final class DomainXmlEditor {
     }
 
     private static Document parse(Path domainXml) throws IOException {
+        // domain.xml is plain config — no DTDs, no external entities. Harden the
+        // parser per the OWASP XXE cheatsheet so a tampered file can't trigger
+        // entity expansion or external resource fetches.
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        // domain.xml has no namespaces and pulls no external entities; harden
-        // the parser so a tampered file can't trigger XXE or DOCTYPE expansion.
+        dbf.setValidating(false);
+        dbf.setNamespaceAware(false);
+        dbf.setExpandEntityReferences(false);
         try {
+            dbf.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
             dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            dbf.setXIncludeAware(false);
-            dbf.setExpandEntityReferences(false);
+            unsetAttributeIgnoringIAE(dbf, XMLConstants.ACCESS_EXTERNAL_DTD);
+            unsetAttributeIgnoringIAE(dbf, XMLConstants.ACCESS_EXTERNAL_SCHEMA);
             return dbf.newDocumentBuilder().parse(domainXml.toFile());
         } catch (ParserConfigurationException | SAXException e) {
             throw new IOException("Could not parse " + domainXml, e);
+        }
+    }
+
+    private static void unsetAttributeIgnoringIAE(DocumentBuilderFactory dbf, String name) {
+        try {
+            dbf.setAttribute(name, "");
+        } catch (IllegalArgumentException e) {
+            LOG.log(Level.FINE, () -> "Cannot unset attribute '" + name + "'; falling back to default");
         }
     }
 
