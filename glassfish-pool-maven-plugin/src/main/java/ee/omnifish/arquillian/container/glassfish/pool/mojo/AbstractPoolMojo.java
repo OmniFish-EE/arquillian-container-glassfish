@@ -57,8 +57,22 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     @Parameter(property = "gf.pool.skip", defaultValue = "false")
     protected boolean skip;
 
+    /**
+     * Newline-separated {@code key=value} pairs baked into each slot's
+     * {@code domain.xml} as {@code <jvm-options>-Dkey=value</jvm-options>}.
+     * Mirrors {@code glassfish.systemProperties} on
+     * {@code arquillian-glassfish-server-managed} — same syntax, same
+     * comment ({@code #}) and blank-line handling. Use this for properties
+     * that must be on the GlassFish JVM at startup (e.g.
+     * {@code javax.net.ssl.trustStorePassword}, which a PKCS12 truststore
+     * needs in order to load any trust anchors).
+     */
+    @Parameter(property = "glassfish.systemProperties")
+    protected String systemProperties;
+
     protected PoolConfig poolConfig() {
         Path source = (poolSource == null) ? null : poolSource.toPath();
-        return new PoolConfig(poolDir.toPath(), source, poolSize, adminPortBase, portStride);
+        return new PoolConfig(poolDir.toPath(), source, poolSize, adminPortBase, portStride,
+                PoolConfig.parseSystemProperties(systemProperties));
     }
 }

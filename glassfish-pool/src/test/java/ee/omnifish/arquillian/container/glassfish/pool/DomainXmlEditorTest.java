@@ -5,12 +5,14 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -54,6 +56,87 @@ class DomainXmlEditorTest {
         String content = Files.readString(domainXml);
         assertThat(content, containsString("port=\"${ADMIN_PORT}\""));
         assertThat(content, containsString("port=\"14949\""));
+    }
+
+    private static final String JAVA_CONFIG_FRAGMENT =
+            "<java-config>"
+            + "<jvm-options>-Xmx512m</jvm-options>"
+            + "<jvm-options>-Djavax.net.ssl.trustStore=cacerts.p12</jvm-options>"
+            + "</java-config>";
+
+    @Test
+    void appendsNewJvmOption(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        DomainXmlEditor.setJvmOptions(domainXml,
+                List.of("javax.net.ssl.trustStorePassword=changeit"));
+
+        String content = Files.readString(domainXml);
+        assertThat(content, containsString(
+                "<jvm-options>-Djavax.net.ssl.trustStorePassword=changeit</jvm-options>"));
+        assertThat(content, containsString("<jvm-options>-Xmx512m</jvm-options>"));
+    }
+
+    @Test
+    void replacesExistingJvmOptionWithSameKey(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        DomainXmlEditor.setJvmOptions(domainXml,
+                List.of("javax.net.ssl.trustStore=elsewhere.jks"));
+
+        String content = Files.readString(domainXml);
+        assertThat(content, containsString(
+                "<jvm-options>-Djavax.net.ssl.trustStore=elsewhere.jks</jvm-options>"));
+        assertThat(content, not(containsString(
+                "<jvm-options>-Djavax.net.ssl.trustStore=cacerts.p12</jvm-options>")));
+    }
+
+    @Test
+    void idempotentWhenAlreadySet(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+        long mtimeBefore = Files.getLastModifiedTime(domainXml).toMillis();
+
+        // Sleep just enough that a second write would advance mtime; the
+        // contract is that no write happens, so mtime stays put.
+        try {
+            Thread.sleep(20);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        DomainXmlEditor.setJvmOptions(domainXml,
+                List.of("javax.net.ssl.trustStore=cacerts.p12"));
+
+        long mtimeAfter = Files.getLastModifiedTime(domainXml).toMillis();
+        assertThat(mtimeAfter, equalTo(mtimeBefore));
+    }
+
+    @Test
+    void bareKeyIsIdempotent(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml,
+                "<java-config><jvm-options>-Dsomeflag</jvm-options></java-config>");
+
+        DomainXmlEditor.setJvmOptions(domainXml, List.of("someflag"));
+
+        // Should still be a single occurrence — no duplicate appended.
+        String content = Files.readString(domainXml);
+        int count = content.split("-Dsomeflag", -1).length - 1;
+        assertThat(count, equalTo(1));
+    }
+
+    @Test
+    void emptyOrNullPropertiesIsNoop(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        DomainXmlEditor.setJvmOptions(domainXml, List.of());
+        DomainXmlEditor.setJvmOptions(domainXml, null);
+
+        assertThat(Files.readString(domainXml), equalTo(JAVA_CONFIG_FRAGMENT));
     }
 
     @Test

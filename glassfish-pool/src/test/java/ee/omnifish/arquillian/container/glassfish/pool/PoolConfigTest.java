@@ -4,6 +4,8 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -34,5 +36,31 @@ class PoolConfigTest {
         // 10 is the documented minimum (one GF domain occupies 10 ports).
         PoolConfig c = new PoolConfig(Paths.get("/x"), null, 1, 14848, 10);
         assertThat(c.portStride(), equalTo(10));
+    }
+
+    @Test
+    void parseSystemPropertiesStripsBlanksAndComments() {
+        String input = "# leading comment\n"
+                + "javax.net.ssl.trustStorePassword=changeit\n"
+                + "\n"
+                + "  java.awt.headless=true\n"
+                + "# trailing comment\n";
+        assertThat(PoolConfig.parseSystemProperties(input),
+                contains("javax.net.ssl.trustStorePassword=changeit",
+                         "java.awt.headless=true"));
+    }
+
+    @Test
+    void parseSystemPropertiesEmptyForNullOrBlank() {
+        assertThat(PoolConfig.parseSystemProperties(null), empty());
+        assertThat(PoolConfig.parseSystemProperties(""), empty());
+        assertThat(PoolConfig.parseSystemProperties("   \n  \n"), empty());
+    }
+
+    @Test
+    void systemPropertiesPropagatedFromConstructor() {
+        PoolConfig c = new PoolConfig(Paths.get("/x"), null, 1, 14848, 100,
+                java.util.List.of("a=b", "c=d"));
+        assertThat(c.systemProperties(), contains("a=b", "c=d"));
     }
 }
