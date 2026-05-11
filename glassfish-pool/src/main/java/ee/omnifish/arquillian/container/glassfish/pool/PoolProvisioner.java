@@ -83,6 +83,7 @@ public final class PoolProvisioner {
                 .resolve("glassfish").resolve("domains").resolve("domain1")
                 .resolve("config").resolve("domain.xml");
         DomainXmlEditor.setPorts(domainXml, adminPort, httpPort, httpsPort);
+        DomainXmlEditor.setJvmOptions(domainXml, config.systemProperties());
 
         AsAdmin asadmin = new AsAdmin(slotInstall);
         try {

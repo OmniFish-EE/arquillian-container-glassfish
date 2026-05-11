@@ -14,6 +14,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -27,6 +29,7 @@ import javax.xml.transform.stream.StreamResult;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
@@ -83,6 +86,88 @@ final class DomainXmlEditor {
             return;
         }
         atomicWrite(domainXml, doc);
+    }
+
+    /**
+     * Upsert {@code -D<key>=<value>} entries into every {@code <java-config>}
+     * block. Each {@code key=value} input becomes/overwrites a
+     * {@code <jvm-options>-Dkey=value</jvm-options>} child of {@code <java-config>}:
+     * <ul>
+     *   <li>existing {@code -Dkey=…} child with same value: left alone (idempotent)</li>
+     *   <li>existing {@code -Dkey=…} child with different value: textContent replaced</li>
+     *   <li>no existing {@code -Dkey=…}: appended as a new child</li>
+     * </ul>
+     *
+     * <p>Empty/null inputs are no-ops. Lines starting with {@code #} and blank
+     * lines have already been filtered upstream (mirrors managed's
+     * {@code glassfish.systemProperties} parsing convention).
+     *
+     * <p>Writes go through the same {@link #atomicWrite atomic-move} path as
+     * {@link #setPorts}, so the source install's hardlinked {@code domain.xml}
+     * stays intact.
+     */
+    static void setJvmOptions(Path domainXml, List<String> properties) throws IOException {
+        if (properties == null || properties.isEmpty()) {
+            return;
+        }
+        Document doc = parse(domainXml);
+        boolean changed = false;
+        NodeList javaConfigs = doc.getElementsByTagName("java-config");
+        for (int i = 0; i < javaConfigs.getLength(); i++) {
+            Element javaConfig = (Element) javaConfigs.item(i);
+            for (String prop : properties) {
+                if (upsertJvmOption(javaConfig, prop)) {
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) {
+            return;
+        }
+        atomicWrite(domainXml, doc);
+    }
+
+    /**
+     * Insert or update one {@code -Dkey=value} entry under a single
+     * {@code <java-config>}. Returns true iff the document changed.
+     */
+    private static boolean upsertJvmOption(Element javaConfig, String keyValue) {
+        String desired = "-D" + keyValue;
+        // Bare key (no value) becomes a flag; match it exactly.
+        // key=value matches by prefix so a stale value gets overwritten.
+        int eq = keyValue.indexOf('=');
+        String prefix = (eq < 0) ? desired : "-D" + keyValue.substring(0, eq + 1);
+        for (Element existing : directChildren(javaConfig, "jvm-options")) {
+            String text = existing.getTextContent();
+            if (text != null && text.startsWith(prefix)) {
+                if (desired.equals(text)) {
+                    return false;
+                }
+                existing.setTextContent(desired);
+                return true;
+            }
+        }
+        Element option = javaConfig.getOwnerDocument().createElement("jvm-options");
+        option.setTextContent(desired);
+        javaConfig.appendChild(option);
+        return true;
+    }
+
+    /**
+     * Direct-child elements with the given tag name. {@code Element.getElementsByTagName}
+     * is recursive; this helper restricts the scan so two {@code <java-config>}
+     * blocks (one per profile) don't see each other's options.
+     */
+    private static List<Element> directChildren(Element parent, String tagName) {
+        List<Element> result = new ArrayList<>();
+        NodeList children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            Node n = children.item(i);
+            if (n.getNodeType() == Node.ELEMENT_NODE && tagName.equals(n.getNodeName())) {
+                result.add((Element) n);
+            }
+        }
+        return result;
     }
 
     private static Document parse(Path domainXml) throws IOException {

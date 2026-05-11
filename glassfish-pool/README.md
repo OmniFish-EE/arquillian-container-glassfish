@@ -194,17 +194,48 @@ These configure the pool layout. The Maven plugin sets them automatically;
 you only need them if you're driving lifecycle from antrun, an IDE, or a
 shell script.
 
-| System property        | Default | Meaning                                                |
-| ---------------------- | ------- | ------------------------------------------------------ |
-| `gf.pool.dir`          | (req)   | Pool root directory.                                   |
-| `gf.pool.source`       | (none)  | Source GlassFish install (template for slot clones).   |
-| `gf.pool.size`         | `1`     | Initial number of slots `up` provisions.               |
-| `gf.pool.adminBase`    | `14848` | Admin port for slot 1.                                 |
-| `gf.pool.portStride`   | `100`   | Per-slot port spacing. Must be ≥ 10.                   |
+| System property            | Default | Meaning                                                |
+| -------------------------- | ------- | ------------------------------------------------------ |
+| `gf.pool.dir`              | (req)   | Pool root directory.                                   |
+| `gf.pool.source`           | (none)  | Source GlassFish install (template for slot clones).   |
+| `gf.pool.size`             | `1`     | Initial number of slots `up` provisions.               |
+| `gf.pool.adminBase`        | `14848` | Admin port for slot 1.                                 |
+| `gf.pool.portStride`       | `100`   | Per-slot port spacing. Must be ≥ 10.                   |
+| `gf.pool.systemProperties` | (none)  | Newline-separated `key=value` jvm options (see below). |
 
 Slot N's admin port = `adminBase + (N-1) * portStride`; HTTP/HTTPS land at
 `+1` and `+2`. The other GlassFish ports (JMX, IIOP, …) are placed within the
 same window by `DomainXmlEditor`.
+
+### Baking system properties into the GlassFish JVM
+
+Some properties have to be on the GF JVM at startup — e.g.
+`javax.net.ssl.trustStorePassword`, which a PKCS12 truststore needs in order
+to load any trust anchors at all. Pass them to the plugin as a multiline
+`<systemProperties>` block (one `key=value` per line; `#` comments and blank
+lines are ignored, mirroring the
+[`arquillian-glassfish-server-managed`](../glassfish-managed/) convention):
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.arquillian</groupId>
+    <artifactId>glassfish-pool-maven-plugin</artifactId>
+    <configuration>
+        <poolDir>${project.build.directory}/pool</poolDir>
+        <poolSource>${project.build.directory}/dist/glassfish9</poolSource>
+        <systemProperties>
+            javax.net.ssl.trustStorePassword=changeit
+            java.awt.headless=true
+        </systemProperties>
+    </configuration>
+    ...
+</plugin>
+```
+
+Each entry becomes a `<jvm-options>-Dkey=value</jvm-options>` child of every
+`<java-config>` in each slot's `domain.xml`, written through the same
+inode-replacing atomic move as port rewrites (so the source install stays
+intact). Override at the command line with `-Dglassfish.systemProperties=…`.
 
 ## Growing on demand (optional)
 
