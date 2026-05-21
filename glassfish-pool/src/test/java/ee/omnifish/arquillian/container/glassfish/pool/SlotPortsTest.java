@@ -8,9 +8,11 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.nullValue;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,6 +22,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
@@ -64,13 +67,14 @@ class SlotPortsTest {
      * writers single, so this single-writer / many-reader shape matches the
      * actual concurrency contract.
      *
-     * <p>The writer pauses briefly between iterations so the move cadence
-     * stays in the same order of magnitude as production (a handful of writes
-     * per slot per pool lifetime). Without the pause the test produces
-     * thousands of moves per second, which exceeds Windows'
-     * {@code MoveFileEx} tolerance for an open destination and surfaces an
-     * {@link java.nio.file.AccessDeniedException} on the writer side — an OS
-     * artifact, not a partial-write contract violation.
+     * <p>The contract being asserted is reader-side. The writer tolerates
+     * {@link AccessDeniedException} from {@code writeTo}: on Windows
+     * {@code MoveFileEx} can deny while a reader briefly holds the
+     * destination open, which is an OS quirk rather than a SlotPorts
+     * invariant. Production's {@code tryGrow} treats such a failure as
+     * "slot busy" and retries on the next grow cycle. A successful-move
+     * counter guards against a regression where every move fails (which
+     * would otherwise let the test pass vacuously).
      */
     @Test
     void concurrentReadersNeverSeePartialWrite(@TempDir Path tmp) throws Exception {
@@ -81,20 +85,24 @@ class SlotPortsTest {
 
         AtomicBoolean stop = new AtomicBoolean(false);
         AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicInteger successfulWrites = new AtomicInteger();
         int readers = 6;
         ExecutorService exec = Executors.newFixedThreadPool(readers + 1);
         try {
             List<CompletableFuture<Void>> tasks = new ArrayList<>();
             tasks.add(CompletableFuture.runAsync(() -> {
-                try {
-                    boolean toggle = false;
-                    for (int i = 0; i < WRITER_ITERATIONS && !stop.get(); i++) {
+                boolean toggle = false;
+                for (int i = 0; i < 500 && !stop.get(); i++) {
+                    try {
                         (toggle ? a : b).writeTo(file);
-                        toggle = !toggle;
-                        Thread.sleep(WRITER_PAUSE_MILLIS);
+                        successfulWrites.incrementAndGet();
+                    } catch (AccessDeniedException ignored) {
+                        // OS-side move contention; reader assertions remain
+                        // the source of truth for the partial-write contract.
+                    } catch (Throwable t) {
+                        failure.compareAndSet(null, t);
                     }
-                } catch (Throwable t) {
-                    failure.compareAndSet(null, t);
+                    toggle = !toggle;
                 }
             }, exec));
             for (int r = 0; r < readers; r++) {
@@ -128,10 +136,8 @@ class SlotPortsTest {
             exec.awaitTermination(5, TimeUnit.SECONDS);
         }
         assertThat(failure.get(), nullValue());
+        assertThat(successfulWrites.get(), greaterThan(0));
     }
-
-    private static final int WRITER_ITERATIONS = 50;
-    private static final long WRITER_PAUSE_MILLIS = 5L;
 
     @Test
     void rejectsNonNumericPort(@TempDir Path tmp) throws IOException {
