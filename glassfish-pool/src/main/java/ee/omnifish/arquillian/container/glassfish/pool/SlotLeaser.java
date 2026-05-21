@@ -38,9 +38,13 @@ import java.util.logging.Logger;
  *
  * <p>If every existing slot is busy the leaser tries to grow the pool: it
  * acquires {@code grow.lock}, picks the next index (preferring to recycle a
- * dead slot), releases the lock, and runs the provisioner. The provisioning
- * itself is OUTSIDE {@code grow.lock} so concurrent test JVMs that all need
- * a cold slot grow in parallel rather than serialising.
+ * dead slot) AND acquires its {@code lock} file, releases {@code grow.lock},
+ * and runs the provisioner with the slot lock held throughout. The slot lock
+ * is the claim, so concurrent test JVMs that race into {@code tryGrow} cannot
+ * pick the same dead slot for recycling — without it, two threads would each
+ * see the lock free, both call {@link PoolProvisioner#provisionSlot} on the
+ * same index, and race on the {@code deleteRecursive}+clone of that slot's
+ * GF install tree.
  */
 public final class SlotLeaser {
 
@@ -79,12 +83,9 @@ public final class SlotLeaser {
             if (leased != null) {
                 return leased;
             }
-            int grown = tryGrow(poolDir);
-            if (grown > 0) {
-                SlotLease grownLease = tryAcquire(poolDir, grown);
-                if (grownLease != null) {
-                    return grownLease;
-                }
+            SlotLease grown = tryGrow(poolDir);
+            if (grown != null) {
+                return grown;
             }
             Thread.sleep(POLL_INTERVAL_MILLIS);
         }
@@ -158,11 +159,7 @@ public final class SlotLeaser {
                 channel.close();
                 return null;
             }
-            // Expose the slot index as a system property so test-side
-            // observers (logging filters, progress listeners, etc.) can tag
-            // their output with the slot number. Set even on a single-slot
-            // pool so consumers can rely on the property existing.
-            System.setProperty("gf.pool.slot", String.valueOf(slot));
+            publishSlotProperty(slot);
             LOG.fine(() -> "Leased slot " + slot + " (adminPort=" + ports.adminPort() + ")");
             return new SlotLease(slot, ports, channel, lock);
         } catch (RuntimeException | IOException e) {
@@ -185,53 +182,87 @@ public final class SlotLeaser {
     }
 
     /**
-     * Pick the next free slot index under {@code grow.lock}, then provision it
-     * outside the lock. Returns the chosen index on successful provisioning,
-     * or 0 if no provisioning happened (no source configured, someone else
-     * won the race, or provisioning failed).
+     * Pick the next slot index AND acquire its lockfile under {@code grow.lock},
+     * then provision it outside the lock with the slot lock still held. Returns
+     * a ready-to-use {@link SlotLease} on success, or {@code null} if no
+     * provisioning happened (no source configured, no candidate index claimable,
+     * or provisioning failed).
+     *
+     * <p>The slot lock — not the slot dir's existence — is the canonical claim:
+     * the recycle path reuses an existing dir, so directory existence alone
+     * cannot tell a second concurrent {@code tryGrow} caller to skip it.
      */
-    private int tryGrow(Path poolDir) throws IOException {
+    private SlotLease tryGrow(Path poolDir) throws IOException {
         if (config.source() == null) {
             // Caller didn't supply a source install — typical for test-JVM
             // leasers when the build hasn't forwarded gf.pool.source. Skip
             // grow so the lease loop just waits for an existing slot.
-            return 0;
+            return null;
         }
+        ClaimedSlot claim;
         Path growLock = PoolPaths.growLock(poolDir);
-        int chosen;
         try (FileChannel fc = FileChannel.open(growLock,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
              FileLock ignored = fc.lock()) {
-            int recycle = findRecyclableSlot(poolDir);
-            if (recycle > 0) {
-                chosen = recycle;
-                // Caller will overwrite contents; we keep the dir to keep the claim visible.
-            } else {
-                chosen = 1;
-                while (Files.exists(PoolPaths.slotDir(poolDir, chosen))) {
-                    chosen++;
-                }
-                Files.createDirectory(PoolPaths.slotDir(poolDir, chosen));
-            }
+            claim = claimSlot(poolDir);
         }
-        final int chosenFinal = chosen;
+        if (claim == null) {
+            return null;
+        }
         try {
-            new PoolProvisioner(config).provisionSlot(chosenFinal);
-        } catch (IOException e) {
-            LOG.warning(() -> "Slot " + chosenFinal + " provisioning failed during grow: " + e.getMessage());
-            return 0;
+            SlotPorts ports = new PoolProvisioner(config).provisionSlot(claim.slot);
+            publishSlotProperty(claim.slot);
+            return new SlotLease(claim.slot, ports, claim.channel, claim.lock);
+        } catch (IOException | RuntimeException e) {
+            LOG.warning(() -> "Slot " + claim.slot + " provisioning failed during grow: " + e.getMessage());
+            claim.release();
+            return null;
         }
-        return chosenFinal;
+    }
+
+    /**
+     * Pick a slot index and atomically hold its lockfile. Must be called with
+     * {@code grow.lock} held. Returns {@code null} if no slot is claimable.
+     *
+     * <p>Recycling is preferred to keep the pool from outgrowing the
+     * concurrency cap implied by {@code -T} after a slot dies. For a fresh
+     * index, the slot dir is also created here (still under {@code grow.lock})
+     * so a follow-up caller's index-scan skips it.
+     */
+    private ClaimedSlot claimSlot(Path poolDir) throws IOException {
+        ClaimedSlot recycled = claimRecyclableSlot(poolDir);
+        if (recycled != null) {
+            return recycled;
+        }
+        int chosen = 1;
+        while (Files.exists(PoolPaths.slotDir(poolDir, chosen))) {
+            chosen++;
+        }
+        Files.createDirectory(PoolPaths.slotDir(poolDir, chosen));
+        FileChannel channel = FileChannel.open(PoolPaths.lockFile(poolDir, chosen),
+                StandardOpenOption.CREATE,
+                StandardOpenOption.READ,
+                StandardOpenOption.WRITE);
+        FileLock lock = channel.tryLock();
+        if (lock == null) {
+            // Fresh slot dir with a locked lockfile — should not happen since
+            // we just created the dir under grow.lock. Bail safely.
+            channel.close();
+            return null;
+        }
+        return new ClaimedSlot(chosen, channel, lock);
     }
 
     /**
      * Lowest slot index whose GF JVM is dead (admin port closed) AND whose
-     * lock file is currently free. Recycling avoids the pool exceeding the
-     * concurrency cap implied by {@code -T} after a slot dies.
+     * lock file we can acquire. The acquired lock is RETAINED in the returned
+     * {@link ClaimedSlot} — callers must release it (typically by passing it
+     * into the resulting {@link SlotLease}) so the claim survives the
+     * {@code grow.lock} release that follows.
      */
-    private int findRecyclableSlot(Path poolDir) throws IOException {
+    private ClaimedSlot claimRecyclableSlot(Path poolDir) throws IOException {
         List<Integer> indices = new ArrayList<>();
         try (var entries = Files.list(poolDir)) {
             for (Path entry : (Iterable<Path>) entries::iterator) {
@@ -256,21 +287,34 @@ public final class SlotLeaser {
             if (PoolProvisioner.isPortHealthy(ports.adminPort())) {
                 continue;
             }
-            try (FileChannel ch = FileChannel.open(PoolPaths.lockFile(poolDir, slot),
+            FileChannel channel = FileChannel.open(PoolPaths.lockFile(poolDir, slot),
                     StandardOpenOption.CREATE,
                     StandardOpenOption.READ,
-                    StandardOpenOption.WRITE)) {
-                FileLock probe = ch.tryLock();
-                if (probe == null) {
-                    continue;
-                }
-                probe.release();
-                return slot;
+                    StandardOpenOption.WRITE);
+            FileLock lock;
+            try {
+                lock = channel.tryLock();
             } catch (IOException e) {
-                /* skip */
+                channel.close();
+                continue;
             }
+            if (lock == null) {
+                channel.close();
+                continue;
+            }
+            return new ClaimedSlot(slot, channel, lock);
         }
-        return 0;
+        return null;
+    }
+
+    /**
+     * Expose the leased slot index as a system property so test-side observers
+     * (logging filters, progress listeners, etc.) can tag their output with the
+     * slot number. Set even on a single-slot pool so consumers can rely on the
+     * property existing.
+     */
+    private static void publishSlotProperty(int slot) {
+        System.setProperty("gf.pool.slot", String.valueOf(slot));
     }
 
     private static long lockMtime(Path poolDir, int slot) {
@@ -278,6 +322,32 @@ public final class SlotLeaser {
             return Files.getLastModifiedTime(PoolPaths.lockFile(poolDir, slot)).toMillis();
         } catch (IOException e) {
             return 0L;
+        }
+    }
+
+    /** A slot index plus the held lockfile resources backing the claim. */
+    private static final class ClaimedSlot {
+        final int slot;
+        final FileChannel channel;
+        final FileLock lock;
+
+        ClaimedSlot(int slot, FileChannel channel, FileLock lock) {
+            this.slot = slot;
+            this.channel = channel;
+            this.lock = lock;
+        }
+
+        void release() {
+            try {
+                lock.release();
+            } catch (IOException ignored) {
+                /* nothing useful */
+            }
+            try {
+                channel.close();
+            } catch (IOException ignored) {
+                /* nothing useful */
+            }
         }
     }
 }
