@@ -13,8 +13,10 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 
 /**
@@ -74,10 +76,36 @@ public final class SlotPorts {
         try (OutputStream out = Files.newOutputStream(tmp)) {
             props.store(out, "Slot ports — written by PoolProvisioner");
         }
-        Files.move(tmp, file,
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        atomicReplace(tmp, file);
     }
+
+    // Windows can deny ATOMIC_MOVE while a concurrent reader briefly holds the
+    // destination open (or an AV scanner does), even though Java opens streams
+    // with FILE_SHARE_DELETE. The race is transient — retry briefly before
+    // surfacing the failure. POSIX rename never sees this.
+    private static void atomicReplace(Path source, Path target) throws IOException {
+        AccessDeniedException last = null;
+        for (int attempt = 0; attempt < MOVE_RETRY_ATTEMPTS; attempt++) {
+            try {
+                Files.move(source, target,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (AccessDeniedException e) {
+                last = e;
+                try {
+                    Thread.sleep(MOVE_RETRY_BACKOFF_MILLIS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw (IOException) new IOException("Interrupted while retrying atomic move").initCause(ie);
+                }
+            }
+        }
+        throw last;
+    }
+
+    private static final int MOVE_RETRY_ATTEMPTS = 10;
+    private static final long MOVE_RETRY_BACKOFF_MILLIS = 10L;
 
     public static SlotPorts readFrom(Path file) throws IOException {
         Properties props = new Properties();
