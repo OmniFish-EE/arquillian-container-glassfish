@@ -174,15 +174,16 @@ need. To go wider than `${pool.size}`, see *Growing on demand* below.
 
 ### Test-JVM configuration (`arquillian.xml` properties)
 
-| Property              | Type   | Default                  | Notes                                                   |
-| --------------------- | ------ | ------------------------ | ------------------------------------------------------- |
-| `poolDir`             | String | `-Dgf.pool.dir`          | Required. Must match the build's `poolDir`.             |
-| `leaseTimeoutSeconds` | long   | `600`                    | Lease wait before failing the test JVM.                 |
-| `adminUser`           | String | `admin`                  | Inherited from `CommonGlassFishConfiguration`.          |
-| `adminPassword`       | String | (empty)                  | Inherited.                                              |
-| `httpPort`            | int    | overwritten at lease     | Set from the slot's `ports.properties`.                 |
-| `httpsPort`           | int    | overwritten at lease     | Set from the slot's `ports.properties`.                 |
-| `glassFishHome`       | String | overwritten at lease     | Set from the slot's `ports.properties`.                 |
+| Property              | Type    | Default                          | Notes                                                                                                       |
+| --------------------- | ------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. Must match the build's `poolDir`.                                                                 |
+| `leaseTimeoutSeconds` | long    | `600`                            | Lease wait before failing the test JVM.                                                                     |
+| `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). |
+| `adminUser`           | String  | `admin`                          | Inherited from `CommonGlassFishConfiguration`.                                                              |
+| `adminPassword`       | String  | (empty)                          | Inherited.                                                                                                  |
+| `httpPort`            | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
+| `httpsPort`           | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
+| `glassFishHome`       | String  | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
 
 `adminHost`/`adminPort` are also overwritten at lease time. Anything you set
 in `arquillian.xml` for those four host/port fields is informational only —
@@ -202,6 +203,7 @@ shell script.
 | `gf.pool.adminBase`        | `14848` | Admin port for slot 1.                                 |
 | `gf.pool.portStride`       | `100`   | Per-slot port spacing. Must be ≥ 10.                   |
 | `gf.pool.systemProperties` | (none)  | Newline-separated `key=value` jvm options (see below). |
+| `gf.pool.restartOnRelease` | `false` | Seeds `restartOnRelease` for every test JVM the build forks. |
 
 Slot N's admin port = `adminBase + (N-1) * portStride`; HTTP/HTTPS land at
 `+1` and `+2`. The other GlassFish ports (JMX, IIOP, …) are placed within the
@@ -252,6 +254,94 @@ deadlock. To enable, add to `failsafe`'s `<systemPropertyVariables>`:
 Without `gf.pool.source` the leaser still works against the existing pool —
 it just blocks for an idle slot instead of growing one. That's the right
 default when `forkCount` ≤ `poolSize`.
+
+## Restarting GlassFish between tests (optional)
+
+By default a slot's GlassFish JVM survives across the test JVMs that lease
+it — only the deployments come and go. That's fine for most suites, but
+some tests leak JVM-scoped state that `undeploy` alone doesn't clear:
+classloader pins, datasource pool handles, ThreadLocals, EclipseLink
+session caches, etc. Set `restartOnRelease=true` and the container will
+run `asadmin restart-domain domain1` against the leased slot's install
+just before the lock is released, so the next leaser sees a fresh GF
+JVM on the same ports.
+
+The flag is exposed at three layers of increasing granularity. Pick the
+narrowest one that fits.
+
+### 1. Build-wide default (parent pom)
+
+Forward the sysprop to every test JVM the build forks. This is also the
+right place to set the *default* the build ships with — individual
+modules can override it later.
+
+```xml
+<properties>
+    <gf.pool.restartOnRelease>false</gf.pool.restartOnRelease>
+</properties>
+
+<plugin>
+    <artifactId>maven-failsafe-plugin</artifactId>
+    <configuration>
+        <systemPropertyVariables>
+            <gf.pool.dir>${project.build.directory}/pool</gf.pool.dir>
+            <gf.pool.source>${project.build.directory}/dist/glassfish9</gf.pool.source>
+            <gf.pool.restartOnRelease>${gf.pool.restartOnRelease}</gf.pool.restartOnRelease>
+        </systemPropertyVariables>
+    </configuration>
+</plugin>
+```
+
+Forwarding `gf.pool.source` is strongly recommended when this is on: if a
+restart fails, the next leaser's port-health probe marks the slot dead and
+`tryGrow` recycles it by re-provisioning from `gf.pool.source`. Without a
+source forwarded, a failed restart leaves a permanently dead slot.
+
+### 2. Per-module override (child pom)
+
+With the parent's failsafe block forwarding `${gf.pool.restartOnRelease}`,
+any child module can flip the flag for its own test JVMs by overriding
+the Maven property:
+
+```xml
+<!-- e.g. a stateful-EJB module that leaks JDBC pool handles -->
+<properties>
+    <gf.pool.restartOnRelease>true</gf.pool.restartOnRelease>
+</properties>
+```
+
+No other change needed — surefire/failsafe interpolation picks up the
+local value automatically.
+
+### 3. Per-arquillian.xml (one container declaration)
+
+If a module has its own `src/test/resources/arquillian.xml` (test
+resources win over inherited ones on the classpath), the flag can be
+set right next to `poolDir`:
+
+```xml
+<container qualifier="glassfish-pool" default="true">
+    <configuration>
+        <property name="poolDir">${gf.pool.dir}</property>
+        <property name="restartOnRelease">true</property>
+    </configuration>
+</container>
+```
+
+This overrides whatever sysprop default the build forwarded for the
+test JVMs that resolve this `arquillian.xml`.
+
+### Cost and safety
+
+Restart adds the GF cold-start cost (typically 5–15 s) to each lease
+release. On a `forkCount=4`, hundreds-of-test-class suite this can be
+significant — measure before enabling globally. The restart is bounded
+to a 90 s timeout; if it times out, the asadmin process is force-killed,
+the lease releases anyway, and the next leaser will recycle the slot.
+
+The container holds the slot's file lock *during* the restart, so a
+concurrent test JVM cannot pick up the slot mid-restart and misclassify
+it as dead.
 
 ## Programmatic use
 

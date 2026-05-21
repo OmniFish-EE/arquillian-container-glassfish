@@ -13,6 +13,7 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -52,6 +53,8 @@ import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
 public class GlassFishPoolDeployableContainer implements DeployableContainer<GlassFishPoolConfiguration> {
 
     private static final Logger LOG = Logger.getLogger(GlassFishPoolDeployableContainer.class.getName());
+
+    private static final Duration RESTART_TIMEOUT = Duration.ofSeconds(90);
 
     private GlassFishPoolConfiguration configuration;
     private CommonGlassFishManager<GlassFishPoolConfiguration> manager;
@@ -118,6 +121,12 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         if (lease == null) {
             return;
         }
+        // Restart while the slot lock is still held: a free lock plus a port
+        // momentarily down would let a concurrent leaser classify the slot as
+        // dead and recycle it (wiping the GF install we're restarting).
+        if (configuration.isRestartOnRelease()) {
+            restartLeasedDomain();
+        }
         try {
             lease.close();
         } catch (RuntimeException e) {
@@ -125,6 +134,24 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         } finally {
             lease = null;
             manager = null;
+        }
+    }
+
+    private void restartLeasedDomain() {
+        SlotPorts ports = lease.ports();
+        try {
+            new AsAdmin(Paths.get(ports.glassFishHome())).run(RESTART_TIMEOUT, "restart-domain", "domain1");
+            LOG.info("Restarted GlassFish on slot " + lease.slotIndex()
+                    + " (adminPort=" + ports.adminPort() + ")");
+        } catch (RuntimeException e) {
+            // Log+continue: next leaser's port-health probe will skip the slot
+            // and tryGrow's claimRecyclableSlot will re-provision it from
+            // gf.pool.source (if forwarded). Bounded timeout above guarantees
+            // we never wedge the suite on a hung asadmin.
+            LOG.log(Level.WARNING,
+                    "restart-domain failed on slot " + lease.slotIndex()
+                    + "; releasing lease anyway — slot will be recycled on next lease",
+                    e);
         }
     }
 

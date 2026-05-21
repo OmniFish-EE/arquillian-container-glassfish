@@ -26,6 +26,15 @@ import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
  *       match what the build passed to {@code mvn glassfish-pool:up}.</li>
  *   <li>{@code leaseTimeoutSeconds} — how long to wait for an idle slot
  *       before failing the test JVM.</li>
+ *   <li>{@code restartOnRelease} — when {@code true}, the GlassFish domain
+ *       backing the leased slot is restarted (via {@code asadmin restart-domain})
+ *       on container stop, before the slot lock is released. Use this when
+ *       tests leak JVM-scoped state (datasource pools, classloader pins,
+ *       ThreadLocals, EclipseLink session caches) that undeploy alone does
+ *       not clear. Trades suite duration for inter-test isolation — defaults
+ *       to {@code false}. Strongly recommended to also forward
+ *       {@code gf.pool.source} to the test JVM when enabled, so the lease
+ *       loop can re-provision a slot whose restart fails.</li>
  * </ul>
  *
  * <p>{@code httpPort}/{@code httpsPort}/{@code glassFishHome} are populated
@@ -45,6 +54,7 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
     private String poolDir = System.getProperty(PoolConfig.SYS_POOL_DIR);
     private long leaseTimeoutSeconds = Long.parseLong(
             System.getProperty("gf.pool.leaseTimeoutSeconds", String.valueOf(DEFAULT_LEASE_TIMEOUT_SECONDS)));
+    private boolean restartOnRelease = Boolean.getBoolean("gf.pool.restartOnRelease");
 
     private int httpPort = Integer.parseInt(System.getProperty("glassfish.httpPort", "8080"));
     private int httpsPort = Integer.parseInt(System.getProperty("glassfish.httpsPort", "8181"));
@@ -64,6 +74,14 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
 
     public void setLeaseTimeoutSeconds(long leaseTimeoutSeconds) {
         this.leaseTimeoutSeconds = leaseTimeoutSeconds;
+    }
+
+    public boolean isRestartOnRelease() {
+        return restartOnRelease;
+    }
+
+    public void setRestartOnRelease(boolean restartOnRelease) {
+        this.restartOnRelease = restartOnRelease;
     }
 
     public int getHttpPort() {

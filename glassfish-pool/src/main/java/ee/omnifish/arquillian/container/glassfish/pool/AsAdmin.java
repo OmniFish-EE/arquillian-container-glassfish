@@ -17,9 +17,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -47,9 +49,21 @@ final class AsAdmin {
     /**
      * Run {@code asadmin <command> <args...>}. Output is collected and logged
      * at the level corresponding to the exit code; {@link AsAdminException}
-     * is thrown with the captured output on non-zero.
+     * is thrown with the captured output on non-zero. Waits unbounded for
+     * the process to exit — use {@link #run(Duration, String, String...)}
+     * if the caller can't tolerate a wedged asadmin.
      */
     void run(String command, String... args) throws AsAdminException {
+        run(null, command, args);
+    }
+
+    /**
+     * Like {@link #run(String, String...)} but bounded: if the asadmin process
+     * does not exit within {@code timeout}, it is force-killed and an
+     * {@link AsAdminException} is thrown. A {@code null} timeout means wait
+     * unbounded.
+     */
+    void run(Duration timeout, String command, String... args) throws AsAdminException {
         Path asadmin = asadminScript();
         List<String> cmd = new ArrayList<>();
         cmd.add(asadmin.toString());
@@ -74,7 +88,16 @@ final class AsAdmin {
             try (InputStream in = process.getInputStream()) {
                 in.transferTo(buf);
             }
-            exit = process.waitFor();
+            if (timeout == null) {
+                exit = process.waitFor();
+            } else if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly();
+                throw new AsAdminException(
+                        "asadmin " + command + " timed out after " + timeout + "; output so far:\n"
+                        + buf.toString(StandardCharsets.UTF_8));
+            } else {
+                exit = process.exitValue();
+            }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
