@@ -7,6 +7,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -22,6 +23,15 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Tests {@link SlotLeaser} against a tmp pool dir, using real
@@ -138,6 +148,91 @@ class SlotLeaserTest {
         } finally {
             first.release();
         }
+    }
+
+    /**
+     * Threaded stress version of the sequential lock-retention test: many
+     * threads simultaneously claim under {@code grow.lock} (mirroring what
+     * {@code tryGrow} does) and hold for a beat before releasing. At every
+     * moment no two threads may hold the same slot index. Loops a few rounds
+     * with mixed recycle + fresh-index seeding to flush out any non-determinism
+     * that the single-shot sequential test cannot reach.
+     */
+    @Test
+    void concurrentClaimsAlwaysReturnDistinctSlots(@TempDir Path tmp) throws Exception {
+        // Seed two dead recyclable slots so both code paths (recycle and
+        // fresh-index) are exercised across the eight concurrent claimants.
+        seedSlot(tmp, 1, freePort());
+        seedSlot(tmp, 2, freePort());
+        SlotLeaser leaser = leaserFor(tmp);
+
+        int threads = 8;
+        int rounds = 25;
+        Set<Integer> heldNow = ConcurrentHashMap.newKeySet();
+        AtomicReference<String> violation = new AtomicReference<>();
+        // claimSlot's contract requires grow.lock held. In production each test
+        // JVM is a separate process so the on-disk grow.lock works as a
+        // cross-JVM mutex; within ONE JVM Java's FileLock throws
+        // OverlappingFileLockException, so we substitute a ReentrantLock here
+        // — same role (serialise entry), different mechanism.
+        ReentrantLock growLockSubstitute = new ReentrantLock();
+        ExecutorService exec = Executors.newFixedThreadPool(threads);
+        try {
+            for (int round = 0; round < rounds && violation.get() == null; round++) {
+                CountDownLatch ready = new CountDownLatch(threads);
+                CountDownLatch go = new CountDownLatch(1);
+                List<CompletableFuture<Void>> tasks = new ArrayList<>();
+                for (int i = 0; i < threads; i++) {
+                    tasks.add(CompletableFuture.runAsync(() -> {
+                        ready.countDown();
+                        try {
+                            go.await();
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                        SlotLeaser.ClaimedSlot claim;
+                        growLockSubstitute.lock();
+                        try {
+                            claim = leaser.claimSlot(tmp);
+                        } catch (IOException e) {
+                            violation.compareAndSet(null, "claim threw: " + e);
+                            return;
+                        } finally {
+                            growLockSubstitute.unlock();
+                        }
+                        if (claim == null) {
+                            violation.compareAndSet(null, "claim returned null");
+                            return;
+                        }
+                        try {
+                            if (!heldNow.add(claim.slot)) {
+                                violation.compareAndSet(null,
+                                        "duplicate claim of slot " + claim.slot);
+                            }
+                            // Hold briefly so overlap is observable.
+                            try {
+                                Thread.sleep(2);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        } finally {
+                            heldNow.remove(claim.slot);
+                            claim.release();
+                        }
+                    }, exec));
+                }
+                ready.await();
+                go.countDown();
+                CompletableFuture
+                        .allOf(tasks.toArray(new CompletableFuture[0]))
+                        .get(15, TimeUnit.SECONDS);
+            }
+        } finally {
+            exec.shutdown();
+            exec.awaitTermination(5, TimeUnit.SECONDS);
+        }
+        assertThat(violation.get(), nullValue());
     }
 
     @Test
