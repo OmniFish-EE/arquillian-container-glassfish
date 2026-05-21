@@ -140,6 +140,13 @@ public final class PoolBootstrap {
             if (!java.nio.file.Files.exists(portsFile)) {
                 return false;
             }
+            // A busy slot lock means some leaser owns the slot — either running
+            // tests against a live GF, or mid-restart (restartOnRelease) with
+            // the port briefly closed. Either way the slot is not ours to
+            // reprovision, so skip the port probe to avoid a false negative.
+            if (isLockBusy(config.poolDir(), idx)) {
+                continue;
+            }
             try {
                 SlotPorts ports = SlotPorts.readFrom(portsFile);
                 if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
@@ -418,7 +425,7 @@ public final class PoolBootstrap {
      * falsely signal an in-flight bootstrap and resurrect a file inside a
      * directory being torn down.
      */
-    private static boolean isLockBusy(Path poolDir, int slot) {
+    static boolean isLockBusy(Path poolDir, int slot) {
         Path lockFile = PoolPaths.lockFile(poolDir, slot);
         if (!Files.exists(lockFile)) {
             return false;
@@ -432,6 +439,10 @@ public final class PoolBootstrap {
             }
             probe.release();
             return false;
+        } catch (java.nio.channels.OverlappingFileLockException e) {
+            // Another channel in this JVM already holds the lock — counts as
+            // busy. Matches SlotLeaser.claimRecyclableSlot's handling.
+            return true;
         } catch (IOException e) {
             return false;
         }

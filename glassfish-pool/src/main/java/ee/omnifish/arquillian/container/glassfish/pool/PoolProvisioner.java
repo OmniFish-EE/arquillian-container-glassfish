@@ -63,9 +63,13 @@ public final class PoolProvisioner {
         Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
 
         // Idempotency: skip the heavy work if the slot is already alive and the
-        // ports file is consistent.
-        if (Files.exists(portsFile) && isPortHealthy(adminPort)) {
-            LOG.fine(() -> "Slot " + idx + " already healthy on adminPort=" + adminPort);
+        // ports file is consistent. A busy slot lock also counts — the owning
+        // leaser may be mid-restart (restartOnRelease) with the port briefly
+        // closed; trying to start-domain into that window would fail with
+        // "port already in use" the moment GF re-binds.
+        if (Files.exists(portsFile)
+                && (isPortHealthy(adminPort) || PoolBootstrap.isLockBusy(config.poolDir(), idx))) {
+            LOG.fine(() -> "Slot " + idx + " already provisioned (adminPort=" + adminPort + ")");
             return SlotPorts.readFrom(portsFile);
         }
 
