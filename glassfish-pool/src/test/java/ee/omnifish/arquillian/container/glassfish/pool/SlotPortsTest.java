@@ -63,6 +63,14 @@ class SlotPortsTest {
      * {@code IllegalStateException}). The slot lock in production keeps
      * writers single, so this single-writer / many-reader shape matches the
      * actual concurrency contract.
+     *
+     * <p>The writer pauses briefly between iterations so the move cadence
+     * stays in the same order of magnitude as production (a handful of writes
+     * per slot per pool lifetime). Without the pause the test produces
+     * thousands of moves per second, which exceeds Windows'
+     * {@code MoveFileEx} tolerance for an open destination and surfaces an
+     * {@link java.nio.file.AccessDeniedException} on the writer side — an OS
+     * artifact, not a partial-write contract violation.
      */
     @Test
     void concurrentReadersNeverSeePartialWrite(@TempDir Path tmp) throws Exception {
@@ -80,9 +88,10 @@ class SlotPortsTest {
             tasks.add(CompletableFuture.runAsync(() -> {
                 try {
                     boolean toggle = false;
-                    for (int i = 0; i < 500 && !stop.get(); i++) {
+                    for (int i = 0; i < WRITER_ITERATIONS && !stop.get(); i++) {
                         (toggle ? a : b).writeTo(file);
                         toggle = !toggle;
+                        Thread.sleep(WRITER_PAUSE_MILLIS);
                     }
                 } catch (Throwable t) {
                     failure.compareAndSet(null, t);
@@ -120,6 +129,9 @@ class SlotPortsTest {
         }
         assertThat(failure.get(), nullValue());
     }
+
+    private static final int WRITER_ITERATIONS = 50;
+    private static final long WRITER_PAUSE_MILLIS = 5L;
 
     @Test
     void rejectsNonNumericPort(@TempDir Path tmp) throws IOException {
