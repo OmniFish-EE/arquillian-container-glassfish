@@ -108,6 +108,38 @@ class SlotLeaserTest {
         }
     }
 
+    /**
+     * Regression for the tryGrow race fixed alongside this test: a successful
+     * claim must keep the slot's lockfile held so a concurrent claim cannot
+     * re-pick the same index. We exercise it sequentially — that's enough to
+     * catch the regression, since the broken behaviour (probe-then-release)
+     * would let two back-to-back claims both return the SAME dead slot, with
+     * or without overlapping threads.
+     */
+    @Test
+    void claimRetainsLockSoSecondClaimCannotRePickSameSlot(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, freePort()); // dead → recyclable
+        SlotLeaser leaser = leaserFor(tmp);
+
+        SlotLeaser.ClaimedSlot first = leaser.claimSlot(tmp);
+        try {
+            assertThat(first, notNullValue());
+            assertThat(first.slot, equalTo(1));
+
+            SlotLeaser.ClaimedSlot second = leaser.claimSlot(tmp);
+            try {
+                assertThat(second, notNullValue());
+                // Recycle path must skip slot-1 (lock held by `first`) and
+                // fall through to the fresh-index path, creating slot-2.
+                assertThat(second.slot, equalTo(2));
+            } finally {
+                second.release();
+            }
+        } finally {
+            first.release();
+        }
+    }
+
     @Test
     void releasingLeaseLetsNextLeaserAcquire(@TempDir Path tmp) throws Exception {
         int alive = openFake();

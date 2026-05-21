@@ -13,6 +13,7 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -230,8 +231,11 @@ public final class SlotLeaser {
      * concurrency cap implied by {@code -T} after a slot dies. For a fresh
      * index, the slot dir is also created here (still under {@code grow.lock})
      * so a follow-up caller's index-scan skips it.
+     *
+     * <p>Package-private for the regression test that pins the lock-retention
+     * invariant: a second claim must NOT re-pick a slot already claimed.
      */
-    private ClaimedSlot claimSlot(Path poolDir) throws IOException {
+    ClaimedSlot claimSlot(Path poolDir) throws IOException {
         ClaimedSlot recycled = claimRecyclableSlot(poolDir);
         if (recycled != null) {
             return recycled;
@@ -294,7 +298,10 @@ public final class SlotLeaser {
             FileLock lock;
             try {
                 lock = channel.tryLock();
-            } catch (IOException e) {
+            } catch (IOException | OverlappingFileLockException e) {
+                // OverlappingFileLockException: a FileChannel in this same JVM
+                // already holds the lock — treat as busy so a single-JVM caller
+                // (tests, the same leaser used twice) can't double-claim.
                 channel.close();
                 continue;
             }
@@ -326,7 +333,7 @@ public final class SlotLeaser {
     }
 
     /** A slot index plus the held lockfile resources backing the claim. */
-    private static final class ClaimedSlot {
+    static final class ClaimedSlot {
         final int slot;
         final FileChannel channel;
         final FileLock lock;
