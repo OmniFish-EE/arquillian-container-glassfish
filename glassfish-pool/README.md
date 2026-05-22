@@ -90,9 +90,9 @@ which is what the integration tests do — see [`integration-tests/src/it/pool`]
 
 ## End-to-end Maven setup
 
-Wiring the pool into a build is three plugin blocks: stage GlassFish, run
-`glassfish-pool:up` before `failsafe:integration-test`, forward `gf.pool.dir`
-to the test JVMs.
+Two plugin blocks: the pool plugin (which resolves and unpacks GlassFish
+itself via its `<distribution>` element), and failsafe pointed at the
+same `poolDir`.
 
 ```xml
 <properties>
@@ -102,38 +102,21 @@ to the test JVMs.
 
 <build>
     <plugins>
-        <!-- 1. Unpack a GlassFish dist; the pool will clone from this. -->
-        <plugin>
-            <artifactId>maven-dependency-plugin</artifactId>
-            <executions>
-                <execution>
-                    <id>unpack-glassfish</id>
-                    <phase>process-test-classes</phase>
-                    <goals><goal>unpack</goal></goals>
-                    <configuration>
-                        <artifactItems>
-                            <artifactItem>
-                                <groupId>org.glassfish.main.distributions</groupId>
-                                <artifactId>glassfish</artifactId>
-                                <version>${glassfish.version}</version>
-                                <type>zip</type>
-                                <outputDirectory>${project.build.directory}/dist</outputDirectory>
-                            </artifactItem>
-                        </artifactItems>
-                    </configuration>
-                </execution>
-            </executions>
-        </plugin>
-
-        <!-- 2. Provision/start the pool before failsafe; tear it down after. -->
+        <!-- 1. Provision/start the pool before failsafe; tear it down after. -->
         <plugin>
             <groupId>ee.omnifish.arquillian</groupId>
             <artifactId>glassfish-pool-maven-plugin</artifactId>
-            <version>2.1.4</version>
+            <version>2.2.0</version>
             <configuration>
                 <poolDir>${project.build.directory}/pool</poolDir>
                 <poolSource>${project.build.directory}/dist/glassfish9</poolSource>
                 <poolSize>${pool.size}</poolSize>
+                <distribution>
+                    <groupId>org.glassfish.main.distributions</groupId>
+                    <artifactId>glassfish</artifactId>
+                    <version>${glassfish.version}</version>
+                    <type>zip</type>
+                </distribution>
             </configuration>
             <executions>
                 <execution><id>pool-up</id><goals><goal>up</goal></goals></execution>
@@ -141,7 +124,7 @@ to the test JVMs.
             </executions>
         </plugin>
 
-        <!-- 3. Forward gf.pool.dir to test JVMs, run tests in parallel forks. -->
+        <!-- 2. Forward gf.pool.dir to test JVMs, run tests in parallel forks. -->
         <plugin>
             <artifactId>maven-failsafe-plugin</artifactId>
             <configuration>
@@ -161,6 +144,11 @@ to the test JVMs.
 </build>
 ```
 
+The plugin resolves `<distribution>` through your usual Maven repositories
+and unpacks the zip under `${project.build.directory}/dist` before
+provisioning runs. Staging is idempotent: re-runs fast-exit when the
+marker file written after a successful unpack is still present.
+
 Run it:
 
 ```
@@ -170,19 +158,54 @@ mvn verify
 For per-class fork parallelism across `${pool.size}` slots, that's all you
 need. To go wider than `${pool.size}`, see *Growing on demand* below.
 
+### Bring your own unpack
+
+If your build already runs `maven-dependency-plugin` for unrelated reasons,
+drop the `<distribution>` block from the pool plugin and let the existing
+`unpack` execution land the dist in the same directory `<poolSource>`
+points at:
+
+```xml
+<plugin>
+    <artifactId>maven-dependency-plugin</artifactId>
+    <executions>
+        <execution>
+            <id>unpack-glassfish</id>
+            <phase>process-test-classes</phase>
+            <goals><goal>unpack</goal></goals>
+            <configuration>
+                <artifactItems>
+                    <artifactItem>
+                        <groupId>org.glassfish.main.distributions</groupId>
+                        <artifactId>glassfish</artifactId>
+                        <version>${glassfish.version}</version>
+                        <type>zip</type>
+                        <outputDirectory>${project.build.directory}/dist</outputDirectory>
+                    </artifactItem>
+                </artifactItems>
+            </configuration>
+        </execution>
+    </executions>
+</plugin>
+```
+
+The pool plugin will then skip staging and clone slots directly from
+`${project.build.directory}/dist/glassfish9`.
+
 ## Configuration reference
 
 ### Test-JVM configuration (`arquillian.xml` properties)
 
-| Property              | Type   | Default                  | Notes                                                   |
-| --------------------- | ------ | ------------------------ | ------------------------------------------------------- |
-| `poolDir`             | String | `-Dgf.pool.dir`          | Required. Must match the build's `poolDir`.             |
-| `leaseTimeoutSeconds` | long   | `600`                    | Lease wait before failing the test JVM.                 |
-| `adminUser`           | String | `admin`                  | Inherited from `CommonGlassFishConfiguration`.          |
-| `adminPassword`       | String | (empty)                  | Inherited.                                              |
-| `httpPort`            | int    | overwritten at lease     | Set from the slot's `ports.properties`.                 |
-| `httpsPort`           | int    | overwritten at lease     | Set from the slot's `ports.properties`.                 |
-| `glassFishHome`       | String | overwritten at lease     | Set from the slot's `ports.properties`.                 |
+| Property              | Type    | Default                          | Notes                                                                                                       |
+| --------------------- | ------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. Must match the build's `poolDir`.                                                                 |
+| `leaseTimeoutSeconds` | long    | `600`                            | Lease wait before failing the test JVM.                                                                     |
+| `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). |
+| `adminUser`           | String  | `admin`                          | Inherited from `CommonGlassFishConfiguration`.                                                              |
+| `adminPassword`       | String  | (empty)                          | Inherited.                                                                                                  |
+| `httpPort`            | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
+| `httpsPort`           | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
+| `glassFishHome`       | String  | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
 
 `adminHost`/`adminPort` are also overwritten at lease time. Anything you set
 in `arquillian.xml` for those four host/port fields is informational only —
@@ -202,6 +225,7 @@ shell script.
 | `gf.pool.adminBase`        | `14848` | Admin port for slot 1.                                 |
 | `gf.pool.portStride`       | `100`   | Per-slot port spacing. Must be ≥ 10.                   |
 | `gf.pool.systemProperties` | (none)  | Newline-separated `key=value` jvm options (see below). |
+| `gf.pool.restartOnRelease` | `false` | Seeds `restartOnRelease` for every test JVM the build forks. |
 
 Slot N's admin port = `adminBase + (N-1) * portStride`; HTTP/HTTPS land at
 `+1` and `+2`. The other GlassFish ports (JMX, IIOP, …) are placed within the
@@ -252,6 +276,94 @@ deadlock. To enable, add to `failsafe`'s `<systemPropertyVariables>`:
 Without `gf.pool.source` the leaser still works against the existing pool —
 it just blocks for an idle slot instead of growing one. That's the right
 default when `forkCount` ≤ `poolSize`.
+
+## Restarting GlassFish between tests (optional)
+
+By default a slot's GlassFish JVM survives across the test JVMs that lease
+it — only the deployments come and go. That's fine for most suites, but
+some tests leak JVM-scoped state that `undeploy` alone doesn't clear:
+classloader pins, datasource pool handles, ThreadLocals, EclipseLink
+session caches, etc. Set `restartOnRelease=true` and the container will
+run `asadmin restart-domain domain1` against the leased slot's install
+just before the lock is released, so the next leaser sees a fresh GF
+JVM on the same ports.
+
+The flag is exposed at three layers of increasing granularity. Pick the
+narrowest one that fits.
+
+### 1. Build-wide default (parent pom)
+
+Forward the sysprop to every test JVM the build forks. This is also the
+right place to set the *default* the build ships with — individual
+modules can override it later.
+
+```xml
+<properties>
+    <gf.pool.restartOnRelease>false</gf.pool.restartOnRelease>
+</properties>
+
+<plugin>
+    <artifactId>maven-failsafe-plugin</artifactId>
+    <configuration>
+        <systemPropertyVariables>
+            <gf.pool.dir>${project.build.directory}/pool</gf.pool.dir>
+            <gf.pool.source>${project.build.directory}/dist/glassfish9</gf.pool.source>
+            <gf.pool.restartOnRelease>${gf.pool.restartOnRelease}</gf.pool.restartOnRelease>
+        </systemPropertyVariables>
+    </configuration>
+</plugin>
+```
+
+Forwarding `gf.pool.source` is strongly recommended when this is on: if a
+restart fails, the next leaser's port-health probe marks the slot dead and
+`tryGrow` recycles it by re-provisioning from `gf.pool.source`. Without a
+source forwarded, a failed restart leaves a permanently dead slot.
+
+### 2. Per-module override (child pom)
+
+With the parent's failsafe block forwarding `${gf.pool.restartOnRelease}`,
+any child module can flip the flag for its own test JVMs by overriding
+the Maven property:
+
+```xml
+<!-- e.g. a stateful-EJB module that leaks JDBC pool handles -->
+<properties>
+    <gf.pool.restartOnRelease>true</gf.pool.restartOnRelease>
+</properties>
+```
+
+No other change needed — surefire/failsafe interpolation picks up the
+local value automatically.
+
+### 3. Per-arquillian.xml (one container declaration)
+
+If a module has its own `src/test/resources/arquillian.xml` (test
+resources win over inherited ones on the classpath), the flag can be
+set right next to `poolDir`:
+
+```xml
+<container qualifier="glassfish-pool" default="true">
+    <configuration>
+        <property name="poolDir">${gf.pool.dir}</property>
+        <property name="restartOnRelease">true</property>
+    </configuration>
+</container>
+```
+
+This overrides whatever sysprop default the build forwarded for the
+test JVMs that resolve this `arquillian.xml`.
+
+### Cost and safety
+
+Restart adds the GF cold-start cost (typically 5–15 s) to each lease
+release. On a `forkCount=4`, hundreds-of-test-class suite this can be
+significant — measure before enabling globally. The restart is bounded
+to a 90 s timeout; if it times out, the asadmin process is force-killed,
+the lease releases anyway, and the next leaser will recycle the slot.
+
+The container holds the slot's file lock *during* the restart, so a
+concurrent test JVM cannot pick up the slot mid-restart and misclassify
+it as dead.
 
 ## Programmatic use
 

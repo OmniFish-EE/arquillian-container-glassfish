@@ -3,9 +3,9 @@
 Maven plugin that drives the lifecycle of an
 [`arquillian-glassfish-server-pool`](../glassfish-pool/) pool. Binds
 naturally to `pre-integration-test` / `post-integration-test` so a
-consumer pom only has to add three plugin blocks (this one, dependency
-unpack, and failsafe) to get a parallel-fork-friendly pool of GlassFish
-instances.
+consumer pom only has to add two plugin blocks (this one with a
+`<distribution>` element, and failsafe) to get a parallel-fork-friendly
+pool of GlassFish instances.
 
 | Coordinates  | Value                              |
 | ------------ | ---------------------------------- |
@@ -26,18 +26,25 @@ instances.
 
 ## Quick start
 
-Bind `up` and `down` to the integration-test phases, point `failsafe` at the
-same `poolDir`, and run `mvn verify`:
+Bind `up` and `down` to the integration-test phases, declare a
+`<distribution>` so the plugin resolves and unpacks GlassFish itself,
+point `failsafe` at the same `poolDir`, and run `mvn verify`:
 
 ```xml
 <plugin>
     <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>glassfish-pool-maven-plugin</artifactId>
-    <version>2.1.4</version>
+    <version>2.2.0</version>
     <configuration>
         <poolDir>${project.build.directory}/pool</poolDir>
         <poolSource>${project.build.directory}/dist/glassfish9</poolSource>
         <poolSize>4</poolSize>
+        <distribution>
+            <groupId>org.glassfish.main.distributions</groupId>
+            <artifactId>glassfish</artifactId>
+            <version>9.0.0</version>
+            <type>zip</type>
+        </distribution>
     </configuration>
     <executions>
         <execution><id>pool-up</id><goals><goal>up</goal></goals></execution>
@@ -46,13 +53,13 @@ same `poolDir`, and run `mvn verify`:
 </plugin>
 ```
 
-For the full three-plugin wiring (dependency unpack + this plugin +
-failsafe), see [`../glassfish-pool/README.md`](../glassfish-pool/README.md#end-to-end-maven-setup).
+For the failsafe side (`gf.pool.dir` forwarding, parallel forks, the
+`arquillian.xml` setup), see
+[`../glassfish-pool/README.md`](../glassfish-pool/README.md#end-to-end-maven-setup).
 
-The plugin does **not** download a GlassFish distribution unless you supply
-the `<distribution>` block (see *Auto-staging*). Most builds let
-`maven-dependency-plugin` unpack into `${project.build.directory}/dist` and
-point `poolSource` at the result.
+If your build already runs `maven-dependency-plugin` for unrelated reasons,
+drop `<distribution>` and let the existing `unpack` execution land the dist
+at `${project.build.directory}/dist` — see *Bring your own unpack* below.
 
 ## Configuration reference
 
@@ -86,39 +93,47 @@ build isn't running tests there's no reason to pay for a pool.
 
 `provision` additionally requires `-Dgf.pool.slot=N`.
 
-## Auto-staging (skip the dependency-plugin block)
+## Staging behaviour
 
-If you'd rather have the plugin resolve the dist itself — useful for TCK-style
-builds that swap GlassFish versions per profile — declare a `<distribution>`
-block. The plugin uses Aether to resolve the artifact through your usual
-repositories and unpacks it under `<stageDir>` before provisioning runs.
+The plugin uses Aether to resolve `<distribution>` through your usual
+repositories and unpacks it under `<stageDir>`
+(default `${project.build.directory}/dist`) before provisioning runs.
+Staging runs once per pool — re-runs fast-exit when the marker file
+written after a successful unpack is still present. Set
+`<unpackSkip>true</unpackSkip>` to short-circuit the check entirely.
+
+### Bring your own unpack
+
+If your build already runs `maven-dependency-plugin` for unrelated reasons,
+drop the `<distribution>` block from this plugin and add a regular `unpack`
+execution that lands the dist in the same directory `<poolSource>` points at:
 
 ```xml
 <plugin>
-    <groupId>ee.omnifish.arquillian</groupId>
-    <artifactId>glassfish-pool-maven-plugin</artifactId>
-    <version>2.1.4</version>
-    <configuration>
-        <poolDir>${project.build.directory}/pool</poolDir>
-        <poolSource>${project.build.directory}/dist/glassfish9</poolSource>
-        <poolSize>4</poolSize>
-        <distribution>
-            <groupId>org.glassfish.main.distributions</groupId>
-            <artifactId>glassfish</artifactId>
-            <version>9.0.0</version>
-            <type>zip</type>
-        </distribution>
-    </configuration>
+    <artifactId>maven-dependency-plugin</artifactId>
     <executions>
-        <execution><id>pool-up</id><goals><goal>up</goal></goals></execution>
-        <execution><id>pool-down</id><goals><goal>down</goal></goals></execution>
+        <execution>
+            <id>unpack-glassfish</id>
+            <phase>process-test-classes</phase>
+            <goals><goal>unpack</goal></goals>
+            <configuration>
+                <artifactItems>
+                    <artifactItem>
+                        <groupId>org.glassfish.main.distributions</groupId>
+                        <artifactId>glassfish</artifactId>
+                        <version>9.0.0</version>
+                        <type>zip</type>
+                        <outputDirectory>${project.build.directory}/dist</outputDirectory>
+                    </artifactItem>
+                </artifactItems>
+            </configuration>
+        </execution>
     </executions>
 </plugin>
 ```
 
-Staging runs once per pool — re-runs fast-exit when the marker file written
-after a successful unpack is still present. Set `<unpackSkip>true</unpackSkip>`
-to short-circuit the check entirely.
+The pool plugin will then skip staging and clone slots directly from
+`${project.build.directory}/dist/glassfish9`.
 
 ## Overlays
 
