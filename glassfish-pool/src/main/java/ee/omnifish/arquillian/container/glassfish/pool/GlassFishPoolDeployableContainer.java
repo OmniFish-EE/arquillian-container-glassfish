@@ -58,7 +58,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
 
     private GlassFishPoolConfiguration configuration;
     private CommonGlassFishManager<GlassFishPoolConfiguration> manager;
-    private SlotLease lease;
+    private LeaseHandle handle;
 
     @Override
     public Class<GlassFishPoolConfiguration> getConfigurationClass() {
@@ -94,50 +94,79 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
                 Integer.getInteger(PoolConfig.SYS_ADMIN_BASE, PoolConfig.DEFAULT_ADMIN_BASE),
                 Integer.getInteger(PoolConfig.SYS_PORT_STRIDE, PoolConfig.DEFAULT_PORT_STRIDE));
         SlotLeaser leaser = new SlotLeaser(poolConfig, configuration.getLeaseTimeoutSeconds());
+        String slotGroup = configuration.getSlotGroup();
+        boolean shared = slotGroup != null && !slotGroup.isEmpty();
         try {
-            lease = leaser.lease();
+            // Shared: sibling containers in this JVM (same group + poolDir) reuse
+            // one slot — one GlassFish, many container views. See SharedSlotRegistry.
+            handle = shared
+                    ? SharedSlotRegistry.acquire(new SharedSlotRegistry.Key(slotGroup, poolDir), leaser::lease)
+                    : new LeaseHandle.Direct(leaser.lease());
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             throw new LifecycleException("Could not lease a pool slot", e);
         }
-        SlotPorts ports = lease.ports();
-        configuration.setAdminHost("localhost");
-        configuration.setAdminPort(ports.adminPort());
-        configuration.setHttpPort(ports.httpPort());
-        configuration.setHttpsPort(ports.httpsPort());
-        configuration.setGlassFishHome(ports.glassFishHome());
+        try {
+            SlotPorts ports = handle.ports();
+            configuration.setAdminHost("localhost");
+            configuration.setAdminPort(ports.adminPort());
+            configuration.setHttpPort(ports.httpPort());
+            configuration.setHttpsPort(ports.httpsPort());
+            configuration.setGlassFishHome(ports.glassFishHome());
 
-        LOG.info("Leased pool slot " + lease.slotIndex()
-                + " (adminPort=" + ports.adminPort() + ")");
+            LOG.info("Leased pool slot " + handle.slotIndex()
+                    + " (adminPort=" + ports.adminPort() + ")"
+                    + (shared ? " [shared group: " + slotGroup + "]" : ""));
 
-        manager = new CommonGlassFishManager<>(configuration);
-        manager.start();
+            manager = new CommonGlassFishManager<>(configuration);
+            manager.start();
+        } catch (RuntimeException | LifecycleException e) {
+            // Arquillian does not call stop() for a container whose start()
+            // threw, so roll back the lease here — otherwise a shared handle
+            // leaks a registry refcount (and the slot lock) for the JVM lifetime.
+            releaseHandle();
+            throw e;
+        }
+    }
+
+    /** Release the held lease and close the slot iff this was its last holder. */
+    private void releaseHandle() {
+        SlotLease toFinalize = handle.release();
+        if (toFinalize != null) {
+            toFinalize.close();
+        }
+        handle = null;
+        manager = null;
     }
 
     @Override
     public void stop() throws LifecycleException {
-        if (lease == null) {
+        if (handle == null) {
             return;
         }
-        // Restart while the slot lock is still held: a free lock plus a port
-        // momentarily down would let a concurrent leaser classify the slot as
-        // dead and recycle it (wiping the GF install we're restarting).
-        if (configuration.isRestartOnRelease()) {
-            restartLeasedDomain();
+        // For a shared slot only the LAST holder finalizes it; earlier holders
+        // get null here and leave the slot up for their siblings.
+        SlotLease toFinalize = handle.release();
+        if (toFinalize != null) {
+            // Restart while the slot lock is still held: a free lock plus a port
+            // momentarily down would let a concurrent leaser classify the slot as
+            // dead and recycle it (wiping the GF install we're restarting).
+            if (configuration.isRestartOnRelease()) {
+                restartLeasedDomain(toFinalize);
+            }
+            try {
+                toFinalize.close();
+            } catch (RuntimeException e) {
+                LOG.log(Level.WARNING, "Releasing slot lease " + toFinalize.slotIndex() + " failed", e);
+            }
         }
-        try {
-            lease.close();
-        } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "Releasing slot lease " + lease.slotIndex() + " failed", e);
-        } finally {
-            lease = null;
-            manager = null;
-        }
+        handle = null;
+        manager = null;
     }
 
-    private void restartLeasedDomain() {
+    private void restartLeasedDomain(SlotLease lease) {
         SlotPorts ports = lease.ports();
         try {
             new AsAdmin(Paths.get(ports.glassFishHome())).run(RESTART_TIMEOUT, "restart-domain", "domain1");

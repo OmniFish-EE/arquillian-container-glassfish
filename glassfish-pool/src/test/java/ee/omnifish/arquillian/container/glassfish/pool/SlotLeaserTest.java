@@ -6,8 +6,10 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -49,6 +51,9 @@ class SlotLeaserTest {
             s.close();
         }
         fakes.clear();
+        // Shared-slot tests must fully release; a leaked refcount would poison
+        // later tests (the registry is JVM-static).
+        assertThat(SharedSlotRegistry.isIdle(), equalTo(true));
     }
 
     @Test
@@ -283,6 +288,105 @@ class SlotLeaserTest {
 
         try (SlotLease second = leaser.lease()) {
             assertThat(second.slotIndex(), equalTo(1));
+        }
+    }
+
+    // --- shared-lease (SharedSlotRegistry / LeaseHandle) ---
+
+    @Test
+    void sharedGroupReusesOneSlotForSiblings(@TempDir Path tmp) throws Exception {
+        int adminPort = openFake();
+        seedSlot(tmp, 1, adminPort);
+        SlotLeaser leaser = leaserFor(tmp);
+        SharedSlotRegistry.Key key = new SharedSlotRegistry.Key("group", tmp);
+
+        // Two siblings attach to the SAME slot — the second does not lease a new
+        // one (it would have to skip the self-held slot and time out otherwise).
+        LeaseHandle first = SharedSlotRegistry.acquire(key, leaser::lease);
+        LeaseHandle second = SharedSlotRegistry.acquire(key, leaser::lease);
+        assertThat(first.slotIndex(), equalTo(1));
+        assertThat(second.slotIndex(), equalTo(1));
+        assertThat(second.ports().adminPort(), equalTo(adminPort));
+
+        // Non-last release keeps the slot up; last release hands the lease back.
+        assertThat(second.release(), nullValue());
+        SlotLease toFinalize = first.release();
+        assertThat(toFinalize, notNullValue());
+        assertThat(first.release(), nullValue()); // idempotent
+        toFinalize.close();
+
+        // Slot is free again — a fresh lease re-acquires it.
+        try (SlotLease reacquired = leaserFor(tmp).lease()) {
+            assertThat(reacquired.slotIndex(), equalTo(1));
+        }
+    }
+
+    @Test
+    void onlyLastOfThreeHoldersFinalizes(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+        SlotLeaser leaser = leaserFor(tmp);
+        SharedSlotRegistry.Key key = new SharedSlotRegistry.Key("group", tmp);
+
+        LeaseHandle a = SharedSlotRegistry.acquire(key, leaser::lease);
+        LeaseHandle b = SharedSlotRegistry.acquire(key, leaser::lease);
+        LeaseHandle c = SharedSlotRegistry.acquire(key, leaser::lease);
+
+        assertThat(a.release(), nullValue()); // 3 -> 2
+        assertThat(c.release(), nullValue()); // 2 -> 1
+        SlotLease toFinalize = b.release();    // 1 -> 0
+        assertThat(toFinalize, notNullValue());
+        toFinalize.close();
+    }
+
+    @Test
+    void singleHolderReleaseFreesSlotForReLease(@TempDir Path tmp) throws Exception {
+        // Pins the start()-failure rollback contract: releasing a leader that
+        // never gained a sibling must hand back the lease so the slot is reusable.
+        seedSlot(tmp, 1, openFake());
+        SharedSlotRegistry.Key key = new SharedSlotRegistry.Key("group", tmp);
+
+        LeaseHandle only = SharedSlotRegistry.acquire(key, leaserFor(tmp)::lease);
+        SlotLease toFinalize = only.release();
+        assertThat(toFinalize, notNullValue());
+        toFinalize.close();
+
+        try (SlotLease reacquired = leaserFor(tmp).lease()) {
+            assertThat(reacquired.slotIndex(), equalTo(1));
+        }
+    }
+
+    @Test
+    void differentGroupsLeaseDistinctSlots(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+        seedSlot(tmp, 2, openFake());
+        SlotLeaser leaser = leaserFor(tmp);
+
+        LeaseHandle a = SharedSlotRegistry.acquire(new SharedSlotRegistry.Key("a", tmp), leaser::lease);
+        LeaseHandle b = SharedSlotRegistry.acquire(new SharedSlotRegistry.Key("b", tmp), leaser::lease);
+        try {
+            assertThat(a.slotIndex(), not(equalTo(b.slotIndex())));
+        } finally {
+            finalizeAndClose(a);
+            finalizeAndClose(b);
+        }
+    }
+
+    @Test
+    void directHandleReturnsLeaseOnceThenNull(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+        SlotLease lease = leaserFor(tmp).lease();
+        LeaseHandle handle = new LeaseHandle.Direct(lease);
+
+        assertThat(handle.slotIndex(), equalTo(1));
+        assertThat(handle.release(), sameInstance(lease));
+        assertThat(handle.release(), nullValue()); // idempotent
+        lease.close();
+    }
+
+    private static void finalizeAndClose(LeaseHandle handle) {
+        SlotLease toFinalize = handle.release();
+        if (toFinalize != null) {
+            toFinalize.close();
         }
     }
 
