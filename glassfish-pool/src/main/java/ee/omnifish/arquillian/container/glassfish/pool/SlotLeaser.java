@@ -138,7 +138,16 @@ public final class SlotLeaser {
                 StandardOpenOption.WRITE);
         FileLock lock = null;
         try {
-            lock = channel.tryLock();
+            try {
+                lock = channel.tryLock();
+            } catch (OverlappingFileLockException e) {
+                // Another channel in THIS JVM already holds the slot lock (e.g.
+                // a lease this JVM hasn't released yet). A foreign JVM would
+                // yield tryLock() == null; only our own process throws. Treat
+                // as busy and skip — mirrors claimRecyclableSlot().
+                channel.close();
+                return null;
+            }
             if (lock == null) {
                 channel.close();
                 return null;

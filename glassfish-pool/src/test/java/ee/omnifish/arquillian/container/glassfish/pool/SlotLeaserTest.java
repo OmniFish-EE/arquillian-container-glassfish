@@ -235,6 +235,42 @@ class SlotLeaserTest {
         assertThat(violation.get(), nullValue());
     }
 
+    /**
+     * Regression: a second lease in the SAME JVM must skip a slot this JVM
+     * already holds rather than crash. Re-locking a file already locked by
+     * another channel in the same process throws
+     * {@link java.nio.channels.OverlappingFileLockException} (a foreign JVM
+     * would see {@code tryLock() == null} instead), so {@code tryAcquire} must
+     * treat that as "busy, skip" exactly like the recycle path does. Here the
+     * held slot is forced to sort first in the scan so it is re-encountered;
+     * the leaser must fall through to the other ready slot.
+     */
+    @Test
+    void scanSkipsSlotThisJvmAlreadyHoldsInsteadOfThrowing(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+        seedSlot(tmp, 2, openFake());
+        SlotLeaser leaser = leaserFor(tmp);
+
+        try (SlotLease first = leaser.lease()) {
+            int held = first.slotIndex();
+            int other = held == 1 ? 2 : 1;
+            // Force the held slot to sort first (oldest mtime) so the next
+            // scan re-encounters the lock this JVM already owns.
+            Path otherLock = PoolPaths.lockFile(tmp, other);
+            if (!Files.exists(otherLock)) {
+                Files.createFile(otherLock);
+            }
+            Files.setLastModifiedTime(PoolPaths.lockFile(tmp, held),
+                    java.nio.file.attribute.FileTime.fromMillis(1000));
+            Files.setLastModifiedTime(otherLock,
+                    java.nio.file.attribute.FileTime.fromMillis(2000));
+
+            try (SlotLease second = leaser.lease()) {
+                assertThat(second.slotIndex(), equalTo(other));
+            }
+        }
+    }
+
     @Test
     void releasingLeaseLetsNextLeaserAcquire(@TempDir Path tmp) throws Exception {
         int alive = openFake();
