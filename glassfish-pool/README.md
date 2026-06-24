@@ -324,6 +324,33 @@ switch on, the group's qualifier is inferred as each member's `slotGroup`. The
 | Sharing without the global switch, or across *standalone* (non-group) containers | matching `slotGroup` property on each |
 | Distinct slots for specific members of a shared group | a **distinct** `slotGroup` value per member (overrides inference) |
 
+Setting `slotGroup` by hand covers what inference can't — e.g. two
+**standalone** containers (no `<group>`, so nothing to infer from) that should
+still land on one GlassFish. Give them the same value:
+
+```xml
+<container qualifier="http" default="true">
+    <configuration>
+        <property name="poolDir">${gf.pool.dir}</property>
+        <property name="slotGroup">my-server</property>
+        <property name="httpsPortAsDefault">false</property>
+    </configuration>
+</container>
+<container qualifier="https">
+    <configuration>
+        <property name="poolDir">${gf.pool.dir}</property>
+        <property name="slotGroup">my-server</property>
+        <property name="httpsPortAsDefault">true</property>
+    </configuration>
+</container>
+```
+
+The value is just a token — any string works, as long as it **matches** across
+the containers that should share (and they use the same `poolDir`). Conversely,
+to keep two members of a shared `<group>` on their *own* slots, give them
+**different** `slotGroup` values; an explicit value always overrides the
+inferred group qualifier.
+
 Notes:
 
 - All sharing containers must use the **same `poolDir`** — it is part of the

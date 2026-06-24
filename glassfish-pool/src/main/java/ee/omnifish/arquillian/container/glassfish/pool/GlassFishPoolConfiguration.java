@@ -38,11 +38,15 @@ import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
  *   <li>{@code slotGroup} — opt-in slot sharing. Containers in the same JVM
  *       (same {@code poolDir}) that declare the same non-empty {@code slotGroup}
  *       share ONE leased slot — one physical GlassFish addressed by several
- *       container qualifiers. Use it for an arquillian.xml {@code <group>} such
- *       as {@code http}+{@code https}, where both members are the same server
- *       (a slot already exposes both ports); otherwise each container would
- *       lease its own slot and an N-container group would need {@code pool.size}
- *       ≥ N. Empty (default) keeps the one-container-one-slot behavior.</li>
+ *       container qualifiers. Fits an arquillian.xml {@code <group>} such as
+ *       {@code http}+{@code https}, where both members are the same server (a
+ *       slot already exposes both ports); otherwise each container leases its
+ *       own slot and an N-container group needs {@code pool.size} ≥ N. Empty
+ *       (default) keeps the one-container-one-slot behavior. For a group you
+ *       usually leave this unset and instead pass {@code gf.pool.shareGroupSlot=true},
+ *       which infers {@code slotGroup} from the {@code <group>} qualifier (see
+ *       {@link GroupSlotInference}); set it explicitly only to share across
+ *       non-grouped containers or to override that inference.</li>
  * </ul>
  *
  * <p>{@code httpPort}/{@code httpsPort}/{@code glassFishHome} are populated
