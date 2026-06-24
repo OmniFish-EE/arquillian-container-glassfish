@@ -41,9 +41,22 @@ final class AsAdmin {
             : "java";
 
     private final Path glassFishHome;
+    private final Integer adminPort;
 
     AsAdmin(Path glassFishHome) {
+        this(glassFishHome, null);
+    }
+
+    /**
+     * @param adminPort DAS admin port to target via the {@code --port} program
+     *        option, for subcommands that connect to a running DAS (e.g.
+     *        {@code create-file-user}) instead of operating on a local domain
+     *        directory. A {@code null} port omits {@code --port}, letting
+     *        asadmin default to 4848 or resolve it from the domain operand.
+     */
+    AsAdmin(Path glassFishHome, Integer adminPort) {
         this.glassFishHome = glassFishHome;
+        this.adminPort = adminPort;
     }
 
     /**
@@ -68,6 +81,10 @@ final class AsAdmin {
         List<String> cmd = new ArrayList<>();
         cmd.add(asadmin.toString());
         cmd.add("--terse");
+        if (adminPort != null) {
+            cmd.add("--port");
+            cmd.add(adminPort.toString());
+        }
         cmd.add(command);
         cmd.addAll(Arrays.asList(args));
 
