@@ -26,6 +26,7 @@ import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
+import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
 
 /**
  * Test-JVM-side container: leases a pre-started slot at {@link #setup} time,
@@ -55,6 +56,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
     private static final Logger LOG = Logger.getLogger(GlassFishPoolDeployableContainer.class.getName());
 
     private static final Duration RESTART_TIMEOUT = Duration.ofSeconds(90);
+    private static final Duration POSTBOOT_TIMEOUT = Duration.ofSeconds(60);
 
     private GlassFishPoolConfiguration configuration;
     private CommonGlassFishManager<GlassFishPoolConfiguration> manager;
@@ -114,6 +116,17 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
 
         manager = new CommonGlassFishManager<>(configuration);
         manager.start();
+
+        runPostBootCommands(ports);
+    }
+
+    private void runPostBootCommands(SlotPorts ports) {
+        // --port targets the leased slot's DAS: post-boot subcommands like
+        // create-file-user connect to a running DAS, which sits on a per-slot
+        // offset port rather than the default 4848.
+        AsAdmin asadmin = new AsAdmin(Paths.get(ports.glassFishHome()), ports.adminPort());
+        PostBootCommands.execute(configuration.getPostBootCommandList(),
+                (command, args) -> asadmin.run(POSTBOOT_TIMEOUT, command, args.toArray(String[]::new)));
     }
 
     @Override
