@@ -15,7 +15,8 @@ import org.jboss.arquillian.core.spi.LoadableExtension;
 
 /**
  * Registers {@link GlassFishPoolDeployableContainer} as the Arquillian
- * {@link DeployableContainer} implementation. Picked up via the
+ * {@link DeployableContainer} implementation, plus {@link GroupSlotInference}
+ * which lets the members of a {@code <group>} share one slot. Picked up via the
  * {@code META-INF/services/org.jboss.arquillian.core.spi.LoadableExtension}
  * descriptor on the classpath.
  */
@@ -24,5 +25,6 @@ public class GlassFishPoolExtension implements LoadableExtension {
     @Override
     public void register(ExtensionBuilder builder) {
         builder.service(DeployableContainer.class, GlassFishPoolDeployableContainer.class);
+        builder.observer(GroupSlotInference.class);
     }
 }

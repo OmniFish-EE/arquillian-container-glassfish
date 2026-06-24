@@ -201,6 +201,7 @@ The pool plugin will then skip staging and clone slots directly from
 | `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. Must match the build's `poolDir`.                                                                 |
 | `leaseTimeoutSeconds` | long    | `600`                            | Lease wait before failing the test JVM.                                                                     |
 | `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). |
+| `slotGroup`           | String  | `-Dgf.pool.slotGroup`/(empty)    | Slot-sharing key; containers sharing it reuse one slot. Inferred from the `<group>` qualifier when `gf.pool.shareGroupSlot=true`. See [Sharing one slot across containers](#sharing-one-slot-across-containers). |
 | `adminUser`           | String  | `admin`                          | Inherited from `CommonGlassFishConfiguration`.                                                              |
 | `adminPassword`       | String  | (empty)                          | Inherited.                                                                                                  |
 | `httpPort`            | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |
@@ -226,6 +227,7 @@ shell script.
 | `gf.pool.portStride`       | `100`   | Per-slot port spacing. Must be ≥ 10.                   |
 | `gf.pool.systemProperties` | (none)  | Newline-separated `key=value` jvm options (see below). |
 | `gf.pool.restartOnRelease` | `false` | Seeds `restartOnRelease` for every test JVM the build forks. |
+| `gf.pool.shareGroupSlot`   | `false` | When `true`, members of a `<group>` share one slot (http+https idiom). Default keeps a slot per member. |
 
 Slot N's admin port = `adminBase + (N-1) * portStride`; HTTP/HTTPS land at
 `+1` and `+2`. The other GlassFish ports (JMX, IIOP, …) are placed within the
@@ -276,6 +278,88 @@ deadlock. To enable, add to `failsafe`'s `<systemPropertyVariables>`:
 Without `gf.pool.source` the leaser still works against the existing pool —
 it just blocks for an idle slot instead of growing one. That's the right
 default when `forkCount` ≤ `poolSize`.
+
+## Sharing one slot across containers
+
+Each Arquillian container leases its **own** slot — its own GlassFish, its own
+ports, its own lock. That's the right default even for a `<group>`: a group
+generally means several servers a test drives together (clustering/failover),
+which want distinct instances.
+
+The exception is the `http`+`https` idiom, where a group's members are really
+*one* server addressed two ways (a slot already publishes both ports). For that
+case, enable sharing with **`-Dgf.pool.shareGroupSlot=true`**: the members of a
+`<group>` then share a single leased slot, so a size-1 pool suffices.
+
+```xml
+<group qualifier="glassfish-servers" default="true">
+    <container qualifier="http" default="true">
+        <configuration>
+            <property name="httpsPortAsDefault">false</property>
+        </configuration>
+    </container>
+    <container qualifier="https">
+        <configuration>
+            <property name="httpsPortAsDefault">true</property>
+        </configuration>
+    </container>
+</group>
+```
+
+With `-Dgf.pool.shareGroupSlot=true` and that arquillian.xml, both members
+lease one slot per test JVM: the first leases it, the rest attach, and the slot
+is released only when the last one stops. One GlassFish, many container views —
+the managed container's behavior on a size-1 pool. Each container still applies
+its own `httpsPortAsDefault`, so `http` publishes the http port and `https` the
+https port of the same instance.
+
+Under the hood this is slot sharing keyed by `(slotGroup, poolDir)`; with the
+switch on, the group's qualifier is inferred as each member's `slotGroup`. The
+`slotGroup` property gives finer control:
+
+| You want… | Set |
+| --------- | --- |
+| Group members = **distinct** GlassFish instances (default) | nothing — and `pool.size ≥` group size (or forward `gf.pool.source`) |
+| Group members = one server (http+https) | `-Dgf.pool.shareGroupSlot=true` |
+| Sharing without the global switch, or across *standalone* (non-group) containers | matching `slotGroup` property on each |
+| Distinct slots for specific members of a shared group | a **distinct** `slotGroup` value per member (overrides inference) |
+
+Setting `slotGroup` by hand covers what inference can't — e.g. two
+**standalone** containers (no `<group>`, so nothing to infer from) that should
+still land on one GlassFish. Give them the same value:
+
+```xml
+<container qualifier="http" default="true">
+    <configuration>
+        <property name="poolDir">${gf.pool.dir}</property>
+        <property name="slotGroup">my-server</property>
+        <property name="httpsPortAsDefault">false</property>
+    </configuration>
+</container>
+<container qualifier="https">
+    <configuration>
+        <property name="poolDir">${gf.pool.dir}</property>
+        <property name="slotGroup">my-server</property>
+        <property name="httpsPortAsDefault">true</property>
+    </configuration>
+</container>
+```
+
+The value is just a token — any string works, as long as it **matches** across
+the containers that should share (and they use the same `poolDir`). Conversely,
+to keep two members of a shared `<group>` on their *own* slots, give them
+**different** `slotGroup` values; an explicit value always overrides the
+inferred group qualifier.
+
+Notes:
+
+- All sharing containers must use the **same `poolDir`** — it is part of the
+  share key.
+- Deployments across the sharing containers must have **distinct names**; they
+  all deploy to the same DAS.
+- `restartOnRelease` (if set) fires once, when the last sharer releases. Keep
+  it the same on every member of a group — the finalizing container is whichever
+  stops last, so mixed settings make the restart non-deterministic.
 
 ## Restarting GlassFish between tests (optional)
 

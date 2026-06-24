@@ -35,6 +35,18 @@ import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
  *       to {@code false}. Strongly recommended to also forward
  *       {@code gf.pool.source} to the test JVM when enabled, so the lease
  *       loop can re-provision a slot whose restart fails.</li>
+ *   <li>{@code slotGroup} — opt-in slot sharing. Containers in the same JVM
+ *       (same {@code poolDir}) that declare the same non-empty {@code slotGroup}
+ *       share ONE leased slot — one physical GlassFish addressed by several
+ *       container qualifiers. Fits an arquillian.xml {@code <group>} such as
+ *       {@code http}+{@code https}, where both members are the same server (a
+ *       slot already exposes both ports); otherwise each container leases its
+ *       own slot and an N-container group needs {@code pool.size} ≥ N. Empty
+ *       (default) keeps the one-container-one-slot behavior. For a group you
+ *       usually leave this unset and instead pass {@code gf.pool.shareGroupSlot=true},
+ *       which infers {@code slotGroup} from the {@code <group>} qualifier (see
+ *       {@link GroupSlotInference}); set it explicitly only to share across
+ *       non-grouped containers or to override that inference.</li>
  * </ul>
  *
  * <p>{@code httpPort}/{@code httpsPort}/{@code glassFishHome} are populated
@@ -54,7 +66,10 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
     private String poolDir = System.getProperty(PoolConfig.SYS_POOL_DIR);
     private long leaseTimeoutSeconds = Long.parseLong(
             System.getProperty("gf.pool.leaseTimeoutSeconds", String.valueOf(DEFAULT_LEASE_TIMEOUT_SECONDS)));
+    static final String SYS_SLOT_GROUP = "gf.pool.slotGroup";
+
     private boolean restartOnRelease = Boolean.getBoolean("gf.pool.restartOnRelease");
+    private String slotGroup = System.getProperty(SYS_SLOT_GROUP, "");
 
     private int httpPort = Integer.parseInt(System.getProperty("glassfish.httpPort", "8080"));
     private int httpsPort = Integer.parseInt(System.getProperty("glassfish.httpsPort", "8181"));
@@ -82,6 +97,14 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
 
     public void setRestartOnRelease(boolean restartOnRelease) {
         this.restartOnRelease = restartOnRelease;
+    }
+
+    public String getSlotGroup() {
+        return slotGroup;
+    }
+
+    public void setSlotGroup(String slotGroup) {
+        this.slotGroup = slotGroup;
     }
 
     public int getHttpPort() {
