@@ -110,6 +110,10 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
 
     @Override
     public void validate() throws ConfigurationException {
+        // Parses the inherited postBootCommands/systemProperties into their
+        // lists; without this the pool would silently ignore both.
+        super.validate();
+
         if (poolDir == null || poolDir.isEmpty()) {
             throw new ConfigurationException(
                     "poolDir is required (set <property name=\"poolDir\"> in arquillian.xml or "
