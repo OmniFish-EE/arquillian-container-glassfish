@@ -228,6 +228,8 @@ shell script.
 | `gf.pool.systemProperties` | (none)  | Newline-separated `key=value` jvm options (see below). |
 | `gf.pool.restartOnRelease` | `false` | Seeds `restartOnRelease` for every test JVM the build forks. |
 | `gf.pool.shareGroupSlot`   | `false` | When `true`, members of a `<group>` share one slot (http+https idiom). Default keeps a slot per member. |
+| `glassfish.debug`          | `false` | Start each slot's domain in debug mode (`start-domain --debug`). Same property name as the managed container. |
+| `glassfish.suspend`        | `false` | Start the domain suspended, waiting for a debugger (`start-domain --suspend`). Requires `gf.pool.size=1` (see below). Same property name as the managed container. |
 
 Slot N's admin port = `adminBase + (N-1) * portStride`; HTTP/HTTPS land at
 `+1` and `+2`. The other GlassFish ports (JMX, IIOP, …) are placed within the
@@ -262,6 +264,18 @@ Each entry becomes a `<jvm-options>-Dkey=value</jvm-options>` child of every
 `<java-config>` in each slot's `domain.xml`, written through the same
 inode-replacing atomic move as port rewrites (so the source install stays
 intact). Override at the command line with `-Dglassfish.systemProperties=…`.
+
+### Debugging a slot
+
+`-Dglassfish.debug` and `-Dglassfish.suspend` pass `--debug` / `--suspend` to
+each slot's `start-domain`, using the same property names as the managed
+container. `--suspend` blocks the server JVM at startup until a debugger
+attaches, so `glassfish-pool:up` will not return until you connect.
+
+Because suspend halts the JVM and every slot clone shares one JDWP debug port,
+it is only valid for a **single-slot pool**. The plugin throws
+`IllegalArgumentException` when `glassfish.suspend` is set with `gf.pool.size`
+> 1 — run a suspended pool with `-T1` (and `gf.pool.size=1`).
 
 ## Growing on demand (optional)
 

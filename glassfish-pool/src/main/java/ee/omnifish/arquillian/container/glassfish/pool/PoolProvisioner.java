@@ -15,7 +15,9 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -93,7 +95,7 @@ public final class PoolProvisioner {
 
         AsAdmin asadmin = new AsAdmin(slotInstall);
         try {
-            asadmin.run("start-domain", "domain1");
+            asadmin.run("start-domain", startDomainArgs());
         } catch (AsAdmin.AsAdminException e) {
             LOG.log(Level.SEVERE, "Slot " + idx + " start-domain failed", e);
             throw new IOException("Slot " + idx + " start-domain failed: " + e.getMessage(), e);
@@ -103,6 +105,23 @@ public final class PoolProvisioner {
         ports.writeTo(portsFile);
         LOG.info("Slot " + idx + " provisioned: adminPort=" + adminPort + ", http=" + httpPort);
         return ports;
+    }
+
+    /**
+     * Build the {@code start-domain} argument list: optional {@code --debug} /
+     * {@code --suspend} (mirroring the managed container) followed by the domain
+     * operand. {@code --suspend} blocks the server JVM until a debugger attaches.
+     */
+    private String[] startDomainArgs() {
+        List<String> args = new ArrayList<>();
+        if (config.debug()) {
+            args.add("--debug");
+        }
+        if (config.suspend()) {
+            args.add("--suspend");
+        }
+        args.add("domain1");
+        return args.toArray(String[]::new);
     }
 
     /** Stop a slot's GlassFish if its admin port is responding. Best-effort; logs failures. */

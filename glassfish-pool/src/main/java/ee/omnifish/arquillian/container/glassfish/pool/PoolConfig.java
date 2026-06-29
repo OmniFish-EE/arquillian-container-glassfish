@@ -54,6 +54,8 @@ public final class PoolConfig {
     private final int adminPortBase;
     private final int portStride;
     private final List<String> systemProperties;
+    private final boolean debug;
+    private final boolean suspend;
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride) {
         this(poolDir, source, size, adminPortBase, portStride, List.of());
@@ -61,9 +63,20 @@ public final class PoolConfig {
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
                       List<String> systemProperties) {
+        this(poolDir, source, size, adminPortBase, portStride, systemProperties, false, false);
+    }
+
+    public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
+                      List<String> systemProperties, boolean debug, boolean suspend) {
         if (portStride < MIN_PORT_STRIDE) {
             throw new IllegalArgumentException(
                     "portStride must be >= " + MIN_PORT_STRIDE + " (got " + portStride + ")");
+        }
+        if (suspend && size > 1) {
+            throw new IllegalArgumentException(
+                    "glassfish.suspend requires a single-slot pool (gf.pool.size=1); got size=" + size
+                    + ". Suspend blocks the server JVM until a debugger attaches and all slot clones "
+                    + "share one debug port — run the suspended pool with -T1.");
         }
         this.poolDir = Objects.requireNonNull(poolDir, "poolDir");
         this.source = source;
@@ -73,6 +86,8 @@ public final class PoolConfig {
         this.systemProperties = (systemProperties == null)
                 ? List.of()
                 : Collections.unmodifiableList(List.copyOf(systemProperties));
+        this.debug = debug;
+        this.suspend = suspend;
     }
 
     public Path poolDir() {
@@ -118,6 +133,25 @@ public final class PoolConfig {
     }
 
     /**
+     * Start each slot's domain in debug mode ({@code start-domain --debug}).
+     * Sourced from the {@code glassfish.debug} property, shared with the
+     * managed container.
+     */
+    public boolean debug() {
+        return debug;
+    }
+
+    /**
+     * Start each slot's domain suspended, waiting for a debugger to attach
+     * ({@code start-domain --suspend}). Sourced from {@code glassfish.suspend},
+     * shared with the managed container. Only valid for a single-slot pool
+     * (enforced in the constructor) — see that guard for the rationale.
+     */
+    public boolean suspend() {
+        return suspend;
+    }
+
+    /**
      * Construct from system properties. Used by {@link PoolBootstrap} so a
      * Maven antrun {@code <java>} invocation can pass everything via
      * {@code <sysproperty>} without a CLI dance.
@@ -129,7 +163,9 @@ public final class PoolConfig {
                 Integer.parseInt(System.getProperty(SYS_SIZE, "1")),
                 Integer.parseInt(System.getProperty(SYS_ADMIN_BASE, String.valueOf(DEFAULT_ADMIN_BASE))),
                 Integer.parseInt(System.getProperty(SYS_PORT_STRIDE, String.valueOf(DEFAULT_PORT_STRIDE))),
-                parseSystemProperties(System.getProperty(SYS_SYSTEM_PROPERTIES)));
+                parseSystemProperties(System.getProperty(SYS_SYSTEM_PROPERTIES)),
+                Boolean.getBoolean("glassfish.debug"),
+                Boolean.getBoolean("glassfish.suspend"));
     }
 
     /**
