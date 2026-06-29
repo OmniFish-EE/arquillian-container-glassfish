@@ -63,4 +63,19 @@ class PoolConfigTest {
                 java.util.List.of("a=b", "c=d"));
         assertThat(c.systemProperties(), contains("a=b", "c=d"));
     }
+
+    @Test
+    void suspendRejectsMultiSlotPool() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new PoolConfig(Paths.get("/x"), null, 2, 14848, 100,
+                        java.util.List.of(), false, true));
+    }
+
+    @Test
+    void suspendAllowsSingleSlotPool() {
+        PoolConfig c = new PoolConfig(Paths.get("/x"), null, 1, 14848, 100,
+                java.util.List.of(), true, true);
+        assertThat(c.debug(), equalTo(true));
+        assertThat(c.suspend(), equalTo(true));
+    }
 }

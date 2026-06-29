@@ -70,9 +70,25 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     @Parameter(property = "glassfish.systemProperties")
     protected String systemProperties;
 
+    /**
+     * Start each slot's domain in debug mode. Shares the {@code glassfish.debug}
+     * property with the managed container.
+     */
+    @Parameter(property = "glassfish.debug", defaultValue = "false")
+    protected boolean debug;
+
+    /**
+     * Start each slot's domain suspended, waiting for a debugger to attach.
+     * Shares the {@code glassfish.suspend} property with the managed container.
+     * Only valid for a single-slot pool ({@code gf.pool.size=1}) — suspend
+     * blocks the server JVM and all slot clones share one debug port.
+     */
+    @Parameter(property = "glassfish.suspend", defaultValue = "false")
+    protected boolean suspend;
+
     protected PoolConfig poolConfig() {
         Path source = (poolSource == null) ? null : poolSource.toPath();
         return new PoolConfig(poolDir.toPath(), source, poolSize, adminPortBase, portStride,
-                PoolConfig.parseSystemProperties(systemProperties));
+                PoolConfig.parseSystemProperties(systemProperties), debug, suspend);
     }
 }
