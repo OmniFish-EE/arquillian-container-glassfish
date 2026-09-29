@@ -92,6 +92,7 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     private String domain = System.getProperty("glassfish.domain");
     private String postBootCommands = System.getProperty("glassfish.postBootCommands");
     private String systemProperties = System.getProperty("glassfish.systemProperties");
+    private boolean availabilityEnabled = Boolean.getBoolean("glassfish.availabilityenabled");
 
     private boolean httpsPortAsDefault = Boolean.valueOf(System.getProperty("glassfish.httpsPortAsDefault", "false"));
 
@@ -364,6 +365,20 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
      */
     public void setAddDeployName(boolean addDeployName) {
         this.addDeployName = addDeployName;
+    }
+
+    /**
+     * @return true, if deploy operation should use <code>--availabilityenabled</code>, false otherwise.
+     */
+    public boolean isAvailabilityEnabled() {
+        return this.availabilityEnabled;
+    }
+
+    /**
+     * @param availabilityEnabled true, if deploy operation should use <code>--availabilityenabled</code>, false otherwise.
+     */
+    public void setAvailabilityEnabled(boolean availabilityEnabled) {
+        this.availabilityEnabled = availabilityEnabled;
     }
 
     /**
