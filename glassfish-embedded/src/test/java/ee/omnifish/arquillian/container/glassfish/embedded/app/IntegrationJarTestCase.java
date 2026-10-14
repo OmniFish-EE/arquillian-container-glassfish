@@ -55,7 +55,7 @@
  * limitations under the License.
  */
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
-// Portions Copyright [2025] [OmniFish and/or its affiliates]
+// Portions Copyright [2025, 2026] [OmniFish and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.embedded.app;
 
 import jakarta.ejb.EJB;
@@ -63,12 +63,14 @@ import jakarta.ejb.EJB;
 import org.jboss.arquillian.container.test.api.Deployment;
 import org.jboss.arquillian.junit5.ArquillianExtension;
 import org.jboss.shrinkwrap.api.spec.JavaArchive;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import static org.jboss.shrinkwrap.api.ShrinkWrap.create;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * JBossEmbeddedIntegrationTestCase
@@ -87,6 +89,11 @@ public class IntegrationJarTestCase {
 
     @EJB
     private LocalInterfaceEJB bean;
+
+    @BeforeAll
+    public static void checkGFVersion() {
+        assumeFalse(System.getProperty("version.glassfish").startsWith("7"), "Test ignored for GlassFish 7");
+    }
 
     @Test
     public void shouldBeAbleToInjectEJBAsInstanceVariable() throws Exception {
