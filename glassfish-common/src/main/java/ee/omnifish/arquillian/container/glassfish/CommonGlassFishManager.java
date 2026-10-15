@@ -215,6 +215,10 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             deployform.field("properties", configuration.getProperties(), TEXT_PLAIN_TYPE);
         }
 
+        if (configuration.isAvailabilityEnabled()) {
+            deployform.field("availabilityenabled", "true", TEXT_PLAIN_TYPE);
+        }
+
         // Add the type field (optional, the only valid value is "osgi", other values are ommited)
         if (configuration.getType() != null && "osgi".equals(configuration.getType())) {
             deployform.field("type", configuration.getType(), TEXT_PLAIN_TYPE);
