@@ -27,8 +27,7 @@ and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 ## Quick start
 
 Declare the plugin as an extension, give it a `<distribution>` version so
-it resolves and unpacks Eclipse GlassFish itself, point `failsafe` at the
-same `poolDir`, and run `mvn verify`:
+it resolves and unpacks Eclipse GlassFish itself, and run `mvn verify`:
 
 ```xml
 <plugin>
@@ -44,12 +43,15 @@ same `poolDir`, and run `mvn verify`:
 </plugin>
 ```
 
-`<extensions>true</extensions>` is what starts and stops the pool: see
-[Lifecycle binding](#lifecycle-binding) below. That provisions a single slot. Add `<poolSize>4</poolSize>` (and a matching
-failsafe `forkCount`) to fan tests out across four GlassFish instances.
+`<extensions>true</extensions>` is what starts and stops the pool, and
+hands its location to the test JVMs: see [Lifecycle binding](#lifecycle-binding)
+below. That provisions a single slot. Add `<poolSize>4</poolSize>` (and a
+matching failsafe `forkCount`) to fan tests out across four GlassFish
+instances.
 
-For the failsafe side (`gf.pool.dir` forwarding, parallel forks, the
-`arquillian.xml` setup), see
+Failsafe itself still has to be declared with its `integration-test`/`verify`
+goals, as for any integration-test build, but it needs no pool settings.
+For parallel forks and the optional `arquillian.xml`, see
 [`../glassfish-pool/README.md`](../glassfish-pool/README.md#end-to-end-maven-setup).
 
 ### Lifecycle binding
@@ -69,8 +71,21 @@ left alone, so existing poms that keep an `<executions>` block don't run
 `up` or `down` twice. A plugin declared only in `<pluginManagement>` binds
 nothing.
 
+The extension also forwards the pool layout to the test JVMs. After the
+pool is up, `up` sets the project properties `gf.pool.dir`,
+`gf.pool.source`, `gf.pool.adminBase` and `gf.pool.portStride`, each only
+if it isn't already set. The extension adds matching
+`<gf.pool.dir>${gf.pool.dir}</gf.pool.dir>`-style entries to failsafe's
+`<systemPropertyVariables>`, because failsafe doesn't pass project
+properties to its forks on its own. Entries you configure yourself win.
+Forwarding `gf.pool.source` lets test JVMs grow the pool when every slot is
+busy; see
+[Forwarding to failsafe](../glassfish-pool/README.md#forwarding-to-failsafe)
+for the details and how to opt out.
+
 To keep explicit control instead, leave out `<extensions>` and bind the
-goals yourself. The phases come from the goals' defaults:
+goals yourself. The phases come from the goals' defaults. Then also add the
+`${gf.pool.dir}`-style references to failsafe yourself:
 
 ```xml
 <executions>
@@ -86,7 +101,7 @@ note applies:
 
 | Parameter | Default | Override when… |
 | --------- | ------- | -------------- |
-| `poolDir` | `${project.build.directory}/pool` | several modules share one pool, or two `mvn` runs on one machine need separate pools. Keep failsafe's `gf.pool.dir` in sync. |
+| `poolDir` | `${project.build.directory}/pool` | several modules share one pool, or two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
 | `stageDir` | `${project.build.directory}/dist` | the unpacked dist should live elsewhere, e.g. shared across modules. |

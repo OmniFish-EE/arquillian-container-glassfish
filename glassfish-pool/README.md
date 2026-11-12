@@ -67,8 +67,9 @@ Add the pool container as a `test`-scope dependency:
 </dependency>
 ```
 
-…and an `arquillian.xml` that points at the same `poolDir` the build is
-provisioning into:
+`arquillian.xml` is optional. `poolDir` defaults to the `gf.pool.dir`
+system property, which the Maven plugin forwards to the test JVMs (see
+*End-to-end Maven setup*). Add one only to set other properties:
 
 ```xml
 <arquillian xmlns="http://jboss.org/schema/arquillian"
@@ -78,21 +79,24 @@ provisioning into:
 
     <container qualifier="glassfish-pool" default="true">
         <configuration>
-            <property name="poolDir">${project.build.directory}/pool</property>
             <property name="leaseTimeoutSeconds">120</property>
         </configuration>
     </container>
 </arquillian>
 ```
 
-`poolDir` may also be supplied as a system property (`-Dgf.pool.dir=...`),
-which is what the integration tests do — see [`integration-tests/src/it/pool`](../integration-tests/src/it/pool).
+To set `poolDir` explicitly, reference a system property such as
+`${gf.pool.dir}`. Arquillian only expands system properties, so a Maven
+expression like `${project.build.directory}` stays a literal string. See
+[`integration-tests/src/it/pool`](../integration-tests/src/it/pool).
 
 ## End-to-end Maven setup
 
 Two plugin blocks: the pool plugin (which resolves and unpacks GlassFish
-itself via its `<distribution>` element), and failsafe pointed at the
-same `poolDir`.
+itself via its `<distribution>` element), and failsafe to run the tests.
+Failsafe needs no pool settings. With `<extensions>true</extensions>`,
+`up` publishes the pool layout and the plugin forwards it to the test JVMs
+(see [Forwarding to failsafe](#forwarding-to-failsafe)).
 
 ```xml
 <properties>
@@ -117,15 +121,12 @@ same `poolDir`.
             </configuration>
         </plugin>
 
-        <!-- 2. Forward gf.pool.dir to test JVMs, run tests in parallel forks. -->
+        <!-- 2. Run tests in parallel forks; pool settings are forwarded automatically. -->
         <plugin>
             <artifactId>maven-failsafe-plugin</artifactId>
             <configuration>
                 <forkCount>${pool.size}</forkCount>
                 <reuseForks>true</reuseForks>
-                <systemPropertyVariables>
-                    <gf.pool.dir>${project.build.directory}/pool</gf.pool.dir>
-                </systemPropertyVariables>
             </configuration>
             <executions>
                 <execution>
@@ -157,7 +158,41 @@ mvn verify
 ```
 
 For per-class fork parallelism across `${pool.size}` slots, that's all you
-need. To go wider than `${pool.size}`, see *Growing on demand* below.
+need. Since `gf.pool.source` is forwarded too, test JVMs can also grow the
+pool beyond `${pool.size}`; see *Growing on demand* below.
+
+### Forwarding to failsafe
+
+After the pool is up, `up` sets these project properties, each only if it
+isn't already set (so a pom property or `-D` still wins):
+
+| Property             | Value                                                 |
+| -------------------- | ----------------------------------------------------- |
+| `gf.pool.dir`        | the pool root (`poolDir`)                             |
+| `gf.pool.source`     | the clone source (`poolSource`), when known           |
+| `gf.pool.adminBase`  | `adminPortBase`                                       |
+| `gf.pool.portStride` | `portStride`                                          |
+
+Failsafe forwards `-D` properties and its own `<systemPropertyVariables>`
+to the forked JVM, but not project properties. So for every project that
+declares the pool plugin with `<extensions>true</extensions>`, the plugin
+adds `<gf.pool.dir>${gf.pool.dir}</gf.pool.dir>` (and likewise for the
+other three) to failsafe's `<systemPropertyVariables>`. Maven resolves
+those references when failsafe runs, after `up`. Entries you configure
+yourself are kept, so `<gf.pool.dir>/elsewhere</gf.pool.dir>` overrides
+the forwarded value.
+
+Without `<extensions>true</extensions>`, add the references yourself.
+They still avoid repeating any path:
+
+```xml
+<systemPropertyVariables>
+    <gf.pool.dir>${gf.pool.dir}</gf.pool.dir>
+    <gf.pool.source>${gf.pool.source}</gf.pool.source>
+    <gf.pool.adminBase>${gf.pool.adminBase}</gf.pool.adminBase>
+    <gf.pool.portStride>${gf.pool.portStride}</gf.pool.portStride>
+</systemPropertyVariables>
+```
 
 ### Bring your own unpack
 
@@ -200,7 +235,7 @@ itself. The plugin skips staging and clones slots directly from there.
 
 | Property              | Type    | Default                          | Notes                                                                                                       |
 | --------------------- | ------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. Must match the build's `poolDir`.                                                                 |
+| `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. The Maven plugin forwards the build's `poolDir` as `gf.pool.dir`.                                 |
 | `leaseTimeoutSeconds` | long    | `600`                            | Lease wait before failing the test JVM.                                                                     |
 | `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). |
 | `slotGroup`           | String  | `-Dgf.pool.slotGroup`/(empty)    | Slot-sharing key; containers sharing it reuse one slot. Inferred from the `<group>` qualifier when `gf.pool.shareGroupSlot=true`. See [Sharing one slot across containers](#sharing-one-slot-across-containers). |
@@ -216,8 +251,10 @@ the leased slot wins.
 
 ### System properties forwarded by the build
 
-These configure the pool layout. The Maven plugin sets them automatically;
-you only need them if you're driving lifecycle from antrun, an IDE, or a
+These configure the pool layout. The Maven plugin sets them automatically,
+and forwards `gf.pool.dir`/`source`/`adminBase`/`portStride` to the test
+JVMs (see [Forwarding to failsafe](#forwarding-to-failsafe)). You only need
+to set them by hand if you drive the lifecycle from antrun, an IDE, or a
 shell script.
 
 | System property            | Default | Meaning                                                |
@@ -279,21 +316,28 @@ it is only valid for a **single-slot pool**. The plugin throws
 `IllegalArgumentException` when `glassfish.suspend` is set with `gf.pool.size`
 > 1 — run a suspended pool with `-T1` (and `gf.pool.size=1`).
 
-## Growing on demand (optional)
+## Growing on demand
 
-If `gf.pool.source` is forwarded to test JVMs, `SlotLeaser` will provision a
-new slot when every existing slot is busy and the wait would otherwise
-deadlock. To enable, add to `failsafe`'s `<systemPropertyVariables>`:
+When a test JVM knows `gf.pool.source`, `SlotLeaser` provisions a new slot
+whenever every existing slot is busy, instead of waiting for one to free
+up. With `<extensions>true</extensions>` the plugin forwards
+`gf.pool.source` (together with `gf.pool.adminBase` and
+`gf.pool.portStride`, so grown slots land in the same port window), so
+growing is on by default.
+
+To keep the pool at exactly `poolSize` and make test JVMs wait for an idle
+slot instead, blank the forwarded source in failsafe's configuration:
 
 ```xml
-<gf.pool.source>${project.build.directory}/dist/glassfish9</gf.pool.source>
-<gf.pool.adminBase>14848</gf.pool.adminBase>
-<gf.pool.portStride>100</gf.pool.portStride>
+<systemPropertyVariables>
+    <gf.pool.source></gf.pool.source>
+</systemPropertyVariables>
 ```
 
-Without `gf.pool.source` the leaser still works against the existing pool —
-it just blocks for an idle slot instead of growing one. That's the right
-default when `forkCount` ≤ `poolSize`.
+Without `gf.pool.source` the leaser still works against the existing pool;
+it just blocks for an idle slot instead of growing one. When `forkCount` ≤
+`poolSize`, a slot frees up as soon as a test JVM finishes, so growing
+rarely triggers either way.
 
 ## Sharing one slot across containers
 
@@ -395,7 +439,9 @@ narrowest one that fits.
 
 Forward the sysprop to every test JVM the build forks. This is also the
 right place to set the *default* the build ships with — individual
-modules can override it later.
+modules can override it later. (`gf.pool.dir` and `gf.pool.source` are
+forwarded by the pool plugin itself; see
+[Forwarding to failsafe](#forwarding-to-failsafe).)
 
 ```xml
 <properties>
@@ -406,18 +452,17 @@ modules can override it later.
     <artifactId>maven-failsafe-plugin</artifactId>
     <configuration>
         <systemPropertyVariables>
-            <gf.pool.dir>${project.build.directory}/pool</gf.pool.dir>
-            <gf.pool.source>${project.build.directory}/dist/glassfish9</gf.pool.source>
             <gf.pool.restartOnRelease>${gf.pool.restartOnRelease}</gf.pool.restartOnRelease>
         </systemPropertyVariables>
     </configuration>
 </plugin>
 ```
 
-Forwarding `gf.pool.source` is strongly recommended when this is on: if a
-restart fails, the next leaser's port-health probe marks the slot dead and
-`tryGrow` recycles it by re-provisioning from `gf.pool.source`. Without a
-source forwarded, a failed restart leaves a permanently dead slot.
+Keep `gf.pool.source` forwarded (the default with `<extensions>true</extensions>`)
+when this is on: if a restart fails, the next leaser's port-health probe
+marks the slot dead and `tryGrow` recycles it by re-provisioning from
+`gf.pool.source`. Without a source, a failed restart leaves a permanently
+dead slot.
 
 ### 2. Per-module override (child pom)
 
