@@ -5,6 +5,8 @@ package ee.omnifish.arquillian.container.glassfish.pool.it;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.equalTo;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -48,5 +50,15 @@ public class GlassFishPoolDeployWarIT {
             String body = r.lines().collect(Collectors.joining());
             assertThat(body, containsString("Hello from pool slot"));
         }
+    }
+
+    /** The pom forwards nothing itself; these come from glassfish-pool:up via the extension. */
+    @Test
+    @RunAsClient
+    public void poolLayoutIsForwardedToTestJvm() {
+        assertThat(System.getProperty("gf.pool.dir"), endsWith("pool"));
+        assertThat(System.getProperty("gf.pool.source"), containsString("dist"));
+        assertThat(System.getProperty("gf.pool.adminBase"), equalTo("14848"));
+        assertThat(System.getProperty("gf.pool.portStride"), equalTo("100"));
     }
 }

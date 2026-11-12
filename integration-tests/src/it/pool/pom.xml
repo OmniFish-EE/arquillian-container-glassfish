@@ -120,13 +120,13 @@
                 </configuration>
             </plugin>
 
+            <!--
+                No <systemPropertyVariables>: glassfish-pool:up publishes
+                gf.pool.dir/source/adminBase/portStride and the extension
+                forwards them to the forked test JVM.
+            -->
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <configuration>
-                    <systemPropertyVariables>
-                        <gf.pool.dir>${project.build.directory}/pool</gf.pool.dir>
-                    </systemPropertyVariables>
-                </configuration>
                 <executions>
                     <execution>
                         <goals>
