@@ -49,8 +49,10 @@ public class UpMojo extends AbstractStagingPoolMojo {
             getLog().info("glassfish-pool:up skipped (-Dmaven.test.skip)");
             return;
         }
+        // Before poolConfig(): may derive poolSource from <distribution>.
+        Runnable preStage = buildPreStage();
         try {
-            PoolBootstrap.up(poolConfig(), buildPreStage());
+            PoolBootstrap.up(poolConfig(), preStage);
         } catch (IOException e) {
             throw new MojoExecutionException("Pool up failed: " + e.getMessage(), e);
         }

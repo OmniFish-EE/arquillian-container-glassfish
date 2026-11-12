@@ -32,7 +32,9 @@ abstract class AbstractPoolMojo extends AbstractMojo {
 
     /**
      * Source GlassFish install used as the template for slot clones. Required
-     * for the {@code up} and {@code provision} goals; ignored otherwise.
+     * for the {@code up} and {@code provision} goals; ignored otherwise. When
+     * a {@code <distribution>} is unpacked and this is unset, it defaults to
+     * the zip's top-level directory under {@code stageDir}.
      */
     @Parameter(property = "gf.pool.source")
     protected File poolSource;

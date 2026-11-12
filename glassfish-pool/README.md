@@ -106,16 +106,11 @@ same `poolDir`.
         <plugin>
             <groupId>ee.omnifish.arquillian</groupId>
             <artifactId>glassfish-pool-maven-plugin</artifactId>
-            <version>2.2.0</version>
+            <version>2.2.2</version>
             <configuration>
-                <poolDir>${project.build.directory}/pool</poolDir>
-                <poolSource>${project.build.directory}/dist/glassfish9</poolSource>
                 <poolSize>${pool.size}</poolSize>
                 <distribution>
-                    <groupId>org.glassfish.main.distributions</groupId>
-                    <artifactId>glassfish</artifactId>
                     <version>${glassfish.version}</version>
-                    <type>zip</type>
                 </distribution>
             </configuration>
             <executions>
@@ -148,6 +143,14 @@ The plugin resolves `<distribution>` through your usual Maven repositories
 and unpacks the zip under `${project.build.directory}/dist` before
 provisioning runs. Staging is idempotent: re-runs fast-exit when the
 marker file written after a successful unpack is still present.
+
+Everything else is defaulted: `groupId`/`artifactId`/`type` resolve to the
+Eclipse GlassFish zip (`org.glassfish.main.distributions:glassfish:zip`),
+`poolDir` to `${project.build.directory}/pool`, and the clone source to the
+zip's top-level directory (`target/dist/glassfish9`). Set the full
+coordinates for Payara or a fork. The plugin README's
+[Defaults](../glassfish-pool-maven-plugin/README.md#defaults) table says
+when to override each one.
 
 Run it:
 
@@ -189,8 +192,9 @@ points at:
 </plugin>
 ```
 
-The pool plugin will then skip staging and clone slots directly from
-`${project.build.directory}/dist/glassfish9`.
+Then set `<poolSource>${project.build.directory}/dist/glassfish9</poolSource>`
+on the pool plugin. It is only derived when the plugin does the unpack
+itself. The plugin skips staging and clones slots directly from there.
 
 ## Configuration reference
 

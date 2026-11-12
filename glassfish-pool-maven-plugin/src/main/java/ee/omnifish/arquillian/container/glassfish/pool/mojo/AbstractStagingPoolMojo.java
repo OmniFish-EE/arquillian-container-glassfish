@@ -28,6 +28,7 @@ import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 
 import ee.omnifish.arquillian.container.glassfish.pool.ArtifactCoord;
+import ee.omnifish.arquillian.container.glassfish.pool.DistributionCoord;
 import ee.omnifish.arquillian.container.glassfish.pool.OverlayCoord;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolStaging;
 import ee.omnifish.arquillian.container.glassfish.pool.StageSpec;
@@ -43,9 +44,12 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     /**
      * GlassFish distribution to resolve and unpack. When unset, no unpack
      * happens and {@code gf.pool.source} must already point at a staged install.
+     * {@code groupId}, {@code artifactId} and {@code type} default to the
+     * Eclipse GlassFish zip ({@code org.glassfish.main.distributions:glassfish:zip}),
+     * so only {@code <version>} is required.
      */
     @Parameter
-    protected ArtifactCoord distribution;
+    protected DistributionCoord distribution;
 
     /** Where the dist zip is unpacked. Default {@code ${project.build.directory}/dist}. */
     @Parameter(property = "gf.pool.stageDir", defaultValue = "${project.build.directory}/dist")
@@ -87,8 +91,18 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
      * ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap#up} runs
      * inside its provisioning lock. Returns {@code null} if there's no work,
      * which keeps the provisioning hot-path branch-free.
+     *
+     * <p>Also derives {@link #poolSource} from the distribution when it isn't
+     * set, so callers must invoke this <em>before</em> {@link #poolConfig()}.
      */
     protected Runnable buildPreStage() throws MojoExecutionException {
+        boolean willUnpack = !unpackSkip && distribution != null;
+        if (willUnpack) {
+            requireDistributionVersion();
+            if (poolSource == null) {
+                derivePoolSource();
+            }
+        }
         StageSpec spec = stageSpec();
         if (!spec.hasWork()) {
             return null;
@@ -102,12 +116,57 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
         };
     }
 
-    private StageSpec stageSpec() {
-        Path overlayDir = (overlayTargetDir != null)
-                ? overlayTargetDir.toPath()
-                : poolSource.toPath().resolve("glassfish/modules");
+    private void requireDistributionVersion() throws MojoExecutionException {
+        String version = distribution.getVersion();
+        if (version == null || version.isBlank()) {
+            throw new MojoExecutionException("<distribution> requires a <version> (resolving "
+                    + distribution.getGroupId() + ":" + distribution.getArtifactId() + ")");
+        }
+    }
+
+    /**
+     * Point {@link #poolSource} at {@code stageDir/<root>}, where {@code <root>}
+     * is the distribution zip's single top-level directory ({@code glassfish9},
+     * {@code payara6}, …). Read from the zip itself rather than by listing
+     * {@code stageDir} after unpack: the unpack runs later, inside
+     * {@code PoolBootstrap}'s lock, after the {@code PoolConfig} carrying the
+     * source has already been built. Leaves {@code poolSource} unset (with a
+     * warning) when the zip has no single root.
+     */
+    private void derivePoolSource() throws MojoExecutionException {
+        String root;
+        try {
+            root = PoolStaging.singleRootDirectory(resolveArtifact(distribution));
+        } catch (IOException e) {
+            throw new MojoExecutionException("Could not inspect " + distribution.toGav() + ": " + e.getMessage(), e);
+        }
+        if (root == null) {
+            getLog().warn(distribution.toGav() + " has no single top-level directory; set <poolSource> "
+                    + "(gf.pool.source) to the install inside " + stageDir);
+            return;
+        }
+        poolSource = new File(stageDir, root);
+        getLog().info("poolSource not set; using " + poolSource + " from " + distribution.toGav());
+    }
+
+    private StageSpec stageSpec() throws MojoExecutionException {
         List<OverlayCoord> ov = (overlays == null) ? Collections.emptyList() : overlays;
-        return new StageSpec(stageDir.toPath(), distribution, unpackSkip, overlayDir, ov, overlaySkip);
+        return new StageSpec(stageDir.toPath(), distribution, unpackSkip, overlayDir(ov), ov, overlaySkip);
+    }
+
+    /** {@code overlayTargetDir}, else {@code poolSource/glassfish/modules}; {@code null} when no overlay needs it. */
+    private Path overlayDir(List<OverlayCoord> ov) throws MojoExecutionException {
+        if (overlayTargetDir != null) {
+            return overlayTargetDir.toPath();
+        }
+        if (poolSource != null) {
+            return poolSource.toPath().resolve("glassfish/modules");
+        }
+        if (!overlaySkip && !ov.isEmpty()) {
+            throw new MojoExecutionException(
+                    "<overlays> need a target: set <overlayTargetDir> or <poolSource> (gf.pool.source)");
+        }
+        return null;
     }
 
     private Path resolveArtifact(ArtifactCoord coord) throws IOException {
