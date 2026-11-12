@@ -37,8 +37,10 @@ public class ProvisionMojo extends AbstractStagingPoolMojo {
             getLog().info("glassfish-pool:provision skipped (gf.pool.skip=true)");
             return;
         }
+        // Before poolConfig(): may derive poolSource from <distribution>.
+        Runnable preStage = buildPreStage();
         try {
-            PoolBootstrap.provisionSlot(poolConfig(), slot, buildPreStage());
+            PoolBootstrap.provisionSlot(poolConfig(), slot, preStage);
         } catch (IOException e) {
             throw new MojoExecutionException("Slot " + slot + " provisioning failed: " + e.getMessage(), e);
         }

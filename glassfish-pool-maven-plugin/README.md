@@ -27,23 +27,18 @@ pool of GlassFish instances.
 ## Quick start
 
 Bind `up` and `down` to the integration-test phases, declare a
-`<distribution>` so the plugin resolves and unpacks GlassFish itself,
-point `failsafe` at the same `poolDir`, and run `mvn verify`:
+`<distribution>` version so the plugin resolves and unpacks Eclipse
+GlassFish itself, point `failsafe` at the same `poolDir`, and run
+`mvn verify`:
 
 ```xml
 <plugin>
     <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>glassfish-pool-maven-plugin</artifactId>
-    <version>2.2.0</version>
+    <version>2.2.2</version>
     <configuration>
-        <poolDir>${project.build.directory}/pool</poolDir>
-        <poolSource>${project.build.directory}/dist/glassfish9</poolSource>
-        <poolSize>4</poolSize>
         <distribution>
-            <groupId>org.glassfish.main.distributions</groupId>
-            <artifactId>glassfish</artifactId>
             <version>9.0.0</version>
-            <type>zip</type>
         </distribution>
     </configuration>
     <executions>
@@ -53,9 +48,26 @@ point `failsafe` at the same `poolDir`, and run `mvn verify`:
 </plugin>
 ```
 
+That provisions a single slot. Add `<poolSize>4</poolSize>` (and a matching
+failsafe `forkCount`) to fan tests out across four GlassFish instances.
+
 For the failsafe side (`gf.pool.dir` forwarding, parallel forks, the
 `arquillian.xml` setup), see
 [`../glassfish-pool/README.md`](../glassfish-pool/README.md#end-to-end-maven-setup).
+
+### Defaults
+
+The snippet above relies on these defaults. Override one only when its
+note applies:
+
+| Parameter | Default | Override when… |
+| --------- | ------- | -------------- |
+| `poolDir` | `${project.build.directory}/pool` | several modules share one pool, or two `mvn` runs on one machine need separate pools. Keep failsafe's `gf.pool.dir` in sync. |
+| `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
+| `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
+| `stageDir` | `${project.build.directory}/dist` | the unpacked dist should live elsewhere, e.g. shared across modules. |
+| `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`. |
+| `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
 If your build already runs `maven-dependency-plugin` for unrelated reasons,
 drop `<distribution>` and let the existing `unpack` execution land the dist
@@ -71,7 +83,7 @@ the *Staging* block.
 | Parameter       | Property             | Default                         | Notes                                                  |
 | --------------- | -------------------- | ------------------------------- | ------------------------------------------------------ |
 | `poolDir`       | `gf.pool.dir`        | `${project.build.directory}/pool` | Pool root. Created if missing. **Required.**         |
-| `poolSource`    | `gf.pool.source`     | (none)                          | Source GlassFish install. Required for `up`/`provision`. |
+| `poolSource`    | `gf.pool.source`     | derived from `<distribution>`   | Source GlassFish install. Required for `up`/`provision`; defaults to `stageDir/<zip root>` when a `<distribution>` is unpacked. |
 | `poolSize`      | `gf.pool.size`       | `1`                             | Number of slots `up` provisions.                       |
 | `adminPortBase` | `gf.pool.adminBase`  | `14848`                         | Admin port for slot 1.                                 |
 | `portStride`    | `gf.pool.portStride` | `100`                           | Per-slot port spacing. Must be ≥ 10.                   |
@@ -84,7 +96,7 @@ build isn't running tests there's no reason to pay for a pool.
 
 | Parameter         | Property               | Default                          | Notes                                                                  |
 | ----------------- | ---------------------- | -------------------------------- | ---------------------------------------------------------------------- |
-| `distribution`    | (nested `<distribution>`) | (none)                        | Optional GAV of a GlassFish dist to resolve and unpack into `stageDir`. |
+| `distribution`    | (nested `<distribution>`) | (none)                        | Optional GAV of a GlassFish dist to resolve and unpack into `stageDir`. Only `<version>` is required; `groupId`/`artifactId`/`type` default to `org.glassfish.main.distributions`/`glassfish`/`zip`. |
 | `stageDir`        | `gf.pool.stageDir`     | `${project.build.directory}/dist`| Where the dist zip is unpacked.                                        |
 | `unpackSkip`      | `gf.pool.unpack.skip`  | `false`                          | Skip the unpack — assume `poolSource` already points at a staged install. |
 | `overlays`        | (nested `<overlays>`)  | (empty)                          | Artifacts copied into `overlayTargetDir` after unpack. See *Overlays*.  |
@@ -105,8 +117,9 @@ written after a successful unpack is still present. Set
 ### Bring your own unpack
 
 If your build already runs `maven-dependency-plugin` for unrelated reasons,
-drop the `<distribution>` block from this plugin and add a regular `unpack`
-execution that lands the dist in the same directory `<poolSource>` points at:
+drop the `<distribution>` block from this plugin, set `<poolSource>`
+explicitly (it is only derived when the plugin does the unpack), and add a
+regular `unpack` execution that lands the dist in that directory:
 
 ```xml
 <plugin>
@@ -132,8 +145,8 @@ execution that lands the dist in the same directory `<poolSource>` points at:
 </plugin>
 ```
 
-The pool plugin will then skip staging and clone slots directly from
-`${project.build.directory}/dist/glassfish9`.
+With `<poolSource>${project.build.directory}/dist/glassfish9</poolSource>`,
+the pool plugin then skips staging and clones slots directly from there.
 
 ## Overlays
 

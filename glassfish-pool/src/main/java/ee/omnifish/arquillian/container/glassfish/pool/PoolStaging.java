@@ -90,6 +90,37 @@ public final class PoolStaging {
         writeMarker(marker, MARKER_KEY_DIST, wantedGav);
     }
 
+    /**
+     * Name of the single top-level directory every entry of {@code zip} lives
+     * under (e.g. {@code glassfish9} or {@code payara6}), or {@code null} if
+     * the zip has several top-level entries or files at its root. Lets the
+     * plugin derive {@code poolSource} as {@code stageDir/<root>} without the
+     * user hard-coding a directory name that the distribution dictates.
+     *
+     * <p>Reads only the zip's central directory, so it is cheap even for a
+     * full distribution, and works before the unpack has run.
+     */
+    public static String singleRootDirectory(Path zip) throws IOException {
+        String root = null;
+        try (ZipFile zf = ZipFile.builder().setFile(zip.toFile()).get()) {
+            var entries = zf.getEntries();
+            while (entries.hasMoreElements()) {
+                String name = entries.nextElement().getName();
+                int slash = name.indexOf('/');
+                if (slash <= 0) {
+                    return null; // file at the zip root, or an absolute-looking entry
+                }
+                String first = name.substring(0, slash);
+                if (root == null) {
+                    root = first;
+                } else if (!root.equals(first)) {
+                    return null;
+                }
+            }
+        }
+        return root;
+    }
+
     private static void copyOverlays(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path target = spec.overlayTargetDir();
         Files.createDirectories(target);
