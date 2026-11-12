@@ -1,11 +1,11 @@
 # Arquillian Container GlassFish Pool — Maven Plugin
 
 Maven plugin that drives the lifecycle of an
-[`arquillian-glassfish-server-pool`](../glassfish-pool/) pool. Binds
-naturally to `pre-integration-test` / `post-integration-test` so a
-consumer pom only has to add two plugin blocks (this one with a
-`<distribution>` element, and failsafe) to get a parallel-fork-friendly
-pool of GlassFish instances.
+[`arquillian-glassfish-server-pool`](../glassfish-pool/) pool. Declared
+with `<extensions>true</extensions>`, it binds itself to
+`pre-integration-test` / `post-integration-test`, so a consumer pom only
+has to add two plugin blocks (this one with a `<distribution>` element,
+and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 
 | Coordinates  | Value                              |
 | ------------ | ---------------------------------- |
@@ -26,34 +26,58 @@ pool of GlassFish instances.
 
 ## Quick start
 
-Bind `up` and `down` to the integration-test phases, declare a
-`<distribution>` version so the plugin resolves and unpacks Eclipse
-GlassFish itself, point `failsafe` at the same `poolDir`, and run
-`mvn verify`:
+Declare the plugin as an extension, give it a `<distribution>` version so
+it resolves and unpacks Eclipse GlassFish itself, point `failsafe` at the
+same `poolDir`, and run `mvn verify`:
 
 ```xml
 <plugin>
     <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>glassfish-pool-maven-plugin</artifactId>
     <version>2.2.2</version>
+    <extensions>true</extensions>
     <configuration>
         <distribution>
             <version>9.0.0</version>
         </distribution>
     </configuration>
-    <executions>
-        <execution><id>pool-up</id><goals><goal>up</goal></goals></execution>
-        <execution><id>pool-down</id><goals><goal>down</goal></goals></execution>
-    </executions>
 </plugin>
 ```
 
-That provisions a single slot. Add `<poolSize>4</poolSize>` (and a matching
+`<extensions>true</extensions>` is what starts and stops the pool: see
+[Lifecycle binding](#lifecycle-binding) below. That provisions a single slot. Add `<poolSize>4</poolSize>` (and a matching
 failsafe `forkCount`) to fan tests out across four GlassFish instances.
 
 For the failsafe side (`gf.pool.dir` forwarding, parallel forks, the
 `arquillian.xml` setup), see
 [`../glassfish-pool/README.md`](../glassfish-pool/README.md#end-to-end-maven-setup).
+
+### Lifecycle binding
+
+With `<extensions>true</extensions>`, Maven loads the plugin as a build
+extension, and the plugin adds two executions to every project that
+declares it (directly or inherited from a parent's `<plugins>`):
+
+| Execution id | Goal   | Phase                   |
+| ------------ | ------ | ----------------------- |
+| `pool-up`    | `up`   | `pre-integration-test`  |
+| `pool-down`  | `down` | `post-integration-test` |
+
+They pick up the plugin-level `<configuration>`, and they work with any
+packaging (`jar`, `war`, `pom`, …). A goal you already bind yourself is
+left alone, so existing poms that keep an `<executions>` block don't run
+`up` or `down` twice. A plugin declared only in `<pluginManagement>` binds
+nothing.
+
+To keep explicit control instead, leave out `<extensions>` and bind the
+goals yourself. The phases come from the goals' defaults:
+
+```xml
+<executions>
+    <execution><id>pool-up</id><goals><goal>up</goal></goals></execution>
+    <execution><id>pool-down</id><goals><goal>down</goal></goals></execution>
+</executions>
+```
 
 ### Defaults
 

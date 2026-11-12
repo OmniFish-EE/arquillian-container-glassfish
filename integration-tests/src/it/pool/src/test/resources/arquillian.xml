@@ -5,7 +5,8 @@
 
     <container qualifier="glassfish-pool" default="true">
         <configuration>
-            <property name="poolDir">${project.build.directory}/pool</property>
+            <!-- Arquillian expands ${...} from system properties; failsafe forwards gf.pool.dir. -->
+            <property name="poolDir">${gf.pool.dir}</property>
             <property name="leaseTimeoutSeconds">120</property>
         </configuration>
     </container>

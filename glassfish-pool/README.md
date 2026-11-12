@@ -107,16 +107,14 @@ same `poolDir`.
             <groupId>ee.omnifish.arquillian</groupId>
             <artifactId>glassfish-pool-maven-plugin</artifactId>
             <version>2.2.2</version>
+            <!-- Binds up/down to pre-/post-integration-test; no <executions> needed. -->
+            <extensions>true</extensions>
             <configuration>
                 <poolSize>${pool.size}</poolSize>
                 <distribution>
                     <version>${glassfish.version}</version>
                 </distribution>
             </configuration>
-            <executions>
-                <execution><id>pool-up</id><goals><goal>up</goal></goals></execution>
-                <execution><id>pool-down</id><goals><goal>down</goal></goals></execution>
-            </executions>
         </plugin>
 
         <!-- 2. Forward gf.pool.dir to test JVMs, run tests in parallel forks. -->

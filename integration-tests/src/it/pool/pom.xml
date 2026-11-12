@@ -104,28 +104,20 @@
 
             <!--
                 Provision/start the pool before failsafe, stop it after.
-                pre-integration-test  -> glassfish-pool:up
-                post-integration-test -> glassfish-pool:down
+                <extensions>true</extensions> binds, with no <executions>:
+                pre-integration-test  -> glassfish-pool:up   (pool-up)
+                post-integration-test -> glassfish-pool:down (pool-down)
             -->
             <plugin>
                 <groupId>ee.omnifish.arquillian</groupId>
                 <artifactId>glassfish-pool-maven-plugin</artifactId>
                 <version>${container.version}</version>
+                <extensions>true</extensions>
                 <configuration>
                     <poolDir>${project.build.directory}/pool</poolDir>
                     <poolSource>${project.build.directory}/dist/${glassfish.home}</poolSource>
                     <poolSize>1</poolSize>
                 </configuration>
-                <executions>
-                    <execution>
-                        <id>pool-up</id>
-                        <goals><goal>up</goal></goals>
-                    </execution>
-                    <execution>
-                        <id>pool-down</id>
-                        <goals><goal>down</goal></goals>
-                    </execution>
-                </executions>
             </plugin>
 
             <plugin>
