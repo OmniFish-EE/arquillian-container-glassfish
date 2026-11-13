@@ -90,7 +90,6 @@
         <version.jackson>2.21</version.jackson>
         <version.jackson.xmlbind>2.21.2</version.jackson.xmlbind>
         <version.shrinkwrap>1.2.6</version.shrinkwrap>
-        <glassfish.home>glassfish7</glassfish.home>
 
         <test.logManager>org.glassfish.main.jul.GlassFishLogManager</test.logManager>
         <test.logLevel>INFO</test.logLevel>
@@ -433,7 +432,6 @@
                 <version.glassfish>8.0.5</version.glassfish>
                 <version.gjule>8.0.5</version.gjule>
                 <version.jakartaee>11</version.jakartaee>
-                <glassfish.home>glassfish8</glassfish.home>
             </properties>
         </profile>
 

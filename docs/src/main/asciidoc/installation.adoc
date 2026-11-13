@@ -21,6 +21,28 @@ Add one of the following dependencies to your Maven `pom.xml`, depending on your
 </dependency>
 ----
 
+==== Getting GlassFish
+
+The managed connector starts a local GlassFish installation. The
+link:https://github.com/OmniFish-EE/arquillian-container-glassfish/tree/main/glassfish-maven-plugin[GlassFish Maven Plugin]
+can download and unpack it during the build. It passes the install's location to surefire and
+failsafe as `glassfish.home`, which the connector reads:
+
+[source,xml]
+----
+<plugin>
+  <groupId>ee.omnifish.glassfish</groupId>
+  <artifactId>glassfish-maven-plugin</artifactId>
+  <version>YOUR_VERSION</version>
+  <extensions>true</extensions>
+  <configuration>
+    <distribution>
+      <version>9.0.0</version>
+    </distribution>
+  </configuration>
+</plugin>
+----
+
 === Remote GlassFish
 
 [source,xml]
