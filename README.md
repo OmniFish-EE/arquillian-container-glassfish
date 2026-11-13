@@ -55,3 +55,21 @@ Then forked from:
 </plugin>
 
 ```
+
+ To get GlassFish itself, let the [GlassFish Maven Plugin](glassfish-maven-plugin/) download and
+ unpack it during the build. It sets `glassfish.home` for surefire and failsafe, so the entry above
+ can go:
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.glassfish</groupId>
+    <artifactId>glassfish-maven-plugin</artifactId>
+    <version>2.2.2</version>
+    <extensions>true</extensions>
+    <configuration>
+        <distribution>
+            <version>9.0.0</version>
+        </distribution>
+    </configuration>
+</plugin>
+```

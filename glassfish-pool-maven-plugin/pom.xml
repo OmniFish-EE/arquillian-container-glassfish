@@ -49,6 +49,14 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Staging (resolve, unpack, overlay) is shared with glassfish:provision;
+             up/provision run it inside the pool's lock. -->
+        <dependency>
+            <groupId>ee.omnifish.glassfish</groupId>
+            <artifactId>glassfish-maven-plugin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-plugin-api</artifactId>
@@ -75,14 +83,6 @@
             <artifactId>maven-resolver-api</artifactId>
             <version>1.9.18</version>
             <scope>provided</scope>
-        </dependency>
-
-        <!-- glassfish-pool declares commons-compress as optional (test-JVM
-             consumers don't need it). The plugin does, so pull it in directly. -->
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-compress</artifactId>
-            <version>1.27.1</version>
         </dependency>
 
         <dependency>

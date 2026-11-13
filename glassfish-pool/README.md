@@ -141,7 +141,8 @@ Failsafe needs no pool settings. With `<extensions>true</extensions>`,
 The plugin resolves `<distribution>` through your usual Maven repositories
 and unpacks the zip under `${project.build.directory}/dist` before
 provisioning runs. Staging is idempotent: re-runs fast-exit when the
-marker file written after a successful unpack is still present.
+marker file written after a successful unpack is still present and the
+zip isn't newer than it (a rebuilt SNAPSHOT is unpacked again).
 
 Everything else is defaulted: `groupId`/`artifactId`/`type` resolve to the
 Eclipse GlassFish zip (`org.glassfish.main.distributions:glassfish:zip`),
@@ -196,10 +197,19 @@ They still avoid repeating any path:
 
 ### Bring your own unpack
 
-If your build already runs `maven-dependency-plugin` for unrelated reasons,
-drop the `<distribution>` block from the pool plugin and let the existing
-`unpack` execution land the dist in the same directory `<poolSource>`
-points at:
+If something else in the build already unpacks GlassFish, drop the
+`<distribution>` block from the pool plugin and set `<poolSource>` to that
+install. It is only derived when the plugin does the unpack itself. The
+plugin then skips staging and clones slots directly from there.
+
+The pool plugin stages with the same code as `glassfish:provision` from
+the [GlassFish Maven Plugin](../glassfish-maven-plugin/), which provisions
+GlassFish without a pool (e.g. for the managed connector). When a
+`provision` execution in the same module does the unpack,
+`<poolSource>${glassfish.home}</poolSource>` picks up the path it
+publishes, as long as the pom doesn't define `glassfish.home` itself.
+
+A regular `maven-dependency-plugin` `unpack` execution works as well:
 
 ```xml
 <plugin>
@@ -225,9 +235,8 @@ points at:
 </plugin>
 ```
 
-Then set `<poolSource>${project.build.directory}/dist/glassfish9</poolSource>`
-on the pool plugin. It is only derived when the plugin does the unpack
-itself. The plugin skips staging and clones slots directly from there.
+with `<poolSource>${project.build.directory}/dist/glassfish9</poolSource>`
+on the pool plugin.
 
 ## Configuration reference
 
@@ -563,6 +572,9 @@ try (SlotLease lease = leaser.lease()) {
 
 - [`glassfish-pool-maven-plugin`](../glassfish-pool-maven-plugin/) — Maven
   goals (`up`, `down`, `provision`, `status`, `nuke`) wrapping this module.
+- [`glassfish-maven-plugin`](../glassfish-maven-plugin/) — provisions a
+  single GlassFish install (`glassfish:provision`); the pool plugin stages
+  with the same code.
 - [`integration-tests/src/it/pool`](../integration-tests/src/it/pool) —
   end-to-end smoke test that exercises both modules.
 - `arquillian-glassfish-server-managed` — single-JVM-scoped GlassFish, no pool.

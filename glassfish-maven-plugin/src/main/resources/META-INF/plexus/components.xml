@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<!--
+    Loaded when the plugin is declared with <extensions>true</extensions>:
+    binds glassfish:provision without an <executions> block and forwards
+    glassfish.home to surefire and failsafe.
+-->
+<component-set>
+    <components>
+        <component>
+            <role>org.apache.maven.AbstractMavenLifecycleParticipant</role>
+            <role-hint>glassfish</role-hint>
+            <implementation>ee.omnifish.glassfish.maven.GlassFishLifecycleParticipant</implementation>
+        </component>
+    </components>
+</component-set>

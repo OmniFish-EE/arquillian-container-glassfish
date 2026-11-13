@@ -50,16 +50,6 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Used by PoolStaging to preserve POSIX permissions when unzipping.
-             Optional because only the Maven plugin calls PoolStaging; test-JVM
-             consumers of this jar pull in just the runtime types. -->
-        <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-compress</artifactId>
-            <version>1.27.1</version>
-            <optional>true</optional>
-        </dependency>
-
         <dependency>
             <groupId>jakarta.platform</groupId>
             <artifactId>jakarta.jakartaee-api</artifactId>

@@ -8,13 +8,13 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.glassfish.maven.staging;
 
 /**
  * Maven artifact coordinate carried through the staging pipeline.
  *
  * <p>Mutable JavaBean shape so Plexus can inject mojo configuration (nested
- * {@code <distribution>} block) by setter. {@link PoolStaging} treats it as
+ * {@code <distribution>} block) by setter. {@link GlassFishStaging} treats it as
  * read-only after construction.
  */
 public class ArtifactCoord {

@@ -108,9 +108,10 @@ note applies:
 | `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
-If your build already runs `maven-dependency-plugin` for unrelated reasons,
-drop `<distribution>` and let the existing `unpack` execution land the dist
-at `${project.build.directory}/dist` — see *Bring your own unpack* below.
+If something else in your build already unpacks GlassFish
+(`glassfish:provision`, or a `maven-dependency-plugin` `unpack`), drop
+`<distribution>` and point `<poolSource>` at it — see *Bring your own
+unpack* below.
 
 ## Configuration reference
 
@@ -150,15 +151,29 @@ The plugin uses Aether to resolve `<distribution>` through your usual
 repositories and unpacks it under `<stageDir>`
 (default `${project.build.directory}/dist`) before provisioning runs.
 Staging runs once per pool — re-runs fast-exit when the marker file
-written after a successful unpack is still present. Set
+written after a successful unpack is still present and the zip isn't
+newer than it (a rebuilt SNAPSHOT is unpacked again). Set
 `<unpackSkip>true</unpackSkip>` to short-circuit the check entirely.
+
+This is the same staging as `glassfish:provision` in the
+[GlassFish Maven Plugin](../glassfish-maven-plugin/), with the same
+`<distribution>` and `<overlays>` elements. Only the `-D` switches differ
+(`gf.pool.*` here).
 
 ### Bring your own unpack
 
-If your build already runs `maven-dependency-plugin` for unrelated reasons,
-drop the `<distribution>` block from this plugin, set `<poolSource>`
-explicitly (it is only derived when the plugin does the unpack), and add a
-regular `unpack` execution that lands the dist in that directory:
+If something else in the build already unpacks GlassFish, drop the
+`<distribution>` block from this plugin and set `<poolSource>` to that
+install (it is only derived when the plugin does the unpack itself). The
+pool plugin then skips staging and clones slots directly from there.
+
+When [`glassfish:provision`](../glassfish-maven-plugin/) does the unpack,
+for instance because managed-connector tests in the same module need
+GlassFish too, `<poolSource>${glassfish.home}</poolSource>` picks up the
+path it publishes, as long as the pom doesn't define `glassfish.home`
+itself. `provision` runs at `process-test-classes`, well before `up`.
+
+A regular `maven-dependency-plugin` `unpack` execution works as well:
 
 ```xml
 <plugin>
@@ -184,8 +199,7 @@ regular `unpack` execution that lands the dist in that directory:
 </plugin>
 ```
 
-With `<poolSource>${project.build.directory}/dist/glassfish9</poolSource>`,
-the pool plugin then skips staging and clones slots directly from there.
+with `<poolSource>${project.build.directory}/dist/glassfish9</poolSource>`.
 
 ## Overlays
 
@@ -298,6 +312,9 @@ killed (Ctrl+C, hard build failure), so slots don't get orphaned.
 - [`arquillian-glassfish-server-pool`](../glassfish-pool/) — the runtime
   this plugin drives. Read its README for the architecture and the
   `arquillian.xml` setup.
+- [`glassfish-maven-plugin`](../glassfish-maven-plugin/) — provisions
+  GlassFish without a pool (`glassfish:provision`), e.g. for the managed
+  connector. This plugin builds on it for staging.
 - [`integration-tests/src/it/pool`](../integration-tests/src/it/pool) —
-  worked example: dependency-plugin unpack + this plugin + failsafe +
-  Arquillian, all in one ~150-line pom.
+  worked example: this plugin (staging GlassFish from `<distribution>`) +
+  failsafe + Arquillian, all in one pom.
