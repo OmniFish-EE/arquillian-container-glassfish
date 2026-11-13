@@ -24,11 +24,30 @@ Then forked from:
  <dependency>
     <groupId>ee.omnifish.arquillian</groupId>
     <artifactId>arquillian-glassfish-server-managed</artifactId>
-    <version>2.1.2</version>
+    <version>2.2.2</version>
  </dependency>
 ```
 
- Configure surefire or failsafe. Some examples given below. Only `glassfish.home` is required.
+ Let the [GlassFish Maven Plugin](glassfish-maven-plugin/) download and unpack GlassFish during the
+ build. It passes the install's location to surefire and failsafe as `glassfish.home`, which the
+ connector reads:
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.glassfish</groupId>
+    <artifactId>glassfish-maven-plugin</artifactId>
+    <version>2.2.2</version>
+    <extensions>true</extensions>
+    <configuration>
+        <distribution>
+            <version>9.0.0</version>
+        </distribution>
+    </configuration>
+</plugin>
+```
+
+ Configure further settings on surefire or failsafe. Some examples given below. Without the
+ plugin, also set `glassfish.home` here, to your GlassFish install.
 
 ```xml
 <plugin>
@@ -37,7 +56,6 @@ Then forked from:
     <version>${surefire.version}</version>
     <configuration>
         <systemPropertyVariables>
-            <glassfish.home>${glassfish.root}/glassfish7</glassfish.home>
             <glassfish.enableDerby>true</glassfish.enableDerby>
             <glassfish.maxHeapSize>2048m</glassfish.maxHeapSize>
             <glassfish.enableAssertions>:org.jboss.cdi.tck...</glassfish.enableAssertions>
@@ -54,22 +72,4 @@ Then forked from:
     </configuration>
 </plugin>
 
-```
-
- To get GlassFish itself, let the [GlassFish Maven Plugin](glassfish-maven-plugin/) download and
- unpack it during the build. It sets `glassfish.home` for surefire and failsafe, so the entry above
- can go:
-
-```xml
-<plugin>
-    <groupId>ee.omnifish.glassfish</groupId>
-    <artifactId>glassfish-maven-plugin</artifactId>
-    <version>2.2.2</version>
-    <extensions>true</extensions>
-    <configuration>
-        <distribution>
-            <version>9.0.0</version>
-        </distribution>
-    </configuration>
-</plugin>
 ```

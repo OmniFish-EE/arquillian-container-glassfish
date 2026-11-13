@@ -88,7 +88,6 @@
         <maven.compiler.target>11</maven.compiler.target>
         <container.version>@project.version@</container.version>
         <glassfish.version>@glassfish.version@</glassfish.version>
-        <glassfish.home>@glassfish.home@</glassfish.home>
     </properties>
 
     <build>
@@ -169,44 +168,17 @@
             </dependencies>
             <build>
                 <plugins>
-                    <!-- download and unpack glassfish server -->
+                    <!--
+                        Unpacks GlassFish to target/dist before the tests and
+                        passes its location to failsafe as glassfish.home.
+                    -->
                     <plugin>
-                        <artifactId>maven-dependency-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>unpack</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>unpack</goal>
-                                </goals>
-                                <configuration>
-                                    <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
-                                    <markersDirectory>
-                                        ${session.executionRootDirectory}/target/dependency-maven-plugin-markers
-                                    </markersDirectory>
-                                    <artifactItems>
-                                        <artifactItem>
-                                            <groupId>org.glassfish.main.distributions</groupId>
-                                            <artifactId>glassfish</artifactId>
-                                            <type>zip</type>
-                                            <version>${glassfish.version}</version>
-                                            <overWrite>false</overWrite>
-                                            <outputDirectory>${session.executionRootDirectory}/target</outputDirectory>
-                                        </artifactItem>
-                                    </artifactItems>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-
-                    <!-- pass server location to test -->
-                    <plugin>
-                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <groupId>ee.omnifish.glassfish</groupId>
+                        <artifactId>glassfish-maven-plugin</artifactId>
+                        <version>${container.version}</version>
+                        <extensions>true</extensions>
                         <configuration>
-                            <systemPropertyVariables>
-                                <!-- Pass location of server installation to arquillian container -->
-                                <glassfish.home>${session.executionRootDirectory}/target/${glassfish.home}</glassfish.home>
-                            </systemPropertyVariables>
+                            <distribution>${glassfish.version}</distribution>
                         </configuration>
                     </plugin>
                 </plugins>

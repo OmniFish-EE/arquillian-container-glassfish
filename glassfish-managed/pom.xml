@@ -160,26 +160,27 @@
 
     <build>
         <plugins>
+            <!--
+                Unpacks GlassFish to target/dist and publishes the install as
+                "glassfish.home". 
+                
+                Bound with an explicit execution rather than
+                <extensions>true</extensions>: this plugin is built in the same
+                reactor, and Maven loads build extensions before it builds any
+                module.
+            -->
             <plugin>
-                <artifactId>maven-dependency-plugin</artifactId>
+                <groupId>ee.omnifish.glassfish</groupId>
+                <artifactId>glassfish-maven-plugin</artifactId>
+                <version>${project.version}</version>
+                <configuration>
+                    <distribution>${version.glassfish}</distribution>
+                </configuration>
                 <executions>
                     <execution>
-                        <id>setup-glassfish</id>
-                        <phase>process-test-classes</phase>
                         <goals>
-                            <goal>unpack</goal>
+                            <goal>provision</goal>
                         </goals>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.glassfish.main.distributions</groupId>
-                                    <artifactId>glassfish</artifactId>
-                                    <version>${version.glassfish}</version>
-                                    <type>zip</type>
-                                    <outputDirectory>${project.build.directory}</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -188,6 +189,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <systemPropertyVariables>
+                        <!-- Published by glassfish:provision; resolved when surefire runs -->
                         <glassfish.home>${glassfish.home}</glassfish.home>
                         <enableDerby>${enableDerby}</enableDerby>
                     </systemPropertyVariables>
