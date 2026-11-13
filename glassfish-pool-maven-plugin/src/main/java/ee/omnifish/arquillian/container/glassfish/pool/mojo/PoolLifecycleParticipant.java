@@ -10,16 +10,13 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
-import java.util.Objects;
-
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
-import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
-import org.codehaus.plexus.util.xml.Xpp3Dom;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import static ee.omnifish.glassfish.maven.LifecycleSupport.bind;
+import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
 
 /**
  * Binds {@code up} and {@code down} for every project that declares this
@@ -46,16 +43,15 @@ import org.slf4j.LoggerFactory;
  * published the values. A reference {@code up} never published (e.g.
  * {@code -Dgf.pool.skip}) resolves to an empty string, which the test-JVM side
  * treats as unset. Entries the user already configures are left alone.
+ *
+ * <p>Binding and forwarding are shared with {@code glassfish-maven-plugin};
+ * see {@link ee.omnifish.glassfish.maven.LifecycleSupport}.
  */
 public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
     static final String GROUP_ID = "ee.omnifish.arquillian";
     static final String ARTIFACT_ID = "glassfish-pool-maven-plugin";
     static final String FAILSAFE_KEY = "org.apache.maven.plugins:maven-failsafe-plugin";
-
-    private static final String SYSTEM_PROPERTY_VARIABLES = "systemPropertyVariables";
-
-    private static final Logger LOG = LoggerFactory.getLogger(PoolLifecycleParticipant.class);
 
     @Override
     public void afterProjectsRead(MavenSession session) {
@@ -73,58 +69,11 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
     }
 
     /**
-     * Add an execution {@code id} running {@code goal} unless the plugin already
-     * runs that goal or uses that id. Package-private for unit tests.
-     */
-    static void bind(Plugin plugin, String id, String goal) {
-        for (PluginExecution existing : plugin.getExecutions()) {
-            if (existing.getGoals().contains(goal) || Objects.equals(existing.getId(), id)) {
-                return;
-            }
-        }
-        PluginExecution execution = new PluginExecution();
-        execution.setId(id);
-        execution.addGoal(goal);
-        // Model building merges plugin-level <configuration> into each declared
-        // execution before we run, and the build plan reads only the execution's
-        // copy, so an added execution must carry the plugin config itself.
-        if (plugin.getConfiguration() != null) {
-            execution.setConfiguration(new Xpp3Dom((Xpp3Dom) plugin.getConfiguration()));
-        }
-        plugin.addExecution(execution);
-        LOG.debug("Bound {}:{} as execution '{}'", ARTIFACT_ID, goal, id);
-    }
-
-    /**
      * Add a {@code ${key}} reference for each published pool property to the
-     * failsafe plugin's {@code systemPropertyVariables}. Applied to every
-     * execution as well as the plugin-level configuration: model building has
-     * already merged the latter into each execution, and the build plan reads
-     * an execution's own copy. Package-private for unit tests.
+     * failsafe plugin's {@code systemPropertyVariables}. Package-private for
+     * unit tests.
      */
     static void forwardPoolProperties(Plugin failsafe) {
-        failsafe.setConfiguration(withPoolProperties((Xpp3Dom) failsafe.getConfiguration()));
-        for (PluginExecution execution : failsafe.getExecutions()) {
-            execution.setConfiguration(withPoolProperties((Xpp3Dom) execution.getConfiguration()));
-        }
-    }
-
-    private static Xpp3Dom withPoolProperties(Xpp3Dom configuration) {
-        if (configuration == null) {
-            configuration = new Xpp3Dom("configuration");
-        }
-        Xpp3Dom variables = configuration.getChild(SYSTEM_PROPERTY_VARIABLES);
-        if (variables == null) {
-            variables = new Xpp3Dom(SYSTEM_PROPERTY_VARIABLES);
-            configuration.addChild(variables);
-        }
-        for (String key : UpMojo.PUBLISHED_PROPERTIES) {
-            if (variables.getChild(key) == null) {
-                Xpp3Dom variable = new Xpp3Dom(key);
-                variable.setValue("${" + key + "}");
-                variables.addChild(variable);
-            }
-        }
-        return configuration;
+        forwardProperties(failsafe, UpMojo.PUBLISHED_PROPERTIES);
     }
 }

@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.glassfish.maven.staging;
 
 /**
  * The {@code <distribution>} coordinate: an {@link ArtifactCoord} whose
@@ -23,7 +23,8 @@ package ee.omnifish.arquillian.container.glassfish.pool;
  * "not set", so {@code <groupId></groupId>} or an unresolved-to-empty property
  * falls back to the default instead of producing an unresolvable GAV.
  *
- * <p>JavaBean for Plexus injection (nested {@code <distribution>} block).
+ * <p>JavaBean for Plexus injection (nested {@code <distribution>} block), plus
+ * {@link #set(String)} for the one-line text form.
  */
 public class DistributionCoord extends ArtifactCoord {
 
@@ -61,7 +62,48 @@ public class DistributionCoord extends ArtifactCoord {
         super.setType(orDefault(type, DEFAULT_TYPE));
     }
 
+    /**
+     * The text form, {@code <distribution>9.0.0</distribution>} or
+     * {@code -Dglassfish.distribution=9.0.0}: Maven calls this method when the
+     * element holds text instead of child elements. Takes a bare version, or
+     * {@code groupId:artifactId:version[:type[:classifier]]} as {@link #toGav()}
+     * prints it.
+     */
+    public void set(String coordinates) {
+        String[] parts = coordinates.trim().split(":", -1);
+        if (parts.length == 1) {
+            setVersion(parts[0]);
+            return;
+        }
+        if (parts.length < 3 || parts.length > 5) {
+            throw new IllegalArgumentException("Expected a version or groupId:artifactId:version[:type[:classifier]], got '"
+                    + coordinates + "'");
+        }
+        setGroupId(parts[0]);
+        setArtifactId(parts[1]);
+        setVersion(parts[2]);
+        setType(parts.length > 3 ? parts[3] : null);
+        setClassifier(parts.length > 4 ? parts[4] : null);
+    }
+
+    /**
+     * Whether nothing beyond the defaults is set. Maven injects such a bean
+     * for a {@code <distribution>} parameter that has a {@code -D} property but
+     * was not configured, so callers treat it as "no distribution".
+     */
+    public boolean isEmpty() {
+        return isBlank(getVersion())
+                && isBlank(getClassifier())
+                && DEFAULT_GROUP_ID.equals(getGroupId())
+                && DEFAULT_ARTIFACT_ID.equals(getArtifactId())
+                && DEFAULT_TYPE.equals(getType());
+    }
+
     private static String orDefault(String value, String defaultValue) {
-        return (value == null || value.isBlank()) ? defaultValue : value;
+        return isBlank(value) ? defaultValue : value;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

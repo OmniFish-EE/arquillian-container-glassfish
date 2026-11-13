@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.glassfish.maven.staging;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,31 +19,36 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.Properties;
 import java.util.Set;
-import java.util.logging.Logger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Optional pre-step for {@link PoolBootstrap#up}: resolve and unpack the
- * GlassFish distribution zip, then copy overlay artifacts into the staged
- * install.
+ * Resolve and unpack a GlassFish distribution zip, then copy overlay
+ * artifacts into the staged install. Shared by {@code glassfish:provision}
+ * and the pool plugin's {@code up}/{@code provision} goals.
  *
- * <p>Pure Java: artifact lookup is delegated to a caller-supplied
- * {@link ArtifactResolver} so the {@code glassfish-pool} module does not
- * depend on Aether. The Maven plugin module wires Aether in.
+ * <p>Artifact lookup is delegated to a caller-supplied {@link ArtifactResolver},
+ * which keeps this class free of Maven types; the mojos wire Aether in. It
+ * logs through SLF4J, so its lines show up as regular Maven output.
  *
- * <p>Concurrency: callers are expected to invoke {@link #stage} from inside
- * {@link PoolBootstrap}'s {@code UP_LOCK} synchronized block. The marker
- * check makes a second concurrent run a no-op even without that, but the
- * unpack itself is not safe to interleave.
+ * <p>Concurrency: {@link #stage} runs one caller at a time per stage
+ * directory, so modules of a {@code -T} build that share one unpack it once.
+ * The marker check makes the later runs no-ops; the unpack itself is not safe
+ * to interleave.
  */
-public final class PoolStaging {
+public final class GlassFishStaging {
 
-    private static final Logger LOG = Logger.getLogger(PoolStaging.class.getName());
+    private static final Logger LOG = LoggerFactory.getLogger(GlassFishStaging.class);
 
     private static final String MARKER_FILE = ".staging-glassfish.properties";
     private static final String MARKER_KEY_DIST = "distribution";
+
+    private static final ConcurrentMap<Path, Object> STAGE_DIR_LOCKS = new ConcurrentHashMap<>();
 
     /** Resolves a GAV to a local file (typically the artifact under {@code ~/.m2/repository}). */
     @FunctionalInterface
@@ -51,22 +56,27 @@ public final class PoolStaging {
         Path resolve(ArtifactCoord coord) throws IOException;
     }
 
-    private PoolStaging() {
+    private GlassFishStaging() {
     }
 
     /**
      * Run the staging steps. Either side is a no-op when its skip flag is set
      * or its inputs are empty. The unpack step is marker-guarded: it skips
      * when the staged install already records the requested dist GAV, and
-     * wipes + re-unpacks when the GAV differs. Overlays are always re-copied
-     * (cheap; lets {@code -Dmojarra.version=…} take effect without a wipe).
+     * wipes + re-unpacks when the GAV differs or the zip is newer than the
+     * marker (a rebuilt or re-downloaded SNAPSHOT keeps its GAV). Overlays
+     * are always re-copied (cheap; lets {@code -Dmojarra.version=…} take
+     * effect without a wipe).
      */
     public static void stage(StageSpec spec, ArtifactResolver resolver) throws IOException {
-        if (!spec.unpackSkip() && spec.distribution() != null) {
-            unpackDistribution(spec, resolver);
-        }
-        if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
-            copyOverlays(spec, resolver);
+        Path lockKey = spec.stageDir().toAbsolutePath().normalize();
+        synchronized (STAGE_DIR_LOCKS.computeIfAbsent(lockKey, dir -> new Object())) {
+            if (!spec.unpackSkip() && spec.distribution() != null) {
+                unpackDistribution(spec, resolver);
+            }
+            if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
+                copyOverlays(spec, resolver);
+            }
         }
     }
 
@@ -74,16 +84,19 @@ public final class PoolStaging {
         Path stageDir = spec.stageDir();
         Path marker = stageDir.resolve(MARKER_FILE);
         String wantedGav = spec.distribution().toGav();
+        Path zip = resolver.resolve(spec.distribution());
         if (Files.exists(marker)) {
             String stagedGav = readMarker(marker, MARKER_KEY_DIST);
-            if (wantedGav.equals(stagedGav)) {
-                LOG.fine("Dist already staged at " + stageDir + " (" + wantedGav + ")");
+            boolean sameGav = wantedGav.equals(stagedGav);
+            if (sameGav && !isNewer(zip, marker)) {
+                LOG.debug("Dist already staged at " + stageDir + " (" + wantedGav + ")");
                 return;
             }
-            LOG.info("Re-staging dist (was " + stagedGav + ", now " + wantedGav + ")");
+            LOG.info(sameGav
+                    ? "Re-staging dist (" + wantedGav + " changed since it was staged)"
+                    : "Re-staging dist (was " + stagedGav + ", now " + wantedGav + ")");
             wipe(stageDir);
         }
-        Path zip = resolver.resolve(spec.distribution());
         Files.createDirectories(stageDir);
         LOG.info("Unpacking " + wantedGav + " to " + stageDir);
         unzip(zip, stageDir);
@@ -91,10 +104,20 @@ public final class PoolStaging {
     }
 
     /**
+     * Whether {@code zip} was written after {@code marker}. The marker is
+     * written last, after the unpack, so a newer zip was rebuilt
+     * ({@code mvn install}) or downloaded since: the same check as the
+     * dependency plugin's {@code overWriteIfNewer}.
+     */
+    private static boolean isNewer(Path zip, Path marker) throws IOException {
+        return Files.getLastModifiedTime(zip).compareTo(Files.getLastModifiedTime(marker)) > 0;
+    }
+
+    /**
      * Name of the single top-level directory every entry of {@code zip} lives
      * under (e.g. {@code glassfish9} or {@code payara6}), or {@code null} if
      * the zip has several top-level entries or files at its root. Lets the
-     * plugin derive {@code poolSource} as {@code stageDir/<root>} without the
+     * plugins derive the install root as {@code stageDir/<root>} without the
      * user hard-coding a directory name that the distribution dictates.
      *
      * <p>Reads only the zip's central directory, so it is cheap even for a
@@ -222,7 +245,7 @@ public final class PoolStaging {
         props.setProperty(key, value);
         Files.createDirectories(marker.getParent());
         try (var out = Files.newOutputStream(marker)) {
-            props.store(out, "glassfish-pool staging marker");
+            props.store(out, "GlassFish staging marker");
         }
     }
 }

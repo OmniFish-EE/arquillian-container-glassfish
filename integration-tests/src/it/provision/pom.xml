@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
+    </parent>
+
+    <groupId>ee.omnifish.arquillian.test</groupId>
+    <artifactId>provision-test</artifactId>
+    <packaging>jar</packaging>
+    <name>Integration Test: GlassFish Maven Plugin provision</name>
+
+    <description>
+        Provisions GlassFish with glassfish:provision (plus one overlay jar)
+        and checks, from surefire and failsafe test JVMs, that the forwarded
+        glassfish.home points at the unpacked install. Starts no server.
+        Run via integration-tests' maven-invoker harness.
+    </description>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+        <!-- No GlassFish JUL extension on this classpath; use the JDK's LogManager. -->
+        <test.logManager>java.util.logging.LogManager</test.logManager>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                <extensions>true</extensions> binds, with no <executions>:
+                process-test-classes -> glassfish:provision (glassfish-provision)
+                and forwards glassfish.home to surefire and failsafe.
+            -->
+            <plugin>
+                <groupId>ee.omnifish.glassfish</groupId>
+                <artifactId>glassfish-maven-plugin</artifactId>
+                <version>@project.version@</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <distribution>
+                        <version>${glassfish.version}</version>
+                    </distribution>
+                    <overlays>
+                        <overlay>
+                            <groupId>org.hamcrest</groupId>
+                            <artifactId>hamcrest</artifactId>
+                            <version>3.0</version>
+                            <destFileName>overlay-probe.jar</destFileName>
+                        </overlay>
+                    </overlays>
+                </configuration>
+            </plugin>
+
+            <!-- No <systemPropertyVariables>: glassfish.home is forwarded by the extension. -->
+            <plugin>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

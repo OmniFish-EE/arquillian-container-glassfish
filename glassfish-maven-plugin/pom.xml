@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-dependencies</artifactId>
+        <version>2.2.2-SNAPSHOT</version>
+        <relativePath>../dependencies</relativePath>
+    </parent>
+
+    <!-- Not ee.omnifish.arquillian: provisioning GlassFish is useful without Arquillian. -->
+    <groupId>ee.omnifish.glassfish</groupId>
+    <artifactId>glassfish-maven-plugin</artifactId>
+    <packaging>maven-plugin</packaging>
+
+    <name>GlassFish Maven Plugin</name>
+    <description>
+        Provisions Eclipse GlassFish for a build: resolves a distribution from
+        the Maven repositories, unpacks it, copies overlay jars into it and
+        publishes its location as glassfish.home for surefire and failsafe.
+    </description>
+
+    <prerequisites>
+        <maven>3.9.0</maven>
+    </prerequisites>
+
+    <properties>
+        <version.maven.plugin>3.9.0</version.maven.plugin>
+        <version.maven.plugin.annotations>3.15.1</version.maven.plugin.annotations>
+        <version.maven.plugin.plugin>3.15.1</version.maven.plugin.plugin>
+
+        <!--
+            The parent pom defaults this to GlassFish's JUL extension, which
+            isn't on this module's test classpath; fall back to the JDK default.
+        -->
+        <test.logManager>java.util.logging.LogManager</test.logManager>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-plugin-api</artifactId>
+            <version>${version.maven.plugin}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-core</artifactId>
+            <version>${version.maven.plugin}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugin-tools</groupId>
+            <artifactId>maven-plugin-annotations</artifactId>
+            <version>${version.maven.plugin.annotations}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Aether resolver: fetches the GlassFish dist and overlay artifacts. -->
+        <dependency>
+            <groupId>org.apache.maven.resolver</groupId>
+            <artifactId>maven-resolver-api</artifactId>
+            <version>1.9.18</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Unzips the dist keeping POSIX permissions (asadmin's +x bit). -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.27.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>${version.maven.plugin.plugin}</version>
+                <configuration>
+                    <goalPrefix>glassfish</goalPrefix>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

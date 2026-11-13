@@ -30,9 +30,10 @@
 
     <description>
         End-to-end smoke test for arquillian-glassfish-server-pool.
-        Provisions a 1-slot pool via glassfish-pool-maven-plugin, runs an
-        Arquillian deploy-war test against the leased slot, then tears the
-        pool down. Run via integration-tests' maven-invoker harness.
+        Provisions a 1-slot pool via glassfish-pool-maven-plugin, which stages
+        GlassFish itself from its distribution element, runs an Arquillian
+        deploy-war test against the leased slot, then tears the pool down.
+        Run via integration-tests' maven-invoker harness.
     </description>
 
     <properties>
@@ -40,7 +41,6 @@
         <maven.compiler.target>11</maven.compiler.target>
         <container.version>@project.version@</container.version>
         <glassfish.version>@glassfish.version@</glassfish.version>
-        <glassfish.home>@glassfish.home@</glassfish.home>
     </properties>
 
     <dependencies>
@@ -79,34 +79,13 @@
 
     <build>
         <plugins>
-            <!-- Stage GlassFish under target/dist so the pool plugin can clone it. -->
-            <plugin>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>unpack-glassfish</id>
-                        <phase>process-test-classes</phase>
-                        <goals><goal>unpack</goal></goals>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.glassfish.main.distributions</groupId>
-                                    <artifactId>glassfish</artifactId>
-                                    <version>${glassfish.version}</version>
-                                    <type>zip</type>
-                                    <outputDirectory>${project.build.directory}/dist</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <!--
                 Provision/start the pool before failsafe, stop it after.
                 <extensions>true</extensions> binds, with no <executions>:
                 pre-integration-test  -> glassfish-pool:up   (pool-up)
                 post-integration-test -> glassfish-pool:down (pool-down)
+                up stages <distribution> under target/dist first (the same
+                staging as glassfish:provision) and clones the slot from it.
             -->
             <plugin>
                 <groupId>ee.omnifish.arquillian</groupId>
@@ -115,8 +94,10 @@
                 <extensions>true</extensions>
                 <configuration>
                     <poolDir>${project.build.directory}/pool</poolDir>
-                    <poolSource>${project.build.directory}/dist/${glassfish.home}</poolSource>
                     <poolSize>1</poolSize>
+                    <distribution>
+                        <version>${glassfish.version}</version>
+                    </distribution>
                 </configuration>
             </plugin>
 
