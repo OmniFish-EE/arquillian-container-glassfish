@@ -4,6 +4,8 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.not;
@@ -18,9 +20,12 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.util.ArrayList;
@@ -33,7 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 /**
  * Tests {@link SlotLeaser} against a tmp pool dir, using real
@@ -175,12 +180,10 @@ class SlotLeaserTest {
         int rounds = 25;
         Set<Integer> heldNow = ConcurrentHashMap.newKeySet();
         AtomicReference<String> violation = new AtomicReference<>();
-        // claimSlot's contract requires grow.lock held. In production each test
-        // JVM is a separate process so the on-disk grow.lock works as a
-        // cross-JVM mutex; within ONE JVM Java's FileLock throws
-        // OverlappingFileLockException, so we substitute a ReentrantLock here
-        // — same role (serialise entry), different mechanism.
-        ReentrantLock growLockSubstitute = new ReentrantLock();
+        // claimSlot's contract requires grow.lock held. PoolLocks.withGrowLock
+        // lets the threads of one JVM take turns before taking the file lock,
+        // which on its own would throw OverlappingFileLockException for the
+        // second thread.
         ExecutorService exec = Executors.newFixedThreadPool(threads);
         try {
             for (int round = 0; round < rounds && violation.get() == null; round++) {
@@ -197,14 +200,11 @@ class SlotLeaserTest {
                             return;
                         }
                         SlotLeaser.ClaimedSlot claim;
-                        growLockSubstitute.lock();
                         try {
-                            claim = leaser.claimSlot(tmp);
+                            claim = PoolLocks.withGrowLock(tmp, () -> leaser.claimSlot(tmp));
                         } catch (IOException e) {
                             violation.compareAndSet(null, "claim threw: " + e);
                             return;
-                        } finally {
-                            growLockSubstitute.unlock();
                         }
                         if (claim == null) {
                             violation.compareAndSet(null, "claim returned null");
@@ -242,37 +242,35 @@ class SlotLeaserTest {
 
     /**
      * Regression: a second lease in the SAME JVM must skip a slot this JVM
-     * already holds rather than crash. Re-locking a file already locked by
-     * another channel in the same process throws
-     * {@link java.nio.channels.OverlappingFileLockException} (a foreign JVM
-     * would see {@code tryLock() == null} instead), so {@code tryAcquire} must
-     * treat that as "busy, skip" exactly like the recycle path does. Here the
-     * held slot is forced to sort first in the scan so it is re-encountered;
-     * the leaser must fall through to the other ready slot.
+     * already holds, and leave it held. Probing it through a second channel
+     * threw {@link java.nio.channels.OverlappingFileLockException}, and
+     * closing that channel released the first lease's lock on Linux and
+     * macOS, so another JVM could lease the slot too. Here the held slot is
+     * forced to sort first in the scan so it is re-encountered; the leaser
+     * must fall through to the other ready slot.
      */
     @Test
     void scanSkipsSlotThisJvmAlreadyHoldsInsteadOfThrowing(@TempDir Path tmp) throws Exception {
         seedSlot(tmp, 1, openFake());
         seedSlot(tmp, 2, openFake());
+        // Slot 1 sorts first (oldest lock mtime), so the first lease takes it
+        // and the next scan re-encounters it. The times are set up front:
+        // setting them opens and closes the file, which would itself release
+        // a held lock on Linux and macOS.
+        Path lock1 = PoolPaths.lockFile(tmp, 1);
+        Path lock2 = PoolPaths.lockFile(tmp, 2);
+        Files.createFile(lock1);
+        Files.createFile(lock2);
+        Files.setLastModifiedTime(lock1, java.nio.file.attribute.FileTime.fromMillis(1000));
+        Files.setLastModifiedTime(lock2, java.nio.file.attribute.FileTime.fromMillis(2000));
         SlotLeaser leaser = leaserFor(tmp);
 
         try (SlotLease first = leaser.lease()) {
-            int held = first.slotIndex();
-            int other = held == 1 ? 2 : 1;
-            // Force the held slot to sort first (oldest mtime) so the next
-            // scan re-encounters the lock this JVM already owns.
-            Path otherLock = PoolPaths.lockFile(tmp, other);
-            if (!Files.exists(otherLock)) {
-                Files.createFile(otherLock);
-            }
-            Files.setLastModifiedTime(PoolPaths.lockFile(tmp, held),
-                    java.nio.file.attribute.FileTime.fromMillis(1000));
-            Files.setLastModifiedTime(otherLock,
-                    java.nio.file.attribute.FileTime.fromMillis(2000));
-
+            assertThat(first.slotIndex(), equalTo(1));
             try (SlotLease second = leaser.lease()) {
-                assertThat(second.slotIndex(), equalTo(other));
+                assertThat(second.slotIndex(), equalTo(2));
             }
+            assertThat(ForeignJvm.canLock(lock1), equalTo(false));
         }
     }
 
@@ -383,6 +381,45 @@ class SlotLeaserTest {
         lease.close();
     }
 
+    // --- growing (the real PoolProvisioner against a fake install) ---
+
+    /**
+     * Regression: recycling a dead slot must re-create it. The provisioner's
+     * reuse check counted the claim this JVM had just taken as a busy lock
+     * and handed the dead slot back unchanged.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void growRecreatesARecycledDeadSlot(@TempDir Path tmp) throws Exception {
+        Path poolDir = tmp.resolve("pool");
+        PoolConfig config = growingConfig(poolDir, fakeInstall(tmp.resolve("source"), 0));
+        seedSlot(poolDir, 1, freePort()); // dead → recyclable
+        Path stale = Files.createDirectories(PoolPaths.slotDir(poolDir, 1)
+                .resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME)).resolve("stale");
+        Files.createFile(stale);
+
+        try (SlotLease lease = new SlotLeaser(config, 3L).lease()) {
+            assertThat(lease.slotIndex(), equalTo(1));
+            assertThat(lease.ports().adminPort(), equalTo(config.adminPort(1)));
+            assertThat(Files.exists(stale), equalTo(false));
+            assertThat(asadminCalls(lease), contains("--terse start-domain domain1"));
+        }
+    }
+
+    /**
+     * Regression: a failed grow left its half-made slot directory behind, so
+     * every retry took the next index and made another clone.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void failedGrowFreesItsSlotIndex(@TempDir Path tmp) throws Exception {
+        Path poolDir = Files.createDirectories(tmp.resolve("pool"));
+        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, fakeInstall(tmp.resolve("source"), 1)), 1L);
+
+        assertThrows(IllegalStateException.class, leaser::lease);
+        assertThat(slotDirs(poolDir), empty());
+    }
+
     private static void finalizeAndClose(LeaseHandle handle) {
         SlotLease toFinalize = handle.release();
         if (toFinalize != null) {
@@ -430,6 +467,45 @@ class SlotLeaserTest {
     private int freePort() throws IOException {
         try (ServerSocket s = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return s.getLocalPort();
+        }
+    }
+
+    /** A pool that can grow from {@code source}, on ports nothing listens on. */
+    private PoolConfig growingConfig(Path poolDir, Path source) throws IOException {
+        return new PoolConfig(poolDir, source, 0, freePort(), PoolConfig.DEFAULT_PORT_STRIDE);
+    }
+
+    /**
+     * A source install whose {@code asadmin} is a script that appends its
+     * arguments to {@code calls.log} next to itself and exits with
+     * {@code exitCode}: enough for {@link PoolProvisioner} to clone, patch
+     * and "start" a slot without GlassFish.
+     */
+    private static Path fakeInstall(Path dir, int exitCode) throws IOException {
+        Path asadmin = Files.createDirectories(dir.resolve("glassfish/bin")).resolve("asadmin");
+        Files.writeString(asadmin, "#!/bin/sh\n"
+                + "echo \"$@\" >> \"$(dirname \"$0\")/calls.log\"\n"
+                + "exit " + exitCode + "\n");
+        assertThat(asadmin.toFile().setExecutable(true), equalTo(true));
+        Path config = Files.createDirectories(dir.resolve("glassfish/domains/domain1/config"));
+        Files.writeString(config.resolve("domain.xml"), "<domain><configs><config name=\"server-config\">"
+                + "<network-config><network-listeners>"
+                + "<network-listener name=\"admin-listener\" port=\"4848\"/>"
+                + "<network-listener name=\"http-listener-1\" port=\"8080\"/>"
+                + "<network-listener name=\"http-listener-2\" port=\"8181\"/>"
+                + "</network-listeners></network-config></config></configs></domain>");
+        return dir;
+    }
+
+    private static List<String> asadminCalls(SlotLease lease) throws IOException {
+        return Files.readAllLines(Paths.get(lease.ports().glassFishHome()).resolve("glassfish/bin/calls.log"));
+    }
+
+    private static List<String> slotDirs(Path poolDir) throws IOException {
+        try (var entries = Files.list(poolDir)) {
+            return entries.map(entry -> entry.getFileName().toString())
+                    .filter(name -> PoolPaths.slotIndex(name) != null)
+                    .collect(Collectors.toList());
         }
     }
 }

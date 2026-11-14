@@ -10,9 +10,7 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool;
 
-import java.io.IOException;
 import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 
 /**
  * Active hold on one slot. Closed when the test JVM is done with the slot;
@@ -23,14 +21,12 @@ public final class SlotLease implements AutoCloseable {
 
     private final int slotIndex;
     private final SlotPorts ports;
-    private final FileChannel channel;
-    private final FileLock lock;
+    private final PoolLocks.Held lock;
     private volatile boolean released;
 
-    SlotLease(int slotIndex, SlotPorts ports, FileChannel channel, FileLock lock) {
+    SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock) {
         this.slotIndex = slotIndex;
         this.ports = ports;
-        this.channel = channel;
         this.lock = lock;
     }
 
@@ -48,15 +44,6 @@ public final class SlotLease implements AutoCloseable {
             return;
         }
         released = true;
-        try {
-            lock.release();
-        } catch (IOException ignored) {
-            // Lock already released or channel closed — same end state.
-        }
-        try {
-            channel.close();
-        } catch (IOException ignored) {
-            // FD released either way.
-        }
+        lock.close();
     }
 }

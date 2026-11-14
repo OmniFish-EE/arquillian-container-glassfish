@@ -51,17 +51,8 @@ public final class PoolProvisioner {
      * {@link SlotPorts} on success.
      */
     public SlotPorts provisionSlot(int idx) throws IOException {
-        if (config.source() == null) {
-            throw new IllegalStateException(
-                    "PoolConfig.source is null — set " + PoolConfig.SYS_SOURCE
-                    + " or pass it to the Maven plugin");
-        }
+        requireSource();
         int adminPort = config.adminPort(idx);
-        int httpPort = config.httpPort(idx);
-        int httpsPort = config.httpsPort(idx);
-
-        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
-        Path slotInstall = slotDir.resolve(SLOT_INSTALL_DIRNAME);
         Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
 
         // Idempotency: skip the heavy work if the slot is already alive and the
@@ -74,8 +65,42 @@ public final class PoolProvisioner {
             LOG.fine(() -> "Slot " + idx + " already provisioned (adminPort=" + adminPort + ")");
             return SlotPorts.readFrom(portsFile);
         }
+        return createSlot(idx);
+    }
+
+    /**
+     * Provision slot {@code idx} for a caller that holds its lock: a slot
+     * {@link SlotLeaser} claimed to grow the pool or to recycle a dead slot.
+     * Unlike {@link #provisionSlot}, this skips the reuse check, which would
+     * count the caller's own lock as busy and hand the dead slot back, and
+     * always re-creates the slot.
+     */
+    SlotPorts provisionClaimedSlot(int idx) throws IOException {
+        requireSource();
+        return createSlot(idx);
+    }
+
+    private void requireSource() {
+        if (config.source() == null) {
+            throw new IllegalStateException(
+                    "PoolConfig.source is null — set " + PoolConfig.SYS_SOURCE
+                    + " or pass it to the Maven plugin");
+        }
+    }
+
+    private SlotPorts createSlot(int idx) throws IOException {
+        int adminPort = config.adminPort(idx);
+        int httpPort = config.httpPort(idx);
+        int httpsPort = config.httpsPort(idx);
+
+        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
+        Path slotInstall = slotDir.resolve(SLOT_INSTALL_DIRNAME);
+        Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
 
         Files.createDirectories(slotDir);
+        // A ports file left from the slot's previous life would advertise the
+        // slot while it is being re-created.
+        Files.deleteIfExists(portsFile);
 
         // tryGrow may have pre-created an empty slot dir to claim the index;
         // wipe its contents (but not the dir itself) so a concurrent caller's
@@ -98,11 +123,17 @@ public final class PoolProvisioner {
             asadmin.run("start-domain", startDomainArgs());
         } catch (AsAdmin.AsAdminException e) {
             LOG.log(Level.SEVERE, "Slot " + idx + " start-domain failed", e);
+            stopIfStarted(idx);
             throw new IOException("Slot " + idx + " start-domain failed: " + e.getMessage(), e);
         }
 
         SlotPorts ports = new SlotPorts(adminPort, httpPort, httpsPort, slotInstall.toString());
-        ports.writeTo(portsFile);
+        try {
+            ports.writeTo(portsFile);
+        } catch (IOException e) {
+            stopIfStarted(idx);
+            throw e;
+        }
         LOG.info("Slot " + idx + " provisioned: adminPort=" + adminPort + ", http=" + httpPort);
         return ports;
     }
@@ -122,6 +153,16 @@ public final class PoolProvisioner {
         }
         args.add("domain1");
         return args.toArray(String[]::new);
+    }
+
+    /**
+     * After a failed setup, stop slot {@code idx} if its admin port answers,
+     * so the failure doesn't leave a GlassFish running behind it.
+     */
+    private void stopIfStarted(int idx) {
+        if (isPortHealthy(config.adminPort(idx))) {
+            stopSlot(idx);
+        }
     }
 
     /** Stop a slot's GlassFish if its admin port is responding. Best-effort; logs failures. */
@@ -148,7 +189,8 @@ public final class PoolProvisioner {
         }
     }
 
-    private static void deleteRecursive(Path root) throws IOException {
+    /** Delete {@code root} and everything under it. Best-effort: what can't be deleted stays. */
+    static void deleteRecursive(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
         }
@@ -157,7 +199,7 @@ public final class PoolProvisioner {
                 try {
                     Files.deleteIfExists(p);
                 } catch (IOException ignored) {
-                    // Best-effort; provisioning will overwrite what it needs.
+                    // Best-effort.
                 }
             });
         }

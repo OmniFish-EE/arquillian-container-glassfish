@@ -72,6 +72,13 @@ class PoolConfigTest {
     }
 
     @Test
+    void debugRejectsMultiSlotPool() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new PoolConfig(Paths.get("/x"), null, 2, 14848, 100,
+                        java.util.List.of(), true, false));
+    }
+
+    @Test
     void suspendAllowsSingleSlotPool() {
         PoolConfig c = new PoolConfig(Paths.get("/x"), null, 1, 14848, 100,
                 java.util.List.of(), true, true);

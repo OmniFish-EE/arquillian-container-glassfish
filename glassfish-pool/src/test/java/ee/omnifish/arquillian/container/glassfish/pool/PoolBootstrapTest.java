@@ -12,12 +12,9 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -103,10 +100,10 @@ class PoolBootstrapTest {
      * unhealthy port and try to reprovision the slot under the live
      * leaser, then race-lose against the GF re-binding adminPort.
      *
-     * <p>Hold the slot's lock file, point ports.properties at a port nothing
-     * listens on (simulating mid-restart), and assert {@code up} fast-exits
-     * — proven by {@code source=null}: provisioning would NPE on the missing
-     * source.
+     * <p>Hold the slot's lock from another JVM, as the leasing test JVM would,
+     * point ports.properties at a port nothing listens on (simulating
+     * mid-restart), and assert {@code up} fast-exits — proven by
+     * {@code source=null}: provisioning would NPE on the missing source.
      */
     @Test
     void upTreatsLockBusySlotAsHealthy(@TempDir Path tmp) throws Exception {
@@ -120,11 +117,7 @@ class PoolBootstrapTest {
         new SlotPorts(deadPort, deadPort + 1, deadPort + 2, "/fake")
                 .writeTo(PoolPaths.portsFile(tmp, 1));
 
-        Path lockPath = PoolPaths.lockFile(tmp, 1);
-        try (FileChannel ch = FileChannel.open(lockPath,
-                StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
-             FileLock held = ch.lock()) {
-            assertThat(held.isValid(), equalTo(true));
+        try (AutoCloseable leaser = ForeignJvm.hold(PoolPaths.lockFile(tmp, 1))) {
             PoolConfig config = new PoolConfig(tmp, /*source*/null, 1,
                     PoolConfig.DEFAULT_ADMIN_BASE, PoolConfig.DEFAULT_PORT_STRIDE);
             PoolBootstrap.up(config); // must fast-exit; provisioning would fail on null source

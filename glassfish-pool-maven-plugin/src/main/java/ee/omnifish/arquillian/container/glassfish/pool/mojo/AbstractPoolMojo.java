@@ -74,7 +74,8 @@ abstract class AbstractPoolMojo extends AbstractMojo {
 
     /**
      * Start each slot's domain in debug mode. Shares the {@code glassfish.debug}
-     * property with the managed container.
+     * property with the managed container. Only valid for a single-slot pool
+     * ({@code gf.pool.size=1}) — all slot clones share one debug port.
      */
     @Parameter(property = "glassfish.debug", defaultValue = "false")
     protected boolean debug;
