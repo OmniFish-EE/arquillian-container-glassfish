@@ -86,31 +86,31 @@ final class PoolSourceCloner {
                 if (rel.startsWith(DOMAINS)) {
                     Files.copy(file, dest, COPY_ATTRIBUTES);
                 } else {
-                    link(file, dest, rel);
+                    link(file, dest);
                 }
                 return CONTINUE;
             }
         });
     }
 
-    private static void link(Path file, Path dest, Path rel) throws IOException {
+    private static void link(Path file, Path dest) throws IOException {
         try {
             Files.createLink(dest, file);
         } catch (UnsupportedOperationException | IOException e) {
             // Cross-filesystem, FAT, or hardlinks disabled — fall back to copy.
             // (We log once per slot at most; chatter would dominate the build log.)
-            LOG.fine(() -> "Hardlink failed (" + e.getMessage() + "), copying " + rel);
+            LOG.fine(() -> "Hardlink failed (" + e.getMessage() + "), copying " + file);
             Files.copy(file, dest, COPY_ATTRIBUTES);
         }
     }
 
     /** Whether {@code path}, relative to the install root, is one of a domain's runtime directories. */
-    private static boolean isRuntimeDir(Path rel) {
+    private static boolean isRuntimeDir(Path path) {
         int domainDepth = DOMAINS.getNameCount() + 1;
 
         return
-            rel.startsWith(DOMAINS) &&
-            rel.getNameCount() > domainDepth &&
-            RUNTIME_DIRS.contains(rel.subpath(domainDepth, rel.getNameCount()));
+            path.startsWith(DOMAINS) &&
+            path.getNameCount() > domainDepth &&
+            RUNTIME_DIRS.contains(path.subpath(domainDepth, path.getNameCount()));
     }
 }
