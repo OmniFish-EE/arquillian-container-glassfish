@@ -43,11 +43,8 @@ import org.xml.sax.SAXException;
  * {@code <java-config>}.
  *
  * <p>Writes go through a sibling tmp file + atomic move so the underlying
- * inode is replaced rather than truncated. That matters for the pool
- * container, which produces per-slot installs by hardlinking the source
- * install ({@code Files.createLink} per file); truncating in place would
- * also rewrite the source's {@code domain.xml}, the one that must stay
- * pristine for the next slot.
+ * inode is replaced rather than truncated, and an interrupted write can't
+ * leave a half-written {@code domain.xml} behind.
  */
 public final class DomainXmlEditor {
 
@@ -112,8 +109,7 @@ public final class DomainXmlEditor {
      * in {@code CommonGlassFishConfiguration}).
      *
      * <p>Writes go through the same {@link #atomicWrite atomic-move} path as
-     * {@link #setPorts}, so the source install's hardlinked {@code domain.xml}
-     * stays intact.
+     * {@link #setPorts}.
      */
     public static void setSystemProperties(Path domainXml, List<String> properties) throws IOException {
         if (properties == null || properties.isEmpty()) {

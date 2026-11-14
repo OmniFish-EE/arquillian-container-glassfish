@@ -32,8 +32,11 @@ amortise startup cost across parallel forks.
 ## Architecture in 30 seconds
 
 1. **Provisioning** clones a source GlassFish install into `slot-1/`,
-   `slot-2/`, … under `poolDir`. Each slot's `domain.xml` is rewritten so its
-   admin/http/https/etc. ports land in a non-overlapping window
+   `slot-2/`, … under `poolDir`. The clone hardlinks the install's files but
+   copies `glassfish/domains/`, so each slot has a domain of its own; a
+   domain's runtime directories (`osgi-cache`, `generated`, `logs`,
+   `imq/instances`) start out empty. Each slot's `domain.xml` is rewritten
+   so its admin/http/https/etc. ports land in a non-overlapping window
    (`adminBase + (slot - 1) * portStride`).
 2. **Lease** is an exclusive `FileChannel.tryLock()` on `slot-N/lock`. The
    slot's coordinates are published in `slot-N/ports.properties`, written
@@ -48,7 +51,7 @@ poolDir/
 ├── slot-1/
 │   ├── lock                         # FileLock holds the slot
 │   ├── ports.properties             # adminPort, httpPort, httpsPort, glassFishHome
-│   └── glassfish9/                  # the cloned install
+│   └── glassfish/                   # the cloned install
 ├── slot-2/
 │   └── ...
 └── ...
@@ -309,9 +312,8 @@ lines are ignored, mirroring the
 ```
 
 Each entry becomes a `<jvm-options>-Dkey=value</jvm-options>` child of every
-`<java-config>` in each slot's `domain.xml`, written through the same
-inode-replacing atomic move as port rewrites (so the source install stays
-intact). Override at the command line with `-Dglassfish.systemProperties=…`.
+`<java-config>` in each slot's own `domain.xml`; the source install stays as
+staged. Override at the command line with `-Dglassfish.systemProperties=…`.
 
 ### Debugging a slot
 

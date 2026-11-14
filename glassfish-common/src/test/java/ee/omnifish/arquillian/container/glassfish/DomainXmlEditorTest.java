@@ -192,9 +192,9 @@ class DomainXmlEditorTest {
 
     @Test
     void atomicWriteReplacesInodeNotTruncatesIt(@TempDir Path tmp) throws IOException {
-        // Simulate hardlinked source: a second name pointing at the same inode.
-        // After setPorts, the source inode (and its other names) should NOT see
-        // the new content — that's the contract that protects the source install.
+        // A second name pointing at the same inode. After setPorts, the old
+        // inode (and so its other names) should NOT see the new content: the
+        // file is replaced, not truncated and rewritten.
         Path source = tmp.resolve("source.xml");
         Path slot = tmp.resolve("slot.xml");
         Files.writeString(source, FRAGMENT);
