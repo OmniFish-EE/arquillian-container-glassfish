@@ -11,12 +11,8 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -30,9 +26,10 @@ import java.util.logging.Logger;
  *
  * <p>Protocol per slot:
  * <ul>
- *   <li>{@code slot-N/lock} — one byte per JVM, exclusively locked via
- *       {@link FileChannel#tryLock()}. Linux/macOS use {@code fcntl} locks
- *       under the hood; on Windows the locking is mandatory.</li>
+ *   <li>{@code slot-N/lock} — one byte per JVM, exclusively locked through
+ *       {@link PoolLocks}, which keeps one channel per lock file in a JVM.
+ *       Linux/macOS use {@code fcntl} locks under the hood; on Windows the
+ *       locking is mandatory.</li>
  *   <li>{@code slot-N/ports.properties} — appears once provisioning completes.
  *       A slot dir without it is mid-bootstrap and skipped by the scan.</li>
  * </ul>
@@ -43,9 +40,10 @@ import java.util.logging.Logger;
  * and runs the provisioner with the slot lock held throughout. The slot lock
  * is the claim, so concurrent test JVMs that race into {@code tryGrow} cannot
  * pick the same dead slot for recycling — without it, two threads would each
- * see the lock free, both call {@link PoolProvisioner#provisionSlot} on the
- * same index, and race on the {@code deleteRecursive}+clone of that slot's
- * GF install tree.
+ * see the lock free, both call {@link PoolProvisioner#provisionClaimedSlot} on
+ * the same index, and race on the {@code deleteRecursive}+clone of that slot's
+ * GF install tree. If provisioning fails, the slot directory is removed, so
+ * the next grow can use the index again.
  */
 public final class SlotLeaser {
 
@@ -132,61 +130,36 @@ public final class SlotLeaser {
         if (!Files.exists(portsFile)) {
             return null;
         }
-        FileChannel channel = FileChannel.open(PoolPaths.lockFile(poolDir, slot),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE);
-        FileLock lock = null;
+        // Also null for a slot this JVM already holds (e.g. a lease this JVM
+        // hasn't released yet). PoolLocks answers that without opening a second
+        // channel, whose close would release the held lease's lock.
+        PoolLocks.Held lock = PoolLocks.tryLock(PoolPaths.lockFile(poolDir, slot));
+        if (lock == null) {
+            return null;
+        }
         try {
-            try {
-                lock = channel.tryLock();
-            } catch (OverlappingFileLockException e) {
-                // Another channel in THIS JVM already holds the slot lock (e.g.
-                // a lease this JVM hasn't released yet). A foreign JVM would
-                // yield tryLock() == null; only our own process throws. Treat
-                // as busy and skip — mirrors claimRecyclableSlot().
-                channel.close();
-                return null;
-            }
-            if (lock == null) {
-                channel.close();
-                return null;
-            }
             SlotPorts ports;
             try {
                 ports = SlotPorts.readFrom(portsFile);
             } catch (IOException | RuntimeException e) {
                 // Half-written ports.properties — skip the slot, scan continues.
-                lock.release();
-                channel.close();
+                lock.close();
                 return null;
             }
             // A free lock file does not imply a live GF: previous owner's GF may
             // have OOM-crashed, been killed, or been mid-shutdown when we grabbed
             // the lock. Probe before committing.
             if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
-                lock.release();
-                channel.close();
+                lock.close();
                 return null;
             }
             publishSlotProperty(slot);
             LOG.fine(() -> "Leased slot " + slot + " (adminPort=" + ports.adminPort() + ")");
-            return new SlotLease(slot, ports, channel, lock);
-        } catch (RuntimeException | IOException e) {
-            // Always release the channel between open() and successful return,
-            // otherwise a transient failure leaks an FD per poll cycle.
-            if (lock != null) {
-                try {
-                    lock.release();
-                } catch (IOException ignored) {
-                    /* nothing useful */
-                }
-            }
-            try {
-                channel.close();
-            } catch (IOException ignored) {
-                /* nothing useful */
-            }
+            return new SlotLease(slot, ports, lock);
+        } catch (RuntimeException e) {
+            // Always release the lock between tryLock() and successful return,
+            // otherwise a transient failure leaks it.
+            lock.close();
             throw e;
         }
     }
@@ -209,26 +182,38 @@ public final class SlotLeaser {
             // grow so the lease loop just waits for an existing slot.
             return null;
         }
-        ClaimedSlot claim;
-        Path growLock = PoolPaths.growLock(poolDir);
-        try (FileChannel fc = FileChannel.open(growLock,
-                StandardOpenOption.CREATE,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE);
-             FileLock ignored = fc.lock()) {
-            claim = claimSlot(poolDir);
-        }
+        ClaimedSlot claim = PoolLocks.withGrowLock(poolDir, () -> claimSlot(poolDir));
         if (claim == null) {
             return null;
         }
         try {
-            SlotPorts ports = new PoolProvisioner(config).provisionSlot(claim.slot);
+            SlotPorts ports = new PoolProvisioner(config).provisionClaimedSlot(claim.slot);
             publishSlotProperty(claim.slot);
-            return new SlotLease(claim.slot, ports, claim.channel, claim.lock);
+            return new SlotLease(claim.slot, ports, claim.lock);
         } catch (IOException | RuntimeException e) {
             LOG.warning(() -> "Slot " + claim.slot + " provisioning failed during grow: " + e.getMessage());
-            claim.release();
+            discard(poolDir, claim);
             return null;
+        }
+    }
+
+    /**
+     * Give up a slot whose provisioning failed: release the claim and delete
+     * the slot directory, so the next grow can use the index again instead of
+     * skipping the half-made directory. Runs under {@code grow.lock}, which
+     * every claim takes, so no claim picks the index while it is being deleted.
+     */
+    private static void discard(Path poolDir, ClaimedSlot claim) {
+        try {
+            PoolLocks.withGrowLock(poolDir, () -> {
+                claim.release();
+                PoolProvisioner.deleteRecursive(PoolPaths.slotDir(poolDir, claim.slot));
+                return null;
+            });
+        } catch (IOException e) {
+            LOG.warning(() -> "Could not remove slot " + claim.slot + " after its failed grow: " + e.getMessage());
+        } finally {
+            claim.release();
         }
     }
 
@@ -254,18 +239,13 @@ public final class SlotLeaser {
             chosen++;
         }
         Files.createDirectory(PoolPaths.slotDir(poolDir, chosen));
-        FileChannel channel = FileChannel.open(PoolPaths.lockFile(poolDir, chosen),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE);
-        FileLock lock = channel.tryLock();
+        PoolLocks.Held lock = PoolLocks.tryLock(PoolPaths.lockFile(poolDir, chosen));
         if (lock == null) {
             // Fresh slot dir with a locked lockfile — should not happen since
             // we just created the dir under grow.lock. Bail safely.
-            channel.close();
             return null;
         }
-        return new ClaimedSlot(chosen, channel, lock);
+        return new ClaimedSlot(chosen, lock);
     }
 
     /**
@@ -300,25 +280,17 @@ public final class SlotLeaser {
             if (PoolProvisioner.isPortHealthy(ports.adminPort())) {
                 continue;
             }
-            FileChannel channel = FileChannel.open(PoolPaths.lockFile(poolDir, slot),
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.READ,
-                    StandardOpenOption.WRITE);
-            FileLock lock;
+            // Also null when this JVM already holds the slot, so a single-JVM
+            // caller (tests, the same leaser used twice) can't double-claim.
+            PoolLocks.Held lock;
             try {
-                lock = channel.tryLock();
-            } catch (IOException | OverlappingFileLockException e) {
-                // OverlappingFileLockException: a FileChannel in this same JVM
-                // already holds the lock — treat as busy so a single-JVM caller
-                // (tests, the same leaser used twice) can't double-claim.
-                channel.close();
+                lock = PoolLocks.tryLock(PoolPaths.lockFile(poolDir, slot));
+            } catch (IOException e) {
                 continue;
             }
-            if (lock == null) {
-                channel.close();
-                continue;
+            if (lock != null) {
+                return new ClaimedSlot(slot, lock);
             }
-            return new ClaimedSlot(slot, channel, lock);
         }
         return null;
     }
@@ -341,29 +313,18 @@ public final class SlotLeaser {
         }
     }
 
-    /** A slot index plus the held lockfile resources backing the claim. */
+    /** A slot index plus the held lock backing the claim. */
     static final class ClaimedSlot {
         final int slot;
-        final FileChannel channel;
-        final FileLock lock;
+        final PoolLocks.Held lock;
 
-        ClaimedSlot(int slot, FileChannel channel, FileLock lock) {
+        ClaimedSlot(int slot, PoolLocks.Held lock) {
             this.slot = slot;
-            this.channel = channel;
             this.lock = lock;
         }
 
         void release() {
-            try {
-                lock.release();
-            } catch (IOException ignored) {
-                /* nothing useful */
-            }
-            try {
-                channel.close();
-            } catch (IOException ignored) {
-                /* nothing useful */
-            }
+            lock.close();
         }
     }
 }

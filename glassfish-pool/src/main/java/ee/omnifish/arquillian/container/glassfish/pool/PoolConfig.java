@@ -78,6 +78,12 @@ public final class PoolConfig {
                     + ". Suspend blocks the server JVM until a debugger attaches and all slot clones "
                     + "share one debug port — run the suspended pool with -T1.");
         }
+        if (debug && size > 1) {
+            throw new IllegalArgumentException(
+                    "glassfish.debug requires a single-slot pool (gf.pool.size=1); got size=" + size
+                    + ". All slot clones share one debug port, so only one of them could start "
+                    + "— run the debugged pool with -T1.");
+        }
         this.poolDir = Objects.requireNonNull(poolDir, "poolDir");
         this.source = source;
         this.size = size;
@@ -135,7 +141,8 @@ public final class PoolConfig {
     /**
      * Start each slot's domain in debug mode ({@code start-domain --debug}).
      * Sourced from the {@code glassfish.debug} property, shared with the
-     * managed container.
+     * managed container. Only valid for a single-slot pool (enforced in the
+     * constructor), since all slot clones share one debug port.
      */
     public boolean debug() {
         return debug;

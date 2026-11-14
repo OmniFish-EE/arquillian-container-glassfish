@@ -26,6 +26,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolPaths.portsFile;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolProvisioner.isPortHealthy;
+import static java.nio.file.Files.exists;
+import static java.nio.file.Files.isDirectory;
+
 /**
  * Public Java API used by the Maven plugin's mojos and by direct
  * {@code <java>} antrun invocations. Three operations:
@@ -136,8 +141,8 @@ public final class PoolBootstrap {
      */
     private static boolean isAlreadyProvisioned(PoolConfig config) {
         for (int idx = 1; idx <= config.size(); idx++) {
-            java.nio.file.Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
-            if (!java.nio.file.Files.exists(portsFile)) {
+            Path portsFile = portsFile(config.poolDir(), idx);
+            if (!exists(portsFile)) {
                 return false;
             }
             // A busy slot lock means some leaser owns the slot — either running
@@ -147,15 +152,17 @@ public final class PoolBootstrap {
             if (isLockBusy(config.poolDir(), idx)) {
                 continue;
             }
+
             try {
                 SlotPorts ports = SlotPorts.readFrom(portsFile);
-                if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
+                if (!isPortHealthy(ports.adminPort())) {
                     return false;
                 }
             } catch (IOException e) {
                 return false;
             }
         }
+
         return true;
     }
 
@@ -165,13 +172,15 @@ public final class PoolBootstrap {
      */
     public static void down(PoolConfig config) {
         Path poolDir = config.poolDir();
-        if (!Files.isDirectory(poolDir)) {
+        if (!isDirectory(poolDir)) {
             return;
         }
+
         List<Integer> slots = listSlotIndices(poolDir);
         if (slots.isEmpty()) {
             return;
         }
+
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(slots.size(), MAX_PROVISION_PARALLELISM));
         try {
             PoolProvisioner provisioner = new PoolProvisioner(config);
@@ -218,7 +227,7 @@ public final class PoolBootstrap {
      */
     public static void status(PoolConfig config, PrintStream out) {
         Path poolDir = config.poolDir();
-        if (!Files.isDirectory(poolDir)) {
+        if (!isDirectory(poolDir)) {
             out.println("Pool dir does not exist: " + poolDir);
             return;
         }
@@ -234,7 +243,7 @@ public final class PoolBootstrap {
         out.printf(rowFormat, "slot", "adminPort", "alive", "leased");
         out.println("|------|-----------|------------|--------|");
         for (int slot : slots) {
-            Path portsFile = PoolPaths.portsFile(poolDir, slot);
+            Path portsFile = portsFile(poolDir, slot);
             String adminPort = "?";
             String alive = "?";
             String leased;
@@ -243,7 +252,7 @@ public final class PoolBootstrap {
                 try {
                     SlotPorts ports = SlotPorts.readFrom(portsFile);
                     adminPort = String.valueOf(ports.adminPort());
-                    alive = PoolProvisioner.isPortHealthy(ports.adminPort()) ? "yes" : "no";
+                    alive = isPortHealthy(ports.adminPort()) ? "yes" : "no";
                 } catch (IOException e) {
                     adminPort = "(io err)";
                 }
@@ -332,7 +341,7 @@ public final class PoolBootstrap {
     public static void nuke(PoolConfig config) throws IOException {
         down(config);
         Path poolDir = config.poolDir();
-        if (!Files.isDirectory(poolDir)) {
+        if (!isDirectory(poolDir)) {
             return;
         }
         try (var entries = Files.walk(poolDir)) {
@@ -419,32 +428,13 @@ public final class PoolBootstrap {
     }
 
     /**
-     * Probe whether the per-slot lock is held by another JVM. Read-only:
-     * never creates the lock file. Status callers may run concurrently with
-     * code that deletes slot dirs, and creating the lock file would both
-     * falsely signal an in-flight bootstrap and resurrect a file inside a
-     * directory being torn down.
+     * Probe whether the per-slot lock is held, by this JVM or another one.
+     * Read-only: never creates the lock file. Status callers may run
+     * concurrently with code that deletes slot dirs, and creating the lock
+     * file would both falsely signal an in-flight bootstrap and resurrect a
+     * file inside a directory being torn down.
      */
     static boolean isLockBusy(Path poolDir, int slot) {
-        Path lockFile = PoolPaths.lockFile(poolDir, slot);
-        if (!Files.exists(lockFile)) {
-            return false;
-        }
-        try (var ch = java.nio.channels.FileChannel.open(lockFile,
-                java.nio.file.StandardOpenOption.READ,
-                java.nio.file.StandardOpenOption.WRITE)) {
-            var probe = ch.tryLock();
-            if (probe == null) {
-                return true;
-            }
-            probe.release();
-            return false;
-        } catch (java.nio.channels.OverlappingFileLockException e) {
-            // Another channel in this JVM already holds the lock — counts as
-            // busy. Matches SlotLeaser.claimRecyclableSlot's handling.
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
+        return PoolLocks.isBusy(PoolPaths.lockFile(poolDir, slot));
     }
 }
