@@ -147,7 +147,8 @@ unpacks it under `stageDir`, keeping file permissions, so `asadmin` stays
 executable. Then it copies the overlays, imports the trusted certificates
 and runs the post-boot commands. A marker file in `stageDir` records a
 fingerprint of all of that: the distribution and its zip, the install root,
-the overlays and their files, the certificates, and the commands.
+the overlays and their files, the certificates, and the commands with
+`failOnCommandError`.
 
 - A re-run with the same fingerprint leaves the staged install alone.
 - Any change stages it afresh: `stageDir` is wiped and the zip unpacked
@@ -266,15 +267,16 @@ resources and `set` calls:
 - The domain runs on three free ports, so it doesn't clash with a server
   that's already running. Afterwards it gets its own ports back, except for
   a port a command set.
-- The commands are part of the fingerprint (see *Staging behaviour*).
-  Changing them stages the install afresh; until then, re-runs leave it
-  alone, so nothing runs twice.
+- The commands and `failOnCommandError` are part of the fingerprint (see
+  *Staging behaviour*). Changing either stages the install afresh; until
+  then, re-runs leave it alone, so nothing runs twice.
 - A failed command fails the build, and the next build stages afresh. With
   `<failOnCommandError>false</failOnCommandError>`, the failure is logged
   and the remaining commands run.
 - A shutdown hook stops the server if the build is interrupted. If the
   build is killed outright, the next one stops the server before staging
-  afresh.
+  afresh. If the server doesn't stop, that build fails and leaves the
+  install as it is, until you stop the server yourself.
 - They need an install that `provision` unpacks itself. With `unpackSkip`,
   or without a `<distribution>`, the install isn't the plugin's, so the
   commands would run on every build, and setup such as `create-file-user`

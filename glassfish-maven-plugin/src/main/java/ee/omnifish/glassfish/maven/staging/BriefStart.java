@@ -101,10 +101,15 @@ final class BriefStart {
     /**
      * Stop a server that a staging which broke off may have left running
      * from {@code home}: a build killed during the brief start, before its
-     * shutdown hook could run. GlassFish keeps {@code config/pid} while it
-     * runs.
+     * shutdown hook could run, or a stop that failed. GlassFish keeps
+     * {@code config/pid} while it runs.
+     *
+     * @throws IOException if the admin port in the install's
+     *         {@code domain.xml} still answers afterwards, or can't be read,
+     *         so the caller keeps the install, rather than wipe it under a
+     *         running server
      */
-    static void stopLeftover(Path home) {
+    static void stopLeftover(Path home) throws IOException {
         if (home == null || !Files.exists(home.resolve(DOMAIN_CONFIG).resolve("pid"))) {
             return;
         }
@@ -114,6 +119,12 @@ final class BriefStart {
             stop(home);
         } catch (RuntimeException e) {
             LOG.warn("Could not stop the server running from " + home + ": " + e.getMessage());
+        }
+        Path domainXml = home.resolve(DOMAIN_CONFIG).resolve("domain.xml");
+        String adminPort = DomainXmlEditor.ports(domainXml).get(ADMIN_LISTENER);
+        if (adminPort == null || !adminPort.matches("\\d+") || isAnswering(Integer.parseInt(adminPort))) {
+            throw new IOException("Could not confirm that the server the last staging started from " + home
+                    + " has stopped (admin port " + adminPort + "). Stop it, then build again.");
         }
     }
 

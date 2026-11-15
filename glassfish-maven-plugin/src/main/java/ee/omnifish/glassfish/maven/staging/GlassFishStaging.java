@@ -102,9 +102,10 @@ public final class GlassFishStaging {
      * and write the fingerprint last. So a rebuilt zip or overlay, and an
      * overlay, certificate or command added, changed or removed, all take
      * effect, and a staging that didn't finish is redone, after stopping a
-     * server its brief start may have left running. A non-empty directory
-     * without a marker is left alone, since it may be an install this plugin
-     * didn't unpack.
+     * server its brief start may have left running. If that server doesn't
+     * stop, staging fails, and leaves the directory as it is. A non-empty
+     * directory without a marker is left alone, since it may be an install
+     * this plugin didn't unpack.
      *
      * <p>Without the unpack, the install isn't staging's to own, so overlays
      * and certificates are applied to it on every run. That install may be
@@ -172,11 +173,12 @@ public final class GlassFishStaging {
     /**
      * A fingerprint of what staging puts into the directory: the distribution
      * and its zip, the install root, the overlays and their files, the
-     * certificates and their truststore, and the commands. The install root
-     * counts because the default truststore is found from it. Zips and jars
-     * are identified by size and modification time, so a rebuilt one counts
-     * as changed. Certificates are small, so their content counts, whatever
-     * their timestamps.
+     * certificates and their truststore, and the commands, with whether a
+     * failed one fails the staging. The install root counts because the
+     * default truststore is found from it. Zips and jars are identified by
+     * size and modification time, so a rebuilt one counts as changed.
+     * Certificates are small, so their content counts, whatever their
+     * timestamps.
      */
     private static String fingerprint(StageSpec spec, Path zip, ArtifactResolver resolver) throws IOException {
         List<String> inputs = new ArrayList<>();
@@ -196,8 +198,12 @@ public final class GlassFishStaging {
                 inputs.add("cert " + cert.getAlias() + " " + sha256(Files.readAllBytes(cert.getFile().toPath())));
             }
         }
-        for (String command : spec.commands().lines()) {
-            inputs.add("command " + command);
+        StagingCommands commands = spec.commands();
+        if (commands.hasWork()) {
+            inputs.add("commands fail on error " + commands.failOnError());
+            for (String command : commands.lines()) {
+                inputs.add("command " + command);
+            }
         }
 
         return sha256(String.join("\n", inputs).getBytes(StandardCharsets.UTF_8));

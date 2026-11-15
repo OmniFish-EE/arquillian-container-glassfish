@@ -353,9 +353,9 @@ doesn't carry over, since cloning skips those directories. Commands like
 `create-file-user`, `create-jdbc-resource` and `set` qualify.
 
 They are staged like the rest of the source (see *Staging behaviour*):
-changing them stages it afresh, and `failOnCommandError` covers them. The
-brief start runs the domain on three free ports, and gives it its own
-ports back afterwards. Like `glassfish:provision`'s `<postBootCommands>`,
+changing them stages it afresh, and so does changing `failOnCommandError`,
+which covers them. The brief start runs the domain on three free ports,
+and gives it its own ports back afterwards. Like `glassfish:provision`'s `<postBootCommands>`,
 they need a source this plugin unpacks itself, so they can't be combined
 with `unpackSkip`, and need a `<distribution>`. For a source staged by
 `glassfish:provision`, give that goal the commands instead.

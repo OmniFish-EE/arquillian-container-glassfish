@@ -15,6 +15,7 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -141,6 +142,36 @@ class StagingCommandsTest {
                 "--terse start-domain domain1",
                 "--terse --port N set boom",
                 "--terse stop-domain domain1")));
+    }
+
+    /** Wiping the install of a server that still runs would pull its files from under it. */
+    @Test
+    void aLeftoverServerThatDoesntStopKeepsItsInstall() throws Exception {
+        Path zip = fakeGlassFish();
+        StageSpec spec = spec(commands("set boom"));
+        assertThrows(IOException.class, () -> GlassFishStaging.stage(spec, coord -> zip));
+        Path pid = Files.writeString(home().resolve("glassfish/domains/domain1/config/pid"), "12345");
+        int briefAdminPort = Integer.parseInt(ports().get(ADMIN_LISTENER));
+
+        try (ServerSocket stillRunning = new ServerSocket(briefAdminPort)) {
+            IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(spec, coord -> zip));
+
+            assertThat(e.getMessage(), containsString("Stop it, then build again"));
+        }
+        assertThat(Files.exists(pid), equalTo(true));
+        assertThat(count("start-domain"), equalTo(1L));
+    }
+
+    /** A command that failed while failures were only logged must run again once they fail the build. */
+    @Test
+    void switchingOnFailOnErrorStagesAfresh() throws Exception {
+        Path zip = fakeGlassFish();
+        GlassFishStaging.stage(spec(new StagingCommands("set boom", false)), coord -> zip);
+
+        IOException e = assertThrows(IOException.class,
+                () -> GlassFishStaging.stage(spec(new StagingCommands("set boom", true)), coord -> zip));
+
+        assertThat(e.getMessage(), containsString("set boom"));
     }
 
     private StageSpec spec(StagingCommands commands) {
