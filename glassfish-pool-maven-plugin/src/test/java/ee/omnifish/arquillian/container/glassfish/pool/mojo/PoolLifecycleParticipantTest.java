@@ -35,6 +35,14 @@ class PoolLifecycleParticipantTest {
             assertEquals("${gf.pool.source}", variables.getChild("gf.pool.source").getValue());
             assertEquals("${gf.pool.adminBase}", variables.getChild("gf.pool.adminBase").getValue());
             assertEquals("${gf.pool.portStride}", variables.getChild("gf.pool.portStride").getValue());
+            // The slot setup, so slots a test JVM creates get the same setup as those up starts.
+            assertEquals("${gf.pool.systemProperties}", variables.getChild("gf.pool.systemProperties").getValue());
+            assertEquals("${gf.pool.maxHeapSize}", variables.getChild("gf.pool.maxHeapSize").getValue());
+            assertEquals("${gf.pool.enableAssertions}", variables.getChild("gf.pool.enableAssertions").getValue());
+            assertEquals("${gf.pool.postBootCommands}", variables.getChild("gf.pool.postBootCommands").getValue());
+            assertEquals("${gf.pool.postStartCommands}", variables.getChild("gf.pool.postStartCommands").getValue());
+            assertEquals("${gf.pool.failOnCommandError}",
+                    variables.getChild("gf.pool.failOnCommandError").getValue());
         }
     }
 
@@ -59,7 +67,8 @@ class PoolLifecycleParticipantTest {
         assertEquals("/custom/pool", forwarded.getChild("gf.pool.dir").getValue());
         assertEquals("kept", forwarded.getChild("unrelated").getValue());
         assertEquals("${gf.pool.source}", forwarded.getChild("gf.pool.source").getValue());
-        assertEquals(5, forwarded.getChildCount()); // idempotent: no duplicates
+        // Idempotent: each published property once, plus the unrelated variable.
+        assertEquals(UpMojo.PUBLISHED_PROPERTIES.size() + 1, forwarded.getChildCount());
     }
 
     private static Xpp3Dom variables(Xpp3Dom configuration) {

@@ -19,7 +19,7 @@ and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 | Goal        | Default phase            | Purpose                                             |
 | ----------- | ------------------------ | --------------------------------------------------- |
 | `up`        | `pre-integration-test`   | Stage GlassFish (optional), provision and start every slot in parallel. Idempotent — re-running fast-exits if all slots are healthy. |
-| `down`      | `post-integration-test`  | Stop every slot's domain. Best-effort.              |
+| `down`      | `post-integration-test`  | Stop every slot's domain. Fails if a slot keeps running, since the next `up` would reuse it. |
 | `provision` | (none)                   | Provision a single extra slot at `-Dgf.pool.slot=N`. Mostly debugging — `SlotLeaser` grows the pool itself when test JVMs need it. |
 | `status`    | (none)                   | Print one row per slot: index, admin port, alive, leased. Live-refreshes on a TTY (like `top`); one-shot when piped or under `-B`. |
 | `nuke`      | (none)                   | Stop every slot AND remove the pool directory. Forceful reset before a clean `up`. |
@@ -71,10 +71,11 @@ left alone, so existing poms that keep an `<executions>` block don't run
 `up` or `down` twice. A plugin declared only in `<pluginManagement>` binds
 nothing.
 
-The extension also forwards the pool layout to the test JVMs. After the
-pool is up, `up` sets the project properties `gf.pool.dir`,
-`gf.pool.source`, `gf.pool.adminBase` and `gf.pool.portStride`, each only
-if it isn't already set. The extension adds matching
+The extension also forwards the pool layout and the
+[slot setup](#slot-setup) to the test JVMs. After the pool is up, `up` sets
+the project properties `gf.pool.dir`, `gf.pool.source`, `gf.pool.adminBase`
+and `gf.pool.portStride`, and the slot setup's `gf.pool.*` properties, each
+only if it isn't already set. The extension adds matching
 `<gf.pool.dir>${gf.pool.dir}</gf.pool.dir>`-style entries to failsafe's
 `<systemPropertyVariables>`, because failsafe doesn't pass project
 properties to its forks on its own. Entries you configure yourself win.
@@ -116,7 +117,7 @@ unpack* below.
 ## Configuration reference
 
 All goals share the parameters in *Common* below. `up` and `provision` add
-the *Staging* block.
+the *Staging* and *Slot setup* blocks.
 
 ### Common (all goals)
 
@@ -142,6 +143,20 @@ build isn't running tests there's no reason to pay for a pool.
 | `overlays`        | (nested `<overlays>`)  | (empty)                          | Artifacts copied into `overlayTargetDir` after unpack. See *Overlays*.  |
 | `overlayTargetDir`| `gf.pool.overlayTargetDir` | `${poolSource}/glassfish/modules` | Where overlay jars land. Default matches the standard GlassFish layout. |
 | `overlaySkip`     | `gf.pool.overlay.skip` | `false`                          | Skip overlay copying.                                                  |
+
+### Slot setup (`up`, `provision`)
+
+What every slot gets besides its ports. See [Slot setup](#slot-setup).
+
+| Parameter            | Property                     | Default | Notes |
+| -------------------- | ---------------------------- | ------- | ----- |
+| `systemProperties`   | `glassfish.systemProperties` | (none)  | One `key=value` per line, baked into each slot's `domain.xml` as `-Dkey=value` jvm-options. |
+| `maxHeapSize`        | `glassfish.maxHeapSize`      | (none)  | Each slot's `-Xmx`, e.g. `2048m`. |
+| `enableAssertions`   | `glassfish.enableAssertions` | (none)  | What follows each slot's `-ea`, e.g. `:org.jboss.cdi.tck...`. |
+| `postBootCommands`   | `gf.pool.postBootCommands`   | (none)  | `asadmin` commands run once per slot, after its domain first starts. One per line. |
+| `postStartCommands`  | `gf.pool.postStartCommands`  | (none)  | `asadmin` commands run after every slot start and restart. One per line. |
+| `failOnCommandError` | `gf.pool.failOnCommandError` | `true`  | Whether a failed command fails the slot's setup, instead of being logged. |
+| `debug` / `suspend`  | `glassfish.debug` / `glassfish.suspend` | `false` | Start slots with `--debug` / `--suspend`. Single-slot pools only; see [Debugging a slot](../glassfish-pool/README.md#debugging-a-slot). |
 
 `provision` additionally requires `-Dgf.pool.slot=N`.
 
@@ -232,6 +247,73 @@ opt out of the impl overlay against a SNAPSHOT it doesn't yet match).
 
 Skip everything in CI without editing the pom: `mvn verify -Dgf.pool.overlay.skip=true`.
 
+## Slot setup
+
+Every slot gets the same server settings and `asadmin` commands, whether
+`up` created it or a test JVM did, to grow the pool or to replace a dead
+slot: `up` forwards the setup to the test JVMs together with the pool
+layout.
+
+```xml
+<configuration>
+    <distribution>
+        <version>9.0.0</version>
+    </distribution>
+    <maxHeapSize>2048m</maxHeapSize>
+    <enableAssertions>:org.jboss.cdi.tck...</enableAssertions>
+    <systemProperties>
+        javax.net.ssl.trustStorePassword=changeit
+    </systemProperties>
+    <postBootCommands>
+        create-jms-resource --restype jakarta.jms.Queue --property Name=queue_test queue_test
+        set configs.config.server-config.cdi-service.enable-implicit-cdi=true
+    </postBootCommands>
+</configuration>
+```
+
+- The settings go into each slot's own `domain.xml`; the staged install
+  stays as it is.
+- **Post-boot commands** run once per slot, after its domain first starts,
+  for setup whose effects persist: users, resources, `set` calls. If they
+  leave changes that GlassFish only applies after a restart, the slot
+  restarts once.
+- **Post-start commands** run after every start and restart, including a
+  [`restartOnRelease`](../glassfish-pool/README.md#restarting-glassfish-between-tests)
+  restart, for what a restart loses.
+- One command per line. Quotes group words, as in
+  `--description "two words"`. Backslashes are passed on as they are,
+  because `asadmin` reads `\:` and `\=` itself. Blank lines and lines
+  starting with `#` are skipped.
+- With `failOnCommandError`, on by default, a failed command fails `up`, or
+  the lease of the test JVM that created the slot. After a
+  `restartOnRelease` restart, the test class has already finished, so a
+  failed command stops the slot instead, and the slot is re-created before
+  its next lease. Set it to `false` to log failures and carry on.
+
+### Moving settings from failsafe
+
+With the managed Arquillian Container, these settings live in failsafe's
+`<systemPropertyVariables>`. For a pool, move them to this plugin:
+
+- `glassfish.postBootCommands` still works in the test JVM, but the pool's
+  Arquillian Container runs it on every lease, so a command that can't run
+  twice, such as `create-file-user`, fails from the second lease on. It logs
+  a hint once per JVM. Move the commands to `<postBootCommands>`, or to
+  `<postStartCommands>` if they must run after every restart.
+- `glassfish.systemProperties`, `glassfish.maxHeapSize` and
+  `glassfish.enableAssertions` in the test JVM don't reach the slots. The
+  pool's Arquillian Container warns once when the leased slot lacks them.
+
+### Slots from an earlier build
+
+`up` reuses slots still running from an earlier build as they are, without
+applying a changed setup. Normally there are none: `down` stops every slot
+in `post-integration-test`, and a shutdown hook stops them when the build is
+interrupted. If `stop-domain` fails, `down` retries with
+`stop-domain --kill`, and fails if a slot still answers after that. If a
+pool outlives its build anyway, for example because Maven was killed, stop
+it with `glassfish-pool:down` before changing its configuration.
+
 ## Recipes
 
 ### Run from the command line, no project binding
@@ -302,6 +384,13 @@ killed (Ctrl+C, hard build failure), so slots don't get orphaned.
   `gf.pool.source` is wrong or the source install is corrupt. `mvn
   glassfish-pool:status` will show the slot stuck in `bootstrap`; `nuke` and
   retry.
+- **`Command failed: …`** — a post-boot or post-start command failed, with
+  `asadmin`'s output in the message. Fix the command, or set
+  `failOnCommandError` to `false` to only log it.
+- **`Pool slots still running after stopping them`** — `down` couldn't stop
+  a slot, even with `stop-domain --kill`. Stop that GlassFish yourself (its
+  pid is in the slot's `glassfish/glassfish/domains/domain1/config/pid`),
+  then run `glassfish-pool:down` again.
 - **Status table garbled in CI** — CI is being detected as interactive.
   Add `-B` (batch mode) or `-Dgf.pool.once`.
 - **`portStride must be >= 10`** — a GlassFish domain uses ~10 ports;

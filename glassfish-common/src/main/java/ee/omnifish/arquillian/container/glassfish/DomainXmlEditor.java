@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -169,6 +170,36 @@ public final class DomainXmlEditor {
             return;
         }
         atomicWrite(domainXml, doc);
+    }
+
+    /**
+     * The {@code <jvm-options>} for a maximum heap size and enabled assertions,
+     * keyed as {@link #setJvmOptions} takes them: {@code -Xmx<maxHeapSize>}, and
+     * {@code -ea<enableAssertions>}, where {@code enableAssertions} is what
+     * follows {@code -ea}, e.g. {@code :org.jboss.cdi.tck...}. A {@code null}
+     * value leaves its option out.
+     */
+    public static Map<String, String> heapAndAssertionOptions(String maxHeapSize, String enableAssertions) {
+        Map<String, String> options = new LinkedHashMap<>();
+        if (maxHeapSize != null) {
+            options.put("-Xmx", "-Xmx" + maxHeapSize);
+        }
+        if (enableAssertions != null) {
+            options.put("-ea", "-ea" + enableAssertions);
+        }
+
+        return options;
+    }
+
+    /** Every {@code <jvm-options>} value in {@code domainXml}, from all of its configs. */
+    public static List<String> jvmOptions(Path domainXml) throws IOException {
+        NodeList options = parse(domainXml).getElementsByTagName("jvm-options");
+        List<String> values = new ArrayList<>();
+        for (int i = 0; i < options.getLength(); i++) {
+            values.add(options.item(i).getTextContent());
+        }
+
+        return values;
     }
 
     /**

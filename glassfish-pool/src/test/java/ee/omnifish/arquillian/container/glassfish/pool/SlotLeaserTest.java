@@ -5,9 +5,11 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.lessThan;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
@@ -27,6 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+
+import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -392,7 +396,7 @@ class SlotLeaserTest {
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
     void growRecreatesARecycledDeadSlot(@TempDir Path tmp) throws Exception {
         Path poolDir = tmp.resolve("pool");
-        PoolConfig config = growingConfig(poolDir, fakeInstall(tmp.resolve("source"), 0));
+        PoolConfig config = growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), 0));
         seedSlot(poolDir, 1, freePort()); // dead → recyclable
         Path stale = Files.createDirectories(PoolPaths.slotDir(poolDir, 1)
                 .resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME)).resolve("stale");
@@ -414,9 +418,60 @@ class SlotLeaserTest {
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
     void failedGrowFreesItsSlotIndex(@TempDir Path tmp) throws Exception {
         Path poolDir = Files.createDirectories(tmp.resolve("pool"));
-        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, fakeInstall(tmp.resolve("source"), 1)), 1L);
+        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), 1)), 1L);
 
         assertThrows(IllegalStateException.class, leaser::lease);
+        assertThat(slotDirs(poolDir), empty());
+    }
+
+    /**
+     * A slot without ports.properties is left alone while another JVM holds
+     * its lock, since that JVM may still be setting it up. Once that JVM is
+     * killed, the slot is abandoned, and the next grow recycles it.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void abandonedSlotIsRecycledOnceItsJvmIsKilled(@TempDir Path tmp) throws Exception {
+        Path poolDir = tmp.resolve("pool");
+        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), 0)), 3L);
+        Path halfMade = Files.createDirectories(PoolPaths.slotDir(poolDir, 1)
+                .resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME)).resolve("half-made");
+        Files.createFile(halfMade);
+
+        ForeignJvm.Holder settingUp = ForeignJvm.hold(PoolPaths.lockFile(poolDir, 1));
+        try (SlotLease grown = leaser.lease()) {
+            assertThat(grown.slotIndex(), equalTo(2));
+            assertThat(Files.exists(halfMade), equalTo(true));
+
+            settingUp.kill();
+            // Slot 2 is still leased, so this lease grows again, into slot 1.
+            try (SlotLease recycled = leaser.lease()) {
+                assertThat(recycled.slotIndex(), equalTo(1));
+                assertThat(Files.exists(halfMade), equalTo(false));
+            }
+        } finally {
+            settingUp.kill();
+        }
+    }
+
+    /**
+     * With failOnCommandError, a failing command fails the lease right away,
+     * instead of every retry failing the same way until the lease timeout.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void failingCommandFailsTheLease(@TempDir Path tmp) throws Exception {
+        Path poolDir = Files.createDirectories(tmp.resolve("pool"));
+        SlotSetup setup = new SlotSetup(List.of(), null, null, List.of("boom"), List.of(), true);
+        SlotLeaser leaser = new SlotLeaser(
+                growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), FakeGlassFish.BOOM_FAILS), setup),
+                60L);
+
+        long start = System.nanoTime();
+        CommandFailedException e = assertThrows(CommandFailedException.class, leaser::lease);
+
+        assertThat(e.getMessage(), containsString("boom"));
+        assertThat(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start), lessThan(30L));
         assertThat(slotDirs(poolDir), empty());
     }
 
@@ -472,33 +527,15 @@ class SlotLeaserTest {
 
     /** A pool that can grow from {@code source}, on ports nothing listens on. */
     private PoolConfig growingConfig(Path poolDir, Path source) throws IOException {
-        return new PoolConfig(poolDir, source, 0, freePort(), PoolConfig.DEFAULT_PORT_STRIDE);
+        return growingConfig(poolDir, source, SlotSetup.NONE);
     }
 
-    /**
-     * A source install whose {@code asadmin} is a script that appends its
-     * arguments to {@code calls.log} next to itself and exits with
-     * {@code exitCode}: enough for {@link PoolProvisioner} to clone, patch
-     * and "start" a slot without GlassFish.
-     */
-    private static Path fakeInstall(Path dir, int exitCode) throws IOException {
-        Path asadmin = Files.createDirectories(dir.resolve("glassfish/bin")).resolve("asadmin");
-        Files.writeString(asadmin, "#!/bin/sh\n"
-                + "echo \"$@\" >> \"$(dirname \"$0\")/calls.log\"\n"
-                + "exit " + exitCode + "\n");
-        assertThat(asadmin.toFile().setExecutable(true), equalTo(true));
-        Path config = Files.createDirectories(dir.resolve("glassfish/domains/domain1/config"));
-        Files.writeString(config.resolve("domain.xml"), "<domain><configs><config name=\"server-config\">"
-                + "<network-config><network-listeners>"
-                + "<network-listener name=\"admin-listener\" port=\"4848\"/>"
-                + "<network-listener name=\"http-listener-1\" port=\"8080\"/>"
-                + "<network-listener name=\"http-listener-2\" port=\"8181\"/>"
-                + "</network-listeners></network-config></config></configs></domain>");
-        return dir;
+    private PoolConfig growingConfig(Path poolDir, Path source, SlotSetup setup) throws IOException {
+        return new PoolConfig(poolDir, source, 0, freePort(), PoolConfig.DEFAULT_PORT_STRIDE, setup, false, false);
     }
 
     private static List<String> asadminCalls(SlotLease lease) throws IOException {
-        return Files.readAllLines(Paths.get(lease.ports().glassFishHome()).resolve("glassfish/bin/calls.log"));
+        return FakeGlassFish.calls(Paths.get(lease.ports().glassFishHome()));
     }
 
     private static List<String> slotDirs(Path poolDir) throws IOException {

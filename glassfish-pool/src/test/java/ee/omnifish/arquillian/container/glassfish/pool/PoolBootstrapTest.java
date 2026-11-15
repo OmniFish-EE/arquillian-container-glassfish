@@ -4,8 +4,11 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItems;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -24,6 +27,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class PoolBootstrapTest {
@@ -124,11 +129,70 @@ class PoolBootstrapTest {
         }
     }
 
+    /**
+     * Whoever sets a slot up or restarts it holds its lock until it writes
+     * ports.properties, so {@code up} leaves a locked slot alone, with or
+     * without one. Proven by {@code source=null}, as above.
+     */
+    @Test
+    void upLeavesALockedSlotWithoutPortsFileAlone(@TempDir Path tmp) throws Exception {
+        Files.createDirectories(PoolPaths.slotDir(tmp, 1));
+
+        try (AutoCloseable settingUp = ForeignJvm.hold(PoolPaths.lockFile(tmp, 1))) {
+            PoolConfig config = new PoolConfig(tmp, /*source*/null, 1,
+                    PoolConfig.DEFAULT_ADMIN_BASE, PoolConfig.DEFAULT_PORT_STRIDE);
+            PoolBootstrap.up(config);
+        }
+    }
+
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void upFailsOnAFailingCommand(@TempDir Path tmp) throws Exception {
+        SlotSetup setup = new SlotSetup(List.of(), null, null, List.of("boom"), List.of(), true);
+        PoolConfig config = fakePool(tmp, FakeGlassFish.BOOM_FAILS, setup);
+
+        IOException e = assertThrows(IOException.class, () -> PoolBootstrap.up(config));
+
+        assertThat(e.getMessage(), containsString("Slot 1 provisioning failed: Command failed: boom"));
+        assertThat(Files.exists(PoolPaths.portsFile(config.poolDir(), 1)), equalTo(false));
+    }
+
     @Test
     void downIsNoopOnEmptyPool(@TempDir Path tmp) {
         PoolConfig config = new PoolConfig(tmp, null, 0,
                 PoolConfig.DEFAULT_ADMIN_BASE, PoolConfig.DEFAULT_PORT_STRIDE);
         PoolBootstrap.down(config); // must not throw
+    }
+
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void downStopsEverySlot(@TempDir Path tmp) throws Exception {
+        PoolConfig config = fakePool(tmp, "exit 0\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+
+        PoolBootstrap.down(config);
+
+        assertThat(FakeGlassFish.calls(slotInstall(config)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+    }
+
+    /**
+     * The next {@code up} reuses running slots as they are, so a slot that
+     * keeps running after {@code stop-domain} and {@code stop-domain --kill}
+     * fails {@code down}.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void downFailsWhenASlotKeepsRunning(@TempDir Path tmp) throws Exception {
+        PoolConfig config = fakePool(tmp, "case \"$*\" in *stop-domain*) exit 1 ;; esac\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+        fakes.add(FakeGlassFish.answerOn(config.adminPort(1)));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> PoolBootstrap.down(config));
+
+        assertThat(e.getMessage(), containsString("1 (admin port " + config.adminPort(1) + ")"));
+        assertThat(FakeGlassFish.calls(slotInstall(config)),
+                hasItems("--terse stop-domain domain1", "--terse stop-domain --kill domain1"));
     }
 
     @Test
@@ -171,5 +235,16 @@ class PoolBootstrapTest {
         ServerSocket socket = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
         fakes.add(socket);
         return socket.getLocalPort();
+    }
+
+    /** A one-slot pool cloned from a {@link FakeGlassFish}. */
+    private static PoolConfig fakePool(Path tmp, String script, SlotSetup setup) throws IOException {
+        Path source = FakeGlassFish.install(tmp.resolve("source"), script);
+        return new PoolConfig(tmp.resolve("pool"), source, 1, FakeGlassFish.freePort(),
+                PoolConfig.DEFAULT_PORT_STRIDE, setup, false, false);
+    }
+
+    private static Path slotInstall(PoolConfig config) {
+        return PoolPaths.slotDir(config.poolDir(), 1).resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME);
     }
 }

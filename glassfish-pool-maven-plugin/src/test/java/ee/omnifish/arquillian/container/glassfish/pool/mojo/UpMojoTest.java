@@ -14,6 +14,7 @@ import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
 
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
+import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
 
 class UpMojoTest {
 
@@ -30,6 +31,25 @@ class UpMojoTest {
         assertEquals(SOURCE.toString(), properties.getProperty("gf.pool.source"));
         assertEquals("24848", properties.getProperty("gf.pool.adminBase"));
         assertEquals("50", properties.getProperty("gf.pool.portStride"));
+    }
+
+    /** Slots a test JVM creates must get the same setup as those up starts. */
+    @Test
+    void publishesSlotSetup() {
+        Properties properties = new Properties();
+        SlotSetup setup = new SlotSetup(List.of("a=b", "c=d"), "2048m", null,
+                List.of("create-file-user --groups g u"), List.of(), false);
+
+        UpMojo.publish(properties, new PoolConfig(POOL, SOURCE, 1, 14848, 100, setup, false, false),
+                new SystemStreamLog());
+
+        assertEquals("a=b\nc=d", properties.getProperty("gf.pool.systemProperties"));
+        assertEquals("2048m", properties.getProperty("gf.pool.maxHeapSize"));
+        assertEquals("create-file-user --groups g u", properties.getProperty("gf.pool.postBootCommands"));
+        assertEquals("false", properties.getProperty("gf.pool.failOnCommandError"));
+        // Unset ones are left out, so their forwarded references stay empty.
+        assertFalse(properties.containsKey("gf.pool.enableAssertions"));
+        assertFalse(properties.containsKey("gf.pool.postStartCommands"));
     }
 
     @Test

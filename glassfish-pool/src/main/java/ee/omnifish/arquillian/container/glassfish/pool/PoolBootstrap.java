@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -37,9 +38,10 @@ import static java.nio.file.Files.isDirectory;
  * <ul>
  *   <li>{@link #up} — provision N slots in parallel, start their domains,
  *       arm a JVM shutdown hook so {@code Ctrl+C} doesn't orphan them.</li>
- *   <li>{@link #down} — stop every slot's domain.</li>
+ *   <li>{@link #down} — stop every slot's domain, failing if one keeps running.</li>
  *   <li>{@link #provisionSlot} — bootstrap one extra slot at a given index
- *       (used by {@link SlotLeaser} when growing the pool on demand).</li>
+ *       (the {@code provision} goal; {@link SlotLeaser} grows the pool
+ *       through {@link PoolProvisioner} directly).</li>
  * </ul>
  *
  * <p>For one-off invocations from antrun's {@code <java>} task, {@link #main}
@@ -120,12 +122,20 @@ public final class PoolBootstrap {
                     futures.add(CompletableFuture.runAsync(() -> {
                         try {
                             provisioner.provisionSlot(slot);
-                        } catch (IOException e) {
-                            throw new RuntimeException("Slot " + slot + " provisioning failed", e);
+                        } catch (IOException | RuntimeException e) {
+                            throw new CompletionException(
+                                    new IOException("Slot " + slot + " provisioning failed: " + e.getMessage(), e));
                         }
                     }, pool));
                 }
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                try {
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                } catch (CompletionException e) {
+                    if (e.getCause() instanceof IOException) {
+                        throw (IOException) e.getCause();
+                    }
+                    throw e;
+                }
             } finally {
                 pool.shutdown();
             }
@@ -134,23 +144,24 @@ public final class PoolBootstrap {
     }
 
     /**
-     * Pool is "already provisioned" when every requested slot has a
-     * {@code ports.properties} pointing at a live admin port. Used by
-     * {@link #up} to fast-exit on a second concurrent (or repeated) call so
-     * the heavy clone/start-domain work isn't re-run.
+     * Pool is "already provisioned" when every requested slot is owned by
+     * another JVM, or has a {@code ports.properties} pointing at a live admin
+     * port. Used by {@link #up} to fast-exit on a second concurrent (or
+     * repeated) call so the heavy clone/start-domain work isn't re-run.
      */
     private static boolean isAlreadyProvisioned(PoolConfig config) {
         for (int idx = 1; idx <= config.size(); idx++) {
+            // A busy slot lock means another JVM owns the slot — running tests
+            // against a live GF, or setting it up or restarting it, with the
+            // port closed and ports.properties not written yet. Either way the
+            // slot is not ours to reprovision.
+            if (isLockBusy(config.poolDir(), idx)) {
+                continue;
+            }
+
             Path portsFile = portsFile(config.poolDir(), idx);
             if (!exists(portsFile)) {
                 return false;
-            }
-            // A busy slot lock means some leaser owns the slot — either running
-            // tests against a live GF, or mid-restart (restartOnRelease) with
-            // the port briefly closed. Either way the slot is not ours to
-            // reprovision, so skip the port probe to avoid a false negative.
-            if (isLockBusy(config.poolDir(), idx)) {
-                continue;
             }
 
             try {
@@ -167,8 +178,13 @@ public final class PoolBootstrap {
     }
 
     /**
-     * Stop every {@code slot-N} under {@code config.poolDir()}. Best-effort:
-     * dead slots and slots without an install dir are skipped, errors are logged.
+     * Stop every {@code slot-N} under {@code config.poolDir()}, with
+     * {@code stop-domain}, and with {@code stop-domain --kill} if that fails.
+     * Slots without an install dir are skipped.
+     *
+     * @throws IllegalStateException naming the slots whose admin port still
+     *         answers afterwards, because the next {@link #up} would reuse
+     *         them as they are
      */
     public static void down(PoolConfig config) {
         Path poolDir = config.poolDir();
@@ -192,11 +208,42 @@ public final class PoolBootstrap {
         } finally {
             pool.shutdown();
         }
+
+        List<String> running = new ArrayList<>();
+        for (int slot : slots) {
+            int adminPort = adminPort(config, slot);
+            if (isDirectory(slotInstall(poolDir, slot)) && isPortHealthy(adminPort)) {
+                running.add(slot + " (admin port " + adminPort + ")");
+            }
+        }
+        if (!running.isEmpty()) {
+            throw new IllegalStateException("Pool slots still running after stopping them: "
+                    + String.join(", ", running) + ". The next up would reuse them as they are.");
+        }
+    }
+
+    /** The admin port slot {@code slot} published, or else the one {@code config} gives it. */
+    private static int adminPort(PoolConfig config, int slot) {
+        Path portsFile = portsFile(config.poolDir(), slot);
+        if (exists(portsFile)) {
+            try {
+                return SlotPorts.readFrom(portsFile).adminPort();
+            } catch (IOException | RuntimeException e) {
+                // Half-written; fall back to the config's port.
+            }
+        }
+
+        return config.adminPort(slot);
+    }
+
+    private static Path slotInstall(Path poolDir, int slot) {
+        return PoolPaths.slotDir(poolDir, slot).resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME);
     }
 
     /**
-     * Provision a single slot. Used by {@link SlotLeaser#tryGrow} and exposed
-     * via the {@code provision} mojo for ad-hoc additions.
+     * Provision a single slot. Exposed via the {@code provision} mojo for
+     * ad-hoc additions. Returns {@code null} when another JVM owns the slot
+     * and hasn't published its ports yet.
      */
     public static SlotPorts provisionSlot(PoolConfig config, int idx) throws IOException {
         return provisionSlot(config, idx, null);
@@ -337,7 +384,11 @@ public final class PoolBootstrap {
         return count;
     }
 
-    /** Stop everything and remove the pool dir entirely. Forceful reset. */
+    /**
+     * Stop everything and remove the pool dir entirely. Forceful reset. Like
+     * {@link #down}, throws {@link IllegalStateException} when a slot keeps
+     * running, and then leaves the pool dir in place.
+     */
     public static void nuke(PoolConfig config) throws IOException {
         down(config);
         Path poolDir = config.poolDir();

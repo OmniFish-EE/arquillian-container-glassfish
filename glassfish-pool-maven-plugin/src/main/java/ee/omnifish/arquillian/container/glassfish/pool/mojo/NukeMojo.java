@@ -28,7 +28,7 @@ public class NukeMojo extends AbstractPoolMojo {
     public void execute() throws MojoExecutionException {
         try {
             PoolBootstrap.nuke(poolConfig());
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             throw new MojoExecutionException("Pool nuke failed: " + e.getMessage(), e);
         }
     }

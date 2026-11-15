@@ -28,7 +28,8 @@ import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
  *       before failing the test JVM.</li>
  *   <li>{@code restartOnRelease} — when {@code true}, the GlassFish domain
  *       backing the leased slot is restarted (via {@code asadmin restart-domain})
- *       on container stop, before the slot lock is released. Use this when
+ *       on container stop, before the slot lock is released, and the pool
+ *       plugin's post-start commands run on it again. Use this when
  *       tests leak JVM-scoped state (datasource pools, classloader pins,
  *       ThreadLocals, EclipseLink session caches) that undeploy alone does
  *       not clear. Trades suite duration for inter-test isolation — defaults
