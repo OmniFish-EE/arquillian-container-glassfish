@@ -14,6 +14,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,15 +25,20 @@ import java.nio.file.attribute.PosixFilePermission;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
@@ -48,10 +55,14 @@ import org.slf4j.LoggerFactory;
  * which keeps this class free of Maven types; the mojos wire Aether in. It
  * logs through SLF4J, so its lines show up as regular Maven output.
  *
+ * <p>When it unpacks the distribution, staging owns the stage directory. A
+ * marker file in it records a fingerprint of everything staging puts there,
+ * and a change to any of it stages the directory afresh; see {@link #stage}.
+ *
  * <p>Concurrency: {@link #stage} runs one caller at a time per stage
- * directory, so modules of a {@code -T} build that share one unpack it once.
- * The marker check makes the later runs no-ops; the unpack itself is not safe
- * to interleave.
+ * directory, so modules of a {@code -T} build that share one stage it once.
+ * The fingerprint check makes the later runs no-ops; staging itself is not
+ * safe to interleave.
  */
 public final class GlassFishStaging {
 
@@ -59,6 +70,7 @@ public final class GlassFishStaging {
 
     private static final String MARKER_FILE = ".staging-glassfish.properties";
     private static final String MARKER_KEY_DIST = "distribution";
+    private static final String MARKER_KEY_FINGERPRINT = "fingerprint";
 
     /** Where a domain's truststore lives, relative to the install root. */
     private static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
@@ -78,62 +90,119 @@ public final class GlassFishStaging {
     }
 
     /**
-     * Run the staging steps. Either side is a no-op when its skip flag is set
-     * or its inputs are empty. The unpack step is marker-guarded: it skips
-     * when the staged install already records the requested dist GAV, and
-     * wipes + re-unpacks when the GAV differs or the zip is newer than the
-     * marker (a rebuilt or re-downloaded SNAPSHOT keeps its GAV). Overlays
-     * are always re-copied (cheap; lets {@code -Dmojarra.version=…} take
-     * effect without a wipe). Certificates are imported after them, on every
-     * run too, into the domain's truststore unless the spec names another;
-     * see {@link #importCerts}.
+     * Run the staging steps: unpack the distribution, copy the overlays,
+     * import the certificates. Each is a no-op when its skip flag is set or
+     * its inputs are empty.
+     *
+     * <p>When the distribution is unpacked, the three steps are one unit,
+     * recorded by a fingerprint of their inputs in the stage directory's
+     * marker. A matching fingerprint leaves the staged install alone. A
+     * changed one, or a marker without one, stages the directory afresh:
+     * wipe it, unpack again, copy the overlays, import the certificates, and
+     * write the fingerprint last. So a rebuilt zip or overlay, and an overlay
+     * or certificate added, changed or removed, all take effect, and a
+     * staging that didn't finish is redone. A non-empty directory without a
+     * marker is left alone, since it may be an install this plugin didn't
+     * unpack.
+     *
+     * <p>Without the unpack, the install isn't staging's to own, so overlays
+     * and certificates are applied to it on every run.
      */
     public static void stage(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path lockKey = spec.stageDir().toAbsolutePath().normalize();
         synchronized (STAGE_DIR_LOCKS.computeIfAbsent(lockKey, dir -> new Object())) {
             if (!spec.unpackSkip() && spec.distribution() != null) {
-                unpackDistribution(spec, resolver);
-            }
-            if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
-                copyOverlays(spec, resolver);
-            }
-            if (spec.certImport().hasWork()) {
-                importCerts(spec.certImport(), spec.home());
+                stageOwned(spec, resolver);
+            } else {
+                applyOverlaysAndCerts(spec, resolver);
             }
         }
     }
 
-    private static void unpackDistribution(StageSpec spec, ArtifactResolver resolver) throws IOException {
+    private static void stageOwned(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path stageDir = spec.stageDir();
         Path marker = stageDir.resolve(MARKER_FILE);
-        String wantedGav = spec.distribution().toGav();
+        String gav = spec.distribution().toGav();
         Path zip = resolver.resolve(spec.distribution());
+        String fingerprint = fingerprint(spec, zip, resolver);
         if (Files.exists(marker)) {
-            String stagedGav = readMarker(marker, MARKER_KEY_DIST);
-            boolean sameGav = wantedGav.equals(stagedGav);
-            if (sameGav && !isNewer(zip, marker)) {
-                LOG.debug("Dist already staged at " + stageDir + " (" + wantedGav + ")");
+            if (fingerprint.equals(readMarker(marker, MARKER_KEY_FINGERPRINT))) {
+                LOG.debug("Already staged at " + stageDir + " (" + gav + ")");
                 return;
             }
-            LOG.info(sameGav
-                    ? "Re-staging dist (" + wantedGav + " changed since it was staged)"
-                    : "Re-staging dist (was " + stagedGav + ", now " + wantedGav + ")");
-            wipe(stageDir);
+            LOG.info("Re-staging " + stageDir + ": its inputs changed, or its last staging didn't finish");
+        } else if (!isEmpty(stageDir)) {
+            throw new IOException(stageDir + " isn't empty, and this plugin didn't stage it. Empty it, or point "
+                    + "the stage directory elsewhere.");
         }
+
+        // A marker without a fingerprint claims the directory, so a staging
+        // interrupted from here on is redone by the next run.
         Files.createDirectories(stageDir);
-        LOG.info("Unpacking " + wantedGav + " to " + stageDir);
+        writeMarker(marker, gav, null);
+        wipeAllBut(stageDir, marker);
+        LOG.info("Unpacking " + gav + " to " + stageDir);
         unzip(zip, stageDir);
-        writeMarker(marker, MARKER_KEY_DIST, wantedGav);
+        applyOverlaysAndCerts(spec, resolver);
+        writeMarker(marker, gav, fingerprint);
+    }
+
+    private static void applyOverlaysAndCerts(StageSpec spec, ArtifactResolver resolver) throws IOException {
+        if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
+            copyOverlays(spec, resolver);
+        }
+        if (spec.certImport().hasWork()) {
+            importCerts(spec.certImport(), spec.home());
+        }
     }
 
     /**
-     * Whether {@code zip} was written after {@code marker}. The marker is
-     * written last, after the unpack, so a newer zip was rebuilt
-     * ({@code mvn install}) or downloaded since: the same check as the
-     * dependency plugin's {@code overWriteIfNewer}.
+     * A fingerprint of what staging puts into the directory: the distribution
+     * and its zip, the overlays and their files, and the certificates and
+     * their truststore. Zips and jars are identified by size and modification
+     * time, so a rebuilt one counts as changed. Certificates are small, so
+     * their content counts, whatever their timestamps.
      */
-    private static boolean isNewer(Path zip, Path marker) throws IOException {
-        return Files.getLastModifiedTime(zip).compareTo(Files.getLastModifiedTime(marker)) > 0;
+    private static String fingerprint(StageSpec spec, Path zip, ArtifactResolver resolver) throws IOException {
+        List<String> inputs = new ArrayList<>();
+        inputs.add("distribution " + spec.distribution().toGav() + " " + identity(zip));
+        if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
+            inputs.add("overlays into " + spec.overlayTargetDir());
+            for (OverlayCoord overlay : spec.overlays()) {
+                inputs.add("overlay " + overlay.toGav() + " as " + overlay.getDestFileName()
+                        + (overlay.isSkip() ? " skipped" : " " + identity(resolver.resolve(overlay))));
+            }
+        }
+        CertImport certImport = spec.certImport();
+        if (certImport.hasWork()) {
+            inputs.add("truststore " + certImport.trustStore() + " " + certImport.password());
+            for (TrustedCert cert : certImport.certs()) {
+                inputs.add("cert " + cert.getAlias() + " " + sha256(Files.readAllBytes(cert.getFile().toPath())));
+            }
+        }
+
+        return sha256(String.join("\n", inputs).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String identity(Path file) throws IOException {
+        return Files.size(file) + " bytes, modified " + Files.getLastModifiedTime(file).toMillis();
+    }
+
+    private static String sha256(byte[] bytes) {
+        try {
+            return String.format("%064x", new BigInteger(1, MessageDigest.getInstance("SHA-256").digest(bytes)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Every JDK has SHA-256", e);
+        }
+    }
+
+    private static boolean isEmpty(Path dir) throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return !Files.exists(dir);
+        }
+        try (var entries = Files.list(dir)) {
+            return entries.findAny().isEmpty();
+        }
     }
 
     /**
@@ -321,18 +390,25 @@ public final class GlassFishStaging {
         }
     }
 
-    private static void wipe(Path dir) throws IOException {
-        if (!Files.exists(dir)) {
-            return;
-        }
+    /**
+     * Delete everything under {@code dir} except {@code keep}. Unpacking over
+     * leftovers would mix two installs, so a file that can't be deleted, for
+     * example because a GlassFish running from the install keeps it open,
+     * fails the staging.
+     */
+    private static void wipeAllBut(Path dir, Path keep) throws IOException {
+        List<Path> paths;
         try (var entries = Files.walk(dir)) {
-            entries.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    /* best-effort */
-                }
-            });
+            paths = entries.filter(path -> !path.equals(dir) && !path.equals(keep))
+                    .sorted(Comparator.reverseOrder())
+                    .collect(Collectors.toList());
+        }
+        for (Path path : paths) {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException e) {
+                throw new IOException("Could not delete " + path + " to stage " + dir + " afresh: " + e, e);
+            }
         }
     }
 
@@ -346,15 +422,13 @@ public final class GlassFishStaging {
         return props.getProperty(key);
     }
 
-    private static void writeMarker(Path marker, String key, String value) throws IOException {
+    /** Write the marker; a {@code null} fingerprint marks a staging that hasn't finished. */
+    private static void writeMarker(Path marker, String gav, String fingerprint) throws IOException {
         Properties props = new Properties();
-        if (Files.exists(marker)) {
-            try (InputStream in = Files.newInputStream(marker)) {
-                props.load(in);
-            }
+        props.setProperty(MARKER_KEY_DIST, gav);
+        if (fingerprint != null) {
+            props.setProperty(MARKER_KEY_FINGERPRINT, fingerprint);
         }
-        props.setProperty(key, value);
-        Files.createDirectories(marker.getParent());
         try (var out = Files.newOutputStream(marker)) {
             props.store(out, "GlassFish staging marker");
         }

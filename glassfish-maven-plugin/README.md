@@ -139,18 +139,28 @@ consequences:
 
 `provision` resolves `<distribution>` through the build's repositories and
 unpacks it under `stageDir`, keeping file permissions, so `asadmin` stays
-executable. A marker file in `stageDir` records the distribution:
+executable. Then it copies the overlays and imports the trusted
+certificates. A marker file in `stageDir` records a fingerprint of all of
+that: the distribution and its zip, the overlays and their files, and the
+certificates.
 
-- a re-run with the same distribution skips the unpack;
-- a different distribution replaces the old one (`stageDir` is wiped first),
-  and so does a zip that is newer than the unpack, such as a SNAPSHOT you
-  rebuilt with `mvn install`;
-- overlays are copied on every run, so a new overlay version applies
-  without a wipe;
-- trusted certificates are imported on every run too, after the overlays.
-  A truststore that already holds them is left as it is.
+- A re-run with the same fingerprint leaves the staged install alone.
+- Any change stages it afresh: `stageDir` is wiped and the zip unpacked
+  again. That covers another distribution, a zip or overlay rebuilt with
+  `mvn install`, and an overlay or certificate added, changed or removed.
+  It costs a full unpack, also while you iterate on a SNAPSHOT overlay.
+- A staging that didn't finish, for example because the build was
+  interrupted, is redone on the next run.
+- A non-empty `stageDir` without the marker fails the build and is left
+  alone, since it may hold an install this plugin didn't unpack. Empty it,
+  or point `stageDir` elsewhere.
+- A file that can't be deleted, for example because a GlassFish running from
+  the install keeps it open, fails the build.
 
-Modules of a parallel (`-T`) build that share a `stageDir` unpack it once.
+With `unpackSkip`, the install isn't the plugin's: overlays are copied and
+certificates imported into it on every run.
+
+Modules of a parallel (`-T`) build that share a `stageDir` stage it once.
 
 ## Overlays
 
@@ -210,14 +220,17 @@ reading the truststore its domain configuration names
 (`javax.net.ssl.trustStore`, the domain's own), so another file only helps
 if the domain is set up to use it.
 
-The import runs on every build. A certificate the truststore already holds
-under its alias is left alone, and a changed one replaces it. The truststore
-is written to a temporary file and moved into place, so an interrupted build
-can't leave half of it behind.
+When the plugin unpacks the distribution, a change to the certificates
+stages it afresh (see *Staging behaviour*), so the truststore holds exactly
+the configured ones.
 
-The import only adds and replaces. Removing a `<trustedCert>`, or setting
-`certsSkip`, leaves a certificate that an earlier build imported where it
-is. Staging GlassFish afresh, for example after `mvn clean`, drops it.
+With `unpackSkip`, the import runs on every build instead, and only adds and
+replaces entries. A certificate the truststore already holds under its
+alias is left alone, and a changed one replaces it. Removing a
+`<trustedCert>`, or setting `certsSkip`, leaves a certificate that an
+earlier build imported where it is. The truststore is written to a
+temporary file and moved into place, so an interrupted build can't leave
+half of it behind.
 
 `certsSkip` skips the import: `mvn verify -Dglassfish.certs.skip=true`.
 
