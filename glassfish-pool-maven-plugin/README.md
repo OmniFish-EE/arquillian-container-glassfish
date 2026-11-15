@@ -82,7 +82,9 @@ properties to its forks on its own. Entries you configure yourself win.
 Forwarding `gf.pool.source` lets test JVMs grow the pool when every slot is
 busy; see
 [Forwarding to failsafe](../glassfish-pool/README.md#forwarding-to-failsafe)
-for the details and how to opt out.
+for the details and how to opt out. `up` also sets `gf.pool.size`, the size
+of the pool it started, for the pom itself (see *Size the pool and the
+forks from `-T`*). The test JVMs don't read it, so it isn't forwarded.
 
 To keep explicit control instead, leave out `<extensions>` and bind the
 goals yourself. The phases come from the goals' defaults. Then also add the
@@ -106,7 +108,7 @@ note applies:
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
 | `stageDir` | `${project.build.directory}/dist` | the unpacked dist should live elsewhere, e.g. shared across modules. |
-| `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`. |
+| `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`, or set that to `${gf.pool.size}`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
 If something else in your build already unpacks GlassFish
@@ -385,6 +387,41 @@ pool outlives its build anyway, for example because Maven was killed, stop
 it with `glassfish-pool:down` before changing its configuration.
 
 ## Recipes
+
+### Size the pool and the forks from `-T`
+
+In a single-module build, such as a TCK runner, both can follow Maven's
+`-T`, so `mvn verify -T5` runs 5 forks against 5 slots:
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.arquillian</groupId>
+    <artifactId>glassfish-pool-maven-plugin</artifactId>
+    <extensions>true</extensions>
+    <configuration>
+        <poolSize>${session.request.degreeOfConcurrency}</poolSize>
+    </configuration>
+</plugin>
+
+<plugin>
+    <artifactId>maven-failsafe-plugin</artifactId>
+    <configuration>
+        <forkCount>${gf.pool.size}</forkCount>
+    </configuration>
+</plugin>
+```
+
+- `${session.request.degreeOfConcurrency}` is Maven's processed `-T`: 5 for
+  `-T5`, and the number of cores times N for `-TNC`. Without `-T`, it is 1,
+  as with `-T1`.
+- `forkCount` can't take that expression itself: it's a `String`, and Maven
+  passes the expression on as an `Integer`, which fails. So `up` publishes
+  the size of the pool it started as the project property `gf.pool.size`,
+  which failsafe resolves when it runs, after `up`.
+- Size both with `-T` then. `-Dgf.pool.size` would only change `forkCount`,
+  since the pom sets `<poolSize>`.
+- Keep this to single-module builds. With several modules, `-T` builds them
+  in parallel, and each module's pool would start that many slots.
 
 ### Run from the command line, no project binding
 

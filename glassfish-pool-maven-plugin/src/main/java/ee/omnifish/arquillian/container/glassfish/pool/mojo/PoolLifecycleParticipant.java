@@ -37,7 +37,7 @@ import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
  *
  * <p>It also forwards the pool layout to the test JVMs: failsafe passes on
  * {@code -D} user properties and its own {@code systemPropertyVariables}, but
- * not project properties. So each of {@link UpMojo#PUBLISHED_PROPERTIES} is
+ * not project properties. So each of {@link UpMojo#FORWARDED_PROPERTIES} is
  * added to failsafe's {@code systemPropertyVariables} as a {@code ${...}}
  * reference, which Maven resolves when failsafe runs, after {@code up} has
  * published the values. A reference {@code up} never published (e.g.
@@ -74,6 +74,6 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
      * unit tests.
      */
     static void forwardPoolProperties(Plugin failsafe) {
-        forwardProperties(failsafe, UpMojo.PUBLISHED_PROPERTIES);
+        forwardProperties(failsafe, UpMojo.FORWARDED_PROPERTIES);
     }
 }

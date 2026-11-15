@@ -4,6 +4,7 @@
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.List;
 
@@ -43,6 +44,8 @@ class PoolLifecycleParticipantTest {
             assertEquals("${gf.pool.postStartCommands}", variables.getChild("gf.pool.postStartCommands").getValue());
             assertEquals("${gf.pool.failOnCommandError}",
                     variables.getChild("gf.pool.failOnCommandError").getValue());
+            // Published for the pom, such as failsafe's forkCount; the test JVMs don't read it.
+            assertNull(variables.getChild("gf.pool.size"));
         }
     }
 
@@ -68,7 +71,7 @@ class PoolLifecycleParticipantTest {
         assertEquals("kept", forwarded.getChild("unrelated").getValue());
         assertEquals("${gf.pool.source}", forwarded.getChild("gf.pool.source").getValue());
         // Idempotent: each published property once, plus the unrelated variable.
-        assertEquals(UpMojo.PUBLISHED_PROPERTIES.size() + 1, forwarded.getChildCount());
+        assertEquals(UpMojo.FORWARDED_PROPERTIES.size() + 1, forwarded.getChildCount());
     }
 
     private static Xpp3Dom variables(Xpp3Dom configuration) {
