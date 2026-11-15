@@ -68,6 +68,8 @@ final class AsAdmin {
      * non-zero exit throws an {@link AsAdminException} with the output. If
      * asadmin hasn't exited within {@code timeout}, it is killed, together
      * with any processes it started, and an {@link AsAdminException} is thrown.
+     * An interrupted call kills them the same way, and keeps the thread's
+     * interrupt status.
      */
     String run(Duration timeout, String command, String... args) throws AsAdminException {
         Path asadmin = asadminScript();
@@ -92,15 +94,21 @@ final class AsAdmin {
         // survive. ByteArrayOutputStream is synchronized, so the output so far
         // can be read while the drainer still writes.
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        Process process;
+        try {
+            process = pb.start();
+        } catch (IOException e) {
+            throw new AsAdminException("asadmin " + command + " failed to run", e);
+        }
+
+        // Drain on another thread: asadmin can fill the pipe buffer, and a
+        // hung asadmin keeps its output open, so reading it here would keep
+        // the deadline below from ever being checked.
+        Thread drainer = new Thread(() -> drain(process, buf), "asadmin-" + command);
+        drainer.setDaemon(true);
+        drainer.start();
         int exit;
         try {
-            Process process = pb.start();
-            // Drain on another thread: asadmin can fill the pipe buffer, and a
-            // hung asadmin keeps its output open, so reading it here would keep
-            // the deadline below from ever being checked.
-            Thread drainer = new Thread(() -> drain(process, buf), "asadmin-" + command);
-            drainer.setDaemon(true);
-            drainer.start();
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 destroyTree(process);
                 throw new AsAdminException(
@@ -110,11 +118,11 @@ final class AsAdmin {
             // The end of the output can trail the exit a little.
             drainer.join(DRAIN_GRACE_MILLIS);
             exit = process.exitValue();
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new AsAdminException("asadmin " + command + " failed to run", e);
+        } catch (InterruptedException e) {
+            // A cancelled call must not leave asadmin, or what it started, running.
+            destroyTree(process);
+            Thread.currentThread().interrupt();
+            throw new AsAdminException("asadmin " + command + " was interrupted", e);
         }
         String out = buf.toString(StandardCharsets.UTF_8);
         if (exit != 0) {

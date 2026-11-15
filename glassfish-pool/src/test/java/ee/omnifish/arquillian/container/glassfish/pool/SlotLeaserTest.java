@@ -6,7 +6,6 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.lessThan;
@@ -412,16 +411,43 @@ class SlotLeaserTest {
 
     /**
      * Regression: a failed grow left its half-made slot directory behind, so
-     * every retry took the next index and made another clone.
+     * every retry took the next index and made another clone. The slot now
+     * stays, without ports.properties, and every retry recycles it.
      */
     @Test
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
-    void failedGrowFreesItsSlotIndex(@TempDir Path tmp) throws Exception {
+    void failedGrowLeavesItsSlotToBeRecycled(@TempDir Path tmp) throws Exception {
         Path poolDir = Files.createDirectories(tmp.resolve("pool"));
-        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), 1)), 1L);
+        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), 1)), 2L);
 
         assertThrows(IllegalStateException.class, leaser::lease);
-        assertThat(slotDirs(poolDir), empty());
+        assertThat(slotDirs(poolDir), contains("slot-1"));
+        assertThat(Files.exists(PoolPaths.portsFile(poolDir, 1)), equalTo(false));
+    }
+
+    /**
+     * A failed grow must not delete a slot whose server still runs: that would
+     * pull the install out from under the server, and the slot out of
+     * {@code down}'s reach. Here the slot was abandoned with its server
+     * running, and stopping the server fails, so recycling the slot fails
+     * until the lease times out.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void failedGrowKeepsASlotWhoseServerWontStop(@TempDir Path tmp) throws Exception {
+        Path poolDir = tmp.resolve("pool");
+        PoolConfig config = growingConfig(poolDir,
+                FakeGlassFish.install(tmp.resolve("source"), "case \"$*\" in *stop-domain*) exit 1 ;; esac\n"));
+        new PoolProvisioner(config).provisionSlot(1);
+        Files.delete(PoolPaths.portsFile(poolDir, 1));
+        fakes.add(FakeGlassFish.answerOn(config.adminPort(1)));
+
+        assertThrows(IllegalStateException.class, new SlotLeaser(config, 2L)::lease);
+
+        assertThat(Files.isDirectory(PoolPaths.slotDir(poolDir, 1).resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME)),
+                equalTo(true));
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> PoolBootstrap.down(config));
+        assertThat(e.getMessage(), containsString("1 (admin port " + config.adminPort(1) + ")"));
     }
 
     /**
@@ -472,7 +498,9 @@ class SlotLeaserTest {
 
         assertThat(e.getMessage(), containsString("boom"));
         assertThat(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start), lessThan(30L));
-        assertThat(slotDirs(poolDir), empty());
+        // Left unpublished, for the next grow to recycle.
+        assertThat(slotDirs(poolDir), contains("slot-1"));
+        assertThat(Files.exists(PoolPaths.portsFile(poolDir, 1)), equalTo(false));
     }
 
     private static void finalizeAndClose(LeaseHandle handle) {

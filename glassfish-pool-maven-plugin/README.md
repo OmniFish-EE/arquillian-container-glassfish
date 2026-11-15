@@ -381,9 +381,9 @@ killed (Ctrl+C, hard build failure), so slots don't get orphaned.
   port in the slot's window. Pick a different `adminPortBase`, or `nuke`
   any stale pool that didn't shut down cleanly.
 - **`Slot N provisioning failed during grow`** — usually means
-  `gf.pool.source` is wrong or the source install is corrupt. `mvn
-  glassfish-pool:status` will show the slot stuck in `bootstrap`; `nuke` and
-  retry.
+  `gf.pool.source` is wrong or the source install is corrupt. The slot stays,
+  shown as `orphan` by `mvn glassfish-pool:status`, and the next grow
+  re-creates it. Fix the source, or `nuke` and retry.
 - **`Command failed: …`** — a post-boot or post-start command failed, with
   `asadmin`'s output in the message. Fix the command, or set
   `failOnCommandError` to `false` to only log it.

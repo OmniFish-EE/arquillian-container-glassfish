@@ -46,8 +46,8 @@ import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailed
  * it, two threads would each see the lock free, both call
  * {@link PoolProvisioner#provisionClaimedSlot} on the same index, and race on
  * the {@code deleteRecursive}+clone of that slot's GF install tree. If
- * provisioning fails, the slot directory is removed, so the next grow can use
- * the index again.
+ * provisioning fails, the claim is released and the slot left without
+ * {@code ports.properties}, so the next grow recycles it.
  */
 public final class SlotLeaser {
 
@@ -181,6 +181,13 @@ public final class SlotLeaser {
      * <p>The slot lock — not the slot dir's existence — is the canonical claim:
      * the recycle path reuses an existing dir, so directory existence alone
      * cannot tell a second concurrent {@code tryGrow} caller to skip it.
+     *
+     * <p>A slot whose provisioning failed keeps its directory, without
+     * {@code ports.properties}, and its claim is released. That makes it
+     * recyclable, so the next grow re-creates it, once a server still running
+     * from it has stopped. Deleting the directory instead could pull the
+     * install out from under such a server, and the slot out of {@code down}'s
+     * reach.
      */
     private SlotLease tryGrow(Path poolDir) throws IOException {
         if (config.source() == null) {
@@ -200,32 +207,12 @@ public final class SlotLeaser {
         } catch (CommandFailedException e) {
             // failOnCommandError: the command would fail on every new slot,
             // so fail the lease rather than retry until the lease timeout.
-            discard(poolDir, claim);
+            claim.release();
             throw e;
         } catch (IOException | RuntimeException e) {
             LOG.warning(() -> "Slot " + claim.slot + " provisioning failed during grow: " + e.getMessage());
-            discard(poolDir, claim);
-            return null;
-        }
-    }
-
-    /**
-     * Give up a slot whose provisioning failed: release the claim and delete
-     * the slot directory, so the next grow can use the index again instead of
-     * skipping the half-made directory. Runs under {@code grow.lock}, which
-     * every claim takes, so no claim picks the index while it is being deleted.
-     */
-    private static void discard(Path poolDir, ClaimedSlot claim) {
-        try {
-            PoolLocks.withGrowLock(poolDir, () -> {
-                claim.release();
-                PoolProvisioner.deleteRecursive(PoolPaths.slotDir(poolDir, claim.slot));
-                return null;
-            });
-        } catch (IOException e) {
-            LOG.warning(() -> "Could not remove slot " + claim.slot + " after its failed grow: " + e.getMessage());
-        } finally {
             claim.release();
+            return null;
         }
     }
 
