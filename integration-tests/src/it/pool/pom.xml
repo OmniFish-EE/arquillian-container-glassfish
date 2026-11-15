@@ -130,12 +130,20 @@
             </plugin>
 
             <!--
-                No <systemPropertyVariables>: glassfish-pool:up publishes
-                the pool layout and the slot setup, and the extension
-                forwards them to the forked test JVM.
+                No gf.pool.* <systemPropertyVariables>: glassfish-pool:up
+                publishes the pool layout and the slot setup, and the
+                extension forwards them to the forked test JVM. up also
+                publishes gf.pool.size, which forkCount follows; pool.it.size
+                passes it on, so the test can check its value.
             -->
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <forkCount>${gf.pool.size}</forkCount>
+                    <systemPropertyVariables>
+                        <pool.it.size>${gf.pool.size}</pool.it.size>
+                    </systemPropertyVariables>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

@@ -32,6 +32,7 @@ import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_FAI
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_MAX_HEAP_SIZE;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_POOL_DIR;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_PORT_STRIDE;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SIZE;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_POST_BOOT_COMMANDS;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_POST_START_COMMANDS;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SOURCE;
@@ -45,19 +46,27 @@ import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SYS
  * the build isn't running tests, there's no reason to pay for a pool.
  *
  * <p>After the pool is up, publishes its layout and slot setup
- * ({@link #PUBLISHED_PROPERTIES}) as project properties so failsafe can
+ * ({@link #FORWARDED_PROPERTIES}) as project properties so failsafe can
  * forward them to the test JVMs as {@code ${gf.pool.dir}}-style references,
  * which Maven resolves when failsafe runs, after this goal. The test JVMs
  * create slots of their own when the pool grows or a slot dies, and set them
  * up the same way. {@link PoolLifecycleParticipant} adds those references to
  * failsafe's {@code systemPropertyVariables} when the plugin is declared with
  * {@code <extensions>true</extensions>}.
+ *
+ * <p>It also publishes {@code gf.pool.size}, the size of the pool it started,
+ * for the pom itself: with {@code <forkCount>${gf.pool.size}</forkCount>},
+ * failsafe follows the pool size, which may come from {@code -T}. The test
+ * JVMs don't read it, so it isn't forwarded.
  */
 @Mojo(name = "up", defaultPhase = LifecyclePhase.PRE_INTEGRATION_TEST, threadSafe = true)
 public class UpMojo extends AbstractStagingPoolMojo {
 
-    /** Pool layout and slot setup the test JVMs read, published as project properties after {@code up}. */
-    static final List<String> PUBLISHED_PROPERTIES = List.of(
+    /**
+     * Pool layout and slot setup the test JVMs read: published as project
+     * properties after {@code up}, and forwarded to failsafe by the extension.
+     */
+    static final List<String> FORWARDED_PROPERTIES = List.of(
             SYS_POOL_DIR,
             SYS_SOURCE,
             SYS_ADMIN_BASE,
@@ -106,7 +115,8 @@ public class UpMojo extends AbstractStagingPoolMojo {
     }
 
     /**
-     * Seed {@code projectProperties} with the pool layout of {@code config}.
+     * Seed {@code projectProperties} with the pool layout, slot setup and
+     * size of {@code config}.
      * <p>
      * A property that is already set (in the pom, or by an earlier execution)
      * is left alone so users can still override it; a value differing from the
@@ -141,6 +151,7 @@ public class UpMojo extends AbstractStagingPoolMojo {
         properties.put(SYS_ADMIN_BASE, String.valueOf(config.adminPortBase()));
         properties.put(SYS_PORT_STRIDE, String.valueOf(config.portStride()));
         properties.putAll(config.setup().toSystemProperties());
+        properties.put(SYS_SIZE, String.valueOf(config.size()));
 
         return properties;
     }

@@ -58,6 +58,16 @@ class UpMojoTest {
         assertFalse(properties.containsKey("gf.pool.postStartCommands"));
     }
 
+    /** So failsafe's {@code <forkCount>${gf.pool.size}</forkCount>} follows the pool, however it's sized. */
+    @Test
+    void publishesThePoolSize() {
+        Properties properties = new Properties();
+
+        UpMojo.publish(properties, new PoolConfig(POOL, SOURCE, 5, 14848, 100, List.of()), new SystemStreamLog());
+
+        assertEquals("5", properties.getProperty("gf.pool.size"));
+    }
+
     @Test
     void omitsSourceWhenUnknown() {
         Properties properties = new Properties();

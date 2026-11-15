@@ -184,6 +184,11 @@ The last two rows are the [slot setup](../glassfish-pool-maven-plugin/README.md#
 so that slots a test JVM creates get the same setup as the ones `up`
 started.
 
+`up` also sets `gf.pool.size`, the size of the pool it started, for the pom
+itself, as in failsafe's `<forkCount>${gf.pool.size}</forkCount>` (see
+[Size the pool and the forks from `-T`](../glassfish-pool-maven-plugin/README.md#size-the-pool-and-the-forks-from--t)).
+The test JVMs don't read it, so it isn't forwarded.
+
 Failsafe forwards `-D` properties and its own `<systemPropertyVariables>`
 to the forked JVM, but not project properties. So for every project that
 declares the pool plugin with `<extensions>true</extensions>`, the plugin

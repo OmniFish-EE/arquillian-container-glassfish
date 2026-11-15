@@ -8,6 +8,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 
 import java.io.BufferedReader;
@@ -100,6 +101,18 @@ public class GlassFishPoolDeployWarIT {
         assertThat(System.getProperty("gf.pool.failOnCommandError"), equalTo("true"));
         // Not configured, so up doesn't publish it, and the forwarded reference arrives empty.
         assertThat(System.getProperty("gf.pool.enableAssertions", ""), equalTo(""));
+    }
+
+    /**
+     * up publishes the pool size for the pom, where failsafe's forkCount
+     * takes it, but doesn't forward it, as the test JVMs don't read it. The
+     * pom passes it on as pool.it.size, to check its value.
+     */
+    @Test
+    @RunAsClient
+    public void poolSizeIsPublishedForThePom() {
+        assertThat(System.getProperty("pool.it.size"), equalTo("1"));
+        assertThat(System.getProperty("gf.pool.size"), nullValue());
     }
 
     /**
