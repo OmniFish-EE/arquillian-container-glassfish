@@ -106,14 +106,18 @@ public final class GlassFishStaging {
      * unpack.
      *
      * <p>Without the unpack, the install isn't staging's to own, so overlays
-     * and certificates are applied to it on every run.
+     * and certificates are applied to it on every run. That install may be
+     * one staged here before, which its fingerprint then no longer describes,
+     * so the fingerprint is dropped, and the next staging with the unpack
+     * starts afresh.
      */
     public static void stage(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path lockKey = spec.stageDir().toAbsolutePath().normalize();
         synchronized (STAGE_DIR_LOCKS.computeIfAbsent(lockKey, dir -> new Object())) {
             if (!spec.unpackSkip() && spec.distribution() != null) {
                 stageOwned(spec, resolver);
-            } else {
+            } else if ((!spec.overlaySkip() && !spec.overlays().isEmpty()) || spec.certImport().hasWork()) {
+                forgetFingerprint(spec.stageDir().resolve(MARKER_FILE));
                 applyOverlaysAndCerts(spec, resolver);
             }
         }
@@ -158,14 +162,17 @@ public final class GlassFishStaging {
 
     /**
      * A fingerprint of what staging puts into the directory: the distribution
-     * and its zip, the overlays and their files, and the certificates and
-     * their truststore. Zips and jars are identified by size and modification
-     * time, so a rebuilt one counts as changed. Certificates are small, so
-     * their content counts, whatever their timestamps.
+     * and its zip, the install root, the overlays and their files, and the
+     * certificates and their truststore. The install root counts because the
+     * default truststore is found from it. Zips and jars are identified by
+     * size and modification time, so a rebuilt one counts as changed.
+     * Certificates are small, so their content counts, whatever their
+     * timestamps.
      */
     private static String fingerprint(StageSpec spec, Path zip, ArtifactResolver resolver) throws IOException {
         List<String> inputs = new ArrayList<>();
         inputs.add("distribution " + spec.distribution().toGav() + " " + identity(zip));
+        inputs.add("home " + spec.home());
         if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
             inputs.add("overlays into " + spec.overlayTargetDir());
             for (OverlayCoord overlay : spec.overlays()) {
@@ -422,10 +429,22 @@ public final class GlassFishStaging {
         return props.getProperty(key);
     }
 
+    /**
+     * Drop the fingerprint from {@code marker}, if there is one. The marker
+     * stays, so the directory stays staging's, to be staged afresh.
+     */
+    private static void forgetFingerprint(Path marker) throws IOException {
+        if (Files.exists(marker) && readMarker(marker, MARKER_KEY_FINGERPRINT) != null) {
+            writeMarker(marker, readMarker(marker, MARKER_KEY_DIST), null);
+        }
+    }
+
     /** Write the marker; a {@code null} fingerprint marks a staging that hasn't finished. */
     private static void writeMarker(Path marker, String gav, String fingerprint) throws IOException {
         Properties props = new Properties();
-        props.setProperty(MARKER_KEY_DIST, gav);
+        if (gav != null) {
+            props.setProperty(MARKER_KEY_DIST, gav);
+        }
         if (fingerprint != null) {
             props.setProperty(MARKER_KEY_FINGERPRINT, fingerprint);
         }

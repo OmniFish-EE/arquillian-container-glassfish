@@ -274,6 +274,47 @@ class GlassFishStagingTest {
         assertThat(Files.readString(tmp.resolve("stage/glassfish9/glassfish/modules/faces.jar")), equalTo("build 1"));
     }
 
+    /**
+     * With unpackSkip, overlays and certificates may go into an install
+     * staged here before, which its fingerprint then no longer describes.
+     */
+    @Test
+    void anInstallChangedWithUnpackSkipIsStagedAfreshAfterwards(@TempDir Path tmp) throws Exception {
+        Path zip = zip(tmp, "glassfish9/glassfish/modules/shipped.jar");
+        Path jarA = Files.writeString(Files.createDirectories(tmp.resolve("repo")).resolve("a.jar"), "A");
+        Path jarB = Files.writeString(tmp.resolve("repo/b.jar"), "B");
+        OverlayCoord a = new OverlayCoord("g", "a", "1", "jar", null, "a.jar");
+        OverlayCoord b = new OverlayCoord("g", "b", "1", "jar", null, "b.jar");
+        ArtifactResolver resolver = coord -> "a".equals(coord.getArtifactId()) ? jarA
+                : "b".equals(coord.getArtifactId()) ? jarB : zip;
+        Path stage = tmp.resolve("stage");
+        Path modules = stage.resolve("glassfish9/glassfish/modules");
+        GlassFishStaging.stage(ownedSpec(stage, List.of(a), CertImport.NONE), resolver);
+        GlassFishStaging.stage(new StageSpec(stage, distribution("9.0.0"), true, stage.resolve("glassfish9"), modules,
+                List.of(b), false), resolver);
+
+        GlassFishStaging.stage(ownedSpec(stage, List.of(a), CertImport.NONE), resolver);
+
+        assertThat(Files.exists(modules.resolve("b.jar")), is(false));
+        assertThat(Files.exists(modules.resolve("a.jar")), is(true));
+    }
+
+    /** The default truststore is found from the install root, so another root needs the import too. */
+    @Test
+    void anotherInstallRootStagesAfresh(@TempDir Path tmp) throws Exception {
+        Path zip = zipWithTrustStores(tmp, "first", "second");
+        Path stage = tmp.resolve("stage");
+        CertImport certImport = certs(trusted("idp", "trusted-a.pem"));
+        GlassFishStaging.stage(new StageSpec(stage, distribution("9.0.0"), false, stage.resolve("first"), null,
+                List.of(), false, certImport), coord -> zip);
+
+        GlassFishStaging.stage(new StageSpec(stage, distribution("9.0.0"), false, stage.resolve("second"), null,
+                List.of(), false, certImport), coord -> zip);
+
+        Path secondTrustStore = stage.resolve("second").resolve(DOMAIN_CONFIG).resolve("cacerts.p12");
+        assertThat(load(secondTrustStore, "changeit").containsAlias("idp"), is(true));
+    }
+
     /** The stage directory may point at an install this plugin didn't unpack. */
     @Test
     void aNonEmptyStageDirWithoutAMarkerIsLeftAlone(@TempDir Path tmp) throws IOException {
@@ -519,9 +560,16 @@ class GlassFishStagingTest {
 
     /** A distribution zip whose domain has a truststore, like the real one. */
     private static Path zipWithTrustStore(Path tmp) throws Exception {
+        return zipWithTrustStores(tmp, "glassfish9");
+    }
+
+    /** A distribution zip with an install under each of {@code roots}, each with a domain truststore. */
+    private static Path zipWithTrustStores(Path tmp, String... roots) throws Exception {
         Path root = tmp.resolve("unzipped");
-        trustStore(Files.createDirectories(root.resolve("glassfish9").resolve(DOMAIN_CONFIG)).resolve("cacerts.p12"),
-                "PKCS12", "changeit");
+        for (String installRoot : roots) {
+            trustStore(Files.createDirectories(root.resolve(installRoot).resolve(DOMAIN_CONFIG)).resolve("cacerts.p12"),
+                    "PKCS12", "changeit");
+        }
         Path zip = tmp.resolve("with-truststore.zip");
         try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(zip));
              var files = Files.walk(root)) {

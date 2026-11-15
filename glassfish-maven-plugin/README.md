@@ -141,14 +141,15 @@ consequences:
 unpacks it under `stageDir`, keeping file permissions, so `asadmin` stays
 executable. Then it copies the overlays and imports the trusted
 certificates. A marker file in `stageDir` records a fingerprint of all of
-that: the distribution and its zip, the overlays and their files, and the
-certificates.
+that: the distribution and its zip, the install root, the overlays and their
+files, and the certificates.
 
 - A re-run with the same fingerprint leaves the staged install alone.
 - Any change stages it afresh: `stageDir` is wiped and the zip unpacked
-  again. That covers another distribution, a zip or overlay rebuilt with
-  `mvn install`, and an overlay or certificate added, changed or removed.
-  It costs a full unpack, also while you iterate on a SNAPSHOT overlay.
+  again. That covers another distribution or `home`, a zip or overlay
+  rebuilt with `mvn install`, and an overlay or certificate added, changed
+  or removed. It costs a full unpack, also while you iterate on a SNAPSHOT
+  overlay.
 - A staging that didn't finish, for example because the build was
   interrupted, is redone on the next run.
 - A non-empty `stageDir` without the marker fails the build and is left
@@ -158,7 +159,9 @@ certificates.
   the install keeps it open, fails the build.
 
 With `unpackSkip`, the install isn't the plugin's: overlays are copied and
-certificates imported into it on every run.
+certificates imported into it on every run. If `stageDir` holds an install
+the plugin staged, such a run drops its fingerprint, so the next run
+without `unpackSkip` stages it afresh.
 
 Modules of a parallel (`-T`) build that share a `stageDir` stage it once.
 

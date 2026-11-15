@@ -171,12 +171,15 @@ repositories and unpacks it under `<stageDir>`
 (default `${project.build.directory}/dist`) before provisioning runs.
 Overlays are copied and trusted certificates imported after the unpack. A
 marker file records a fingerprint of all of that, so re-runs leave the
-staged install alone until something changes: another distribution, a zip
-or overlay rebuilt with `mvn install`, or an overlay or certificate added,
-changed or removed. Then `stageDir` is wiped and staged afresh. A non-empty
-`stageDir` without the marker fails the build and is left alone. With
-`<unpackSkip>true</unpackSkip>`, the plugin doesn't own the install: it
-copies the overlays and imports the certificates into it on every run.
+staged install alone until something changes: another distribution or
+`poolSource`, a zip or overlay rebuilt with `mvn install`, or an overlay or
+certificate added, changed or removed. Then `stageDir` is wiped and staged
+afresh. A non-empty `stageDir` without the marker fails the build and is
+left alone. With `<unpackSkip>true</unpackSkip>`, the plugin doesn't own the
+install: it copies the overlays and imports the certificates into it on
+every run. If `stageDir` holds an install the plugin staged, such a run
+drops its fingerprint, so the next run without `unpackSkip` stages it
+afresh.
 
 This is the same staging as `glassfish:provision` in the
 [GlassFish Maven Plugin](../glassfish-maven-plugin/), with the same
