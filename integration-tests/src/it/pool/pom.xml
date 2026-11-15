@@ -119,6 +119,13 @@
                     <postStartCommands>
                         create-system-properties "pool.it.poststart=applied after start"
                     </postStartCommands>
+                    <!--
+                        Run once, on a brief start of the staged install, so
+                        every slot cloned from it has the property.
+                    -->
+                    <sourcePostBootCommands>
+                        create-system-properties pool.it.source=applied
+                    </sourcePostBootCommands>
                 </configuration>
             </plugin>
 

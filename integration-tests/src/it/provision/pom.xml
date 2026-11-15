@@ -86,6 +86,15 @@
                             <file>${project.basedir}/trusted.pem</file>
                         </trustedCert>
                     </trustedCerts>
+                    <!--
+                        Run once, on a brief start during staging. The second
+                        command sets a port, which keeps its new value when the
+                        brief start gives the domain its own ports back.
+                    -->
+                    <postBootCommands>
+                        create-system-properties provision.it.postboot=applied
+                        set configs.config.server-config.network-config.network-listeners.network-listener.http-listener-2.port=18181
+                    </postBootCommands>
                 </configuration>
             </plugin>
 

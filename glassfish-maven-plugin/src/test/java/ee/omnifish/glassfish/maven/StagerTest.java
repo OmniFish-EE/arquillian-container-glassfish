@@ -26,6 +26,7 @@ import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.StagingCommands;
 import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 class StagerTest {
@@ -128,6 +129,40 @@ class StagerTest {
                 () -> stager.spec(null, tmp.toFile(), true, tmp.toFile(), null, null, false, certImport, HOME));
 
         assertThat(e.getMessage(), containsString("needs an <alias> and a <file>"));
+    }
+
+    @Test
+    void commandsReachTheSpec() throws Exception {
+        Path zip = zip("glassfish9/glassfish/bin/asadmin");
+        StagingCommands commands = new StagingCommands("create-file-user --groups g u", true);
+
+        StageSpec spec = new Stager(coord -> zip, log).spec(distribution("9.0.0"), tmp.toFile(), false, null, null,
+                null, false, CertImport.NONE, commands, HOME);
+
+        assertEquals(commands, spec.commands());
+    }
+
+    @Test
+    void aCommandWithAnUnclosedQuoteFails() {
+        Stager stager = new Stager(coord -> zip("glassfish9/glassfish/bin/asadmin"), log);
+        StagingCommands commands = new StagingCommands("set a=\"b", true);
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class, () -> stager.spec(
+                distribution("9.0.0"), tmp.toFile(), false, null, null, null, false, CertImport.NONE, commands, HOME));
+
+        assertThat(e.getMessage(), containsString("Unclosed"));
+    }
+
+    @Test
+    void commandsWithoutAnInstallRootNameTheCallersHomeParameter() {
+        Stager stager = new Stager(coord -> zip("glassfish9/bin/asadmin", "extras/readme.txt"), log);
+        StagingCommands commands = new StagingCommands("set a=b", true);
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class, () -> stager.spec(
+                distribution("9.0.0"), tmp.toFile(), false, null, null, null, false, CertImport.NONE, commands,
+                "<poolSource> (gf.pool.source)"));
+
+        assertThat(e.getMessage(), containsString("set <poolSource> (gf.pool.source)"));
     }
 
     private static DistributionCoord distribution(String version) {

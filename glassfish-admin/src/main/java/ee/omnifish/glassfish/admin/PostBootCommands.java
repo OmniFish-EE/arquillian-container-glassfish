@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish;
+package ee.omnifish.glassfish.admin;
 
 import java.lang.System.Logger;
 import java.util.ArrayList;
@@ -23,7 +23,7 @@ import static java.util.Arrays.copyOfRange;
  * and the warn-and-continue policy so each container module only provides the
  * "how to run one command" half.
  *
- * <p>The pool plugin's command lists go through {@link #run} instead, which
+ * <p>The plugins' command lists go through {@link #run} instead, which
  * splits lines with the quote-aware {@link #words} and can stop at the first
  * failure.
  */

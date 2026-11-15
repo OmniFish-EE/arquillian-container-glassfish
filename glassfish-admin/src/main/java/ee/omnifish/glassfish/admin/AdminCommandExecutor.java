@@ -8,16 +8,17 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish;
+package ee.omnifish.glassfish.admin;
 
 import java.util.List;
 
 /**
  * Executes a single GlassFish admin command against a running DAS. Each
- * container module supplies its own implementation — managed via an asadmin
+ * caller supplies its own implementation — managed via an asadmin
  * subprocess, embedded via the in-process {@code CommandRunner}, pool via
- * asadmin targeting the leased slot's admin port — so {@link PostBootCommands}
- * can own the shared parse-and-loop without knowing how a command is run.
+ * asadmin targeting the leased slot's admin port, staging via asadmin on its
+ * brief start — so {@link PostBootCommands} can own the shared parse-and-loop
+ * without knowing how a command is run.
  */
 @FunctionalInterface
 public interface AdminCommandExecutor {

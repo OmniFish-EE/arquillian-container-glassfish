@@ -43,11 +43,11 @@ import org.w3c.dom.NodeList;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotLease;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotLeaser;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
 
 /**
  * End-to-end smoke test for the pool container: provisions a 1-slot pool
@@ -186,6 +186,8 @@ public class GlassFishPoolDeployWarIT {
         assertThat(DomainXmlEditor.jvmOptions(domainXml), hasItems("-Dpool.it.sysprop=present", "-Xmx1g"));
         assertThat(systemProperty(domainXml, "pool.it.postboot"), equalTo("applied"));
         assertThat(systemProperty(domainXml, "pool.it.poststart"), equalTo("applied after start"));
+        // Set on the staged install, which the slot was cloned from.
+        assertThat(systemProperty(domainXml, "pool.it.source"), equalTo("applied"));
         // Imported into the staged install, which the slot was cloned from.
         KeyStore trustStore = KeyStore.getInstance(config.resolve("cacerts.p12").toFile(), "changeit".toCharArray());
         assertThat(trustStore.containsAlias("pool-it"), equalTo(true));

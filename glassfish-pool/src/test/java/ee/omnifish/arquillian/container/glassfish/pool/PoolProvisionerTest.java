@@ -22,8 +22,8 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
+import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
 
 /**
  * Slot setup and restart against a {@link FakeGlassFish}, whose asadmin logs

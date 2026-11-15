@@ -18,7 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Logger;
 
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
+import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
 
 /**
  * Pure-Java port of the file-lock-based slot lease protocol from the Faces

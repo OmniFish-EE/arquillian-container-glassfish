@@ -23,8 +23,9 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
+import ee.omnifish.glassfish.admin.AsAdmin;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
+import ee.omnifish.glassfish.admin.PostBootCommands;
 
 /**
  * Provisions a single slot: clone the source install, patch the per-slot

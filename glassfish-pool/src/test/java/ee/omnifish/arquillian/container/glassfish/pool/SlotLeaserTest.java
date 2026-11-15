@@ -29,7 +29,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
+import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
 
 import java.util.ArrayList;
 import java.util.List;

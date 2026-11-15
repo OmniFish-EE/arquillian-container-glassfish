@@ -35,7 +35,8 @@ The following configuration options are available for all GlassFish Arquillian c
 | `properties` | `glassfish.properties` | String | _none_ | All | Additional deployment properties for the deployment -  keyword-value  pairs.
 | `type` | `glassfish.type` | String | _none_ | All | Deployment archive type (e.g., `osgi`)
 | `domain` | `glassfish.domain` | String | _none_ | Managed | GlassFish domain name. The default will be used if not specified
-| `postBootCommands` | `glassfish.postBootCommands` | String | _none_ | Managed, Embedded | Multiline asadmin commands executed after boot
+| `postBootCommands` | `glassfish.postBootCommands` | String | _none_ | Managed, Embedded | Multiline asadmin commands executed after boot. For Managed, the old name of `postStartCommands`
+| `postStartCommands` | `glassfish.postStartCommands` | String | _none_ | Managed | Multiline asadmin commands executed after every start, on the admin port
 | `systemProperties` | `glassfish.systemProperties` | String | _none_ | Managed | Multiline JVM system properties
 | `httpsPortAsDefault` | `glassfish.httpsPortAsDefault` | boolean | `false` | All | Use HTTPS port as default connector
 | `debug` | `glassfish.debug` | boolean | `false` | Managed | Start server in debug mode
@@ -78,5 +79,6 @@ The following configuration options are available for all GlassFish Arquillian c
 ----
 
 - Properties like `postBootCommands` and `systemProperties` support multiline values.
-- The pool container runs `postBootCommands` on every lease of a slot. For commands that run once per slot, or after every slot start, use the pool plugin's `<postBootCommands>` and `<postStartCommands>`; server settings for pool slots, such as `systemProperties`, also go on the plugin.
+- The managed container runs `postStartCommands`, and `postBootCommands` under its old name, after every start. For setup that should run once, use the GlassFish Maven Plugin's `<postBootCommands>`: `glassfish:provision` runs them on a brief start of the staged install, so they are in place before the tests start it.
+- The pool container runs `postBootCommands` on every lease of a slot, and doesn't run `postStartCommands`, since a lease isn't a start. For commands that run once per slot, or after every slot start, use the pool plugin's `<postBootCommands>` and `<postStartCommands>`; server settings for pool slots, such as `systemProperties`, also go on the plugin.
 - When `authorisation` is enabled, both `adminUser` and `adminPassword` must be provided.

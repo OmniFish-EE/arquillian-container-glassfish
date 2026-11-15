@@ -3,18 +3,24 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
 
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
+import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.StagingCommands;
 
 class UpMojoTest {
 
@@ -71,5 +77,21 @@ class UpMojoTest {
 
         assertEquals("/somewhere/else", properties.getProperty("gf.pool.dir"));
         assertEquals(SOURCE.toString(), properties.getProperty("gf.pool.source"));
+    }
+
+    /** On a source staging doesn't own, the commands would run on every build. */
+    @Test
+    void sourcePostBootCommandsNeedAnUnpack() {
+        StagingCommands commands = new StagingCommands("create-file-user --groups g u", true);
+        DistributionCoord distribution = new DistributionCoord();
+        distribution.setVersion("9.0.0");
+
+        MojoExecutionException withUnpackSkip = assertThrows(MojoExecutionException.class,
+                () -> AbstractStagingPoolMojo.requireUnpack(commands, true, distribution));
+        assertThrows(MojoExecutionException.class, () -> AbstractStagingPoolMojo.requireUnpack(commands, false, null));
+        assertDoesNotThrow(() -> AbstractStagingPoolMojo.requireUnpack(commands, false, distribution));
+
+        assertTrue(withUnpackSkip.getMessage().contains("give that goal the commands as <postBootCommands>"),
+                withUnpackSkip.getMessage());
     }
 }

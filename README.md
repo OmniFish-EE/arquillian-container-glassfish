@@ -42,12 +42,24 @@ Then forked from:
         <distribution>
             <version>9.0.0</version>
         </distribution>
+        <postBootCommands>
+            create-jms-resource --restype jakarta.jms.Queue --property Name=queue_test queue_test
+            create-jms-resource --restype jakarta.jms.Topic --property Name=topic_test topic_test
+            set configs.config.server-config.cdi-service.enable-implicit-cdi=true
+            create-file-user --groups student student
+            create-file-user --groups printer printer
+            create-file-user --groups student:alarm alarm
+        </postBootCommands>
     </configuration>
 </plugin>
 ```
 
+ The plugin runs `<postBootCommands>` once, on a brief start of the GlassFish it staged, so the
+ setup is in place before the tests start it.
+
  Configure further settings on surefire or failsafe. Some examples given below. Without the
- plugin, also set `glassfish.home` here, to your GlassFish install.
+ plugin, also set `glassfish.home` here, to your GlassFish install. Commands in
+ `glassfish.postStartCommands` run after every start.
 
 ```xml
 <plugin>
@@ -59,15 +71,6 @@ Then forked from:
             <glassfish.enableDerby>true</glassfish.enableDerby>
             <glassfish.maxHeapSize>2048m</glassfish.maxHeapSize>
             <glassfish.enableAssertions>:org.jboss.cdi.tck...</glassfish.enableAssertions>
-
-            <glassfish.postBootCommands>
-                create-jms-resource --restype jakarta.jms.Queue --property Name=queue_test queue_test
-                create-jms-resource --restype jakarta.jms.Topic --property Name=topic_test topic_test
-                set configs.config.server-config.cdi-service.enable-implicit-cdi=true
-                create-file-user --groups student student
-                create-file-user --groups printer printer
-                create-file-user --groups student:alarm alarm
-            </glassfish.postBootCommands>
         </systemPropertyVariables>
     </configuration>
 </plugin>
