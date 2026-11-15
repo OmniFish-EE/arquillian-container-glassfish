@@ -54,8 +54,12 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     @Parameter
     protected DistributionCoord distribution;
 
-    /** Where the dist zip is unpacked. Default {@code ${project.build.directory}/dist}. */
-    @Parameter(property = "gf.pool.stageDir", defaultValue = "${project.build.directory}/dist")
+    /**
+     * Where the dist zip is unpacked. Defaults to {@code dist} in the
+     * project's build directory, or with {@code multiModule} in the top-level
+     * project's.
+     */
+    @Parameter(property = "gf.pool.stageDir")
     protected File stageDir;
 
     /** Skip the dist unpack. Set to {@code true} when reusing an existing install. */
@@ -150,7 +154,7 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
         CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
                 trustStorePassword, certsSkip);
-        StageSpec spec = stager.spec(distribution, stageDir, unpackSkip, poolSource, overlays, overlayTargetDir,
+        StageSpec spec = stager.spec(distribution, stageDir(), unpackSkip, poolSource, overlays, overlayTargetDir,
                 overlaySkip, certImport, sourceCommands, POOL_SOURCE);
         if (poolSource == null && spec.home() != null) {
             poolSource = spec.home().toFile();
@@ -166,6 +170,11 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
                 throw new RuntimeException("Pool staging failed: " + e.getMessage(), e);
             }
         };
+    }
+
+    /** {@code stageDir}, or its default. */
+    protected File stageDir() {
+        return (stageDir != null) ? stageDir : inBuildDirectory("dist");
     }
 
     /**

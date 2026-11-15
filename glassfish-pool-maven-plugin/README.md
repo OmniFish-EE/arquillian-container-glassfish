@@ -69,7 +69,8 @@ They pick up the plugin-level `<configuration>`, and they work with any
 packaging (`jar`, `war`, `pom`, …). A goal you already bind yourself is
 left alone, so existing poms that keep an `<executions>` block don't run
 `up` or `down` twice. A plugin declared only in `<pluginManagement>` binds
-nothing.
+nothing. With `multiModule`, it doesn't bind `down`, and stops the pool once,
+after the whole build (see *Sharing one pool across modules*).
 
 The extension also forwards the pool layout and the
 [slot setup](#slot-setup) to the test JVMs. After the pool is up, `up` sets
@@ -104,10 +105,10 @@ note applies:
 
 | Parameter | Default | Override when… |
 | --------- | ------- | -------------- |
-| `poolDir` | `${project.build.directory}/pool` | several modules share one pool, or two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
+| `poolDir` | `pool` in the project's build directory, or the top-level project's with `multiModule` | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
-| `stageDir` | `${project.build.directory}/dist` | the unpacked dist should live elsewhere, e.g. shared across modules. |
+| `stageDir` | `dist` in the project's build directory, or the top-level project's with `multiModule` | the unpacked dist should live elsewhere. |
 | `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`, or set that to `${gf.pool.size}`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
@@ -125,7 +126,8 @@ the *Staging* and *Slot setup* blocks.
 
 | Parameter       | Property             | Default                         | Notes                                                  |
 | --------------- | -------------------- | ------------------------------- | ------------------------------------------------------ |
-| `poolDir`       | `gf.pool.dir`        | `${project.build.directory}/pool` | Pool root. Created if missing. **Required.**         |
+| `poolDir`       | `gf.pool.dir`        | `target/pool`, see *Defaults*   | Pool root. Created if missing.                         |
+| `multiModule`   | `gf.pool.multiModule` | `false`                        | All modules of the build share one pool. See *Sharing one pool across modules*. |
 | `poolSource`    | `gf.pool.source`     | derived from `<distribution>`   | Source GlassFish install. Required for `up`/`provision`; defaults to `stageDir/<zip root>` when a `<distribution>` is unpacked. |
 | `poolSize`      | `gf.pool.size`       | `1`                             | Number of slots `up` provisions.                       |
 | `adminPortBase` | `gf.pool.adminBase`  | `14848`                         | Admin port for slot 1.                                 |
@@ -140,7 +142,7 @@ build isn't running tests there's no reason to pay for a pool.
 | Parameter         | Property               | Default                          | Notes                                                                  |
 | ----------------- | ---------------------- | -------------------------------- | ---------------------------------------------------------------------- |
 | `distribution`    | (nested `<distribution>`) | (none)                        | Optional GAV of a GlassFish dist to resolve and unpack into `stageDir`. Only `<version>` is required; `groupId`/`artifactId`/`type` default to `org.glassfish.main.distributions`/`glassfish`/`zip`. |
-| `stageDir`        | `gf.pool.stageDir`     | `${project.build.directory}/dist`| Where the dist zip is unpacked.                                        |
+| `stageDir`        | `gf.pool.stageDir`     | `target/dist`, see *Defaults*    | Where the dist zip is unpacked.                                        |
 | `unpackSkip`      | `gf.pool.unpack.skip`  | `false`                          | Skip the unpack — assume `poolSource` already points at a staged install. |
 | `overlays`        | (nested `<overlays>`)  | (empty)                          | Artifacts copied into `overlayTargetDir` after unpack. See *Overlays*.  |
 | `overlayTargetDir`| `gf.pool.overlayTargetDir` | `${poolSource}/glassfish/modules` | Where overlay jars land. Default matches the standard GlassFish layout. |
@@ -380,11 +382,48 @@ With the managed Arquillian Container, these settings live in failsafe's
 
 `up` reuses slots still running from an earlier build as they are, without
 applying a changed setup. Normally there are none: `down` stops every slot
-in `post-integration-test`, and a shutdown hook stops them when the build is
-interrupted. If `stop-domain` fails, `down` retries with
+in `post-integration-test`, or after the build with `multiModule`, and a
+shutdown hook stops them when the build is interrupted. If `stop-domain` fails, `down` retries with
 `stop-domain --kill`, and fails if a slot still answers after that. If a
 pool outlives its build anyway, for example because Maven was killed, stop
 it with `glassfish-pool:down` before changing its configuration.
+
+## Sharing one pool across modules
+
+When all modules of a build test against one pool, as in a TCK with a
+module per area, set `multiModule` in the parent:
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.arquillian</groupId>
+    <artifactId>glassfish-pool-maven-plugin</artifactId>
+    <extensions>true</extensions>
+    <configuration>
+        <multiModule>true</multiModule>
+        <distribution>9.0.0</distribution>
+    </configuration>
+</plugin>
+```
+
+- `poolDir` and `stageDir` default to the top-level project's build
+  directory, so `target/pool` and `target/dist` where Maven runs, instead of
+  each module's. Explicit values win. `up` publishes `gf.pool.dir` as
+  always, so the test JVMs get the shared directory. Run Maven in a module,
+  and that module is the top-level project.
+- The first `up` in the build starts the pool. The others find it running
+  and return straight away.
+- The extension doesn't bind `down` after each module, which would stop the
+  pool while later modules still need it. It stops the pool once, after the
+  whole build. A slot that keeps running then fails the build, as with
+  `down`; Maven reports that after its build summary. A shutdown hook still
+  stops the pool when the build is interrupted.
+- All modules share one pool and one slot setup, so configure the plugin
+  in the parent. A module's own settings don't reach slots that already
+  run.
+- The extension reads `multiModule` from the plugin-level
+  `<configuration>`, or `-Dgf.pool.multiModule`, not from an `<execution>`.
+- Without `<extensions>true</extensions>`, `multiModule` only changes the
+  defaults, and binding `down` is up to you.
 
 ## Recipes
 

@@ -13,8 +13,10 @@ package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 import java.io.File;
 import java.nio.file.Path;
 
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.project.MavenProject;
 
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
@@ -25,11 +27,33 @@ import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
  */
 abstract class AbstractPoolMojo extends AbstractMojo {
 
-    /** Where the pool of slots is laid out. Created if missing. */
-    @Parameter(property = "gf.pool.dir",
-               defaultValue = "${project.build.directory}/pool",
-               required = true)
+    /** The {@code -D} switch for {@link #multiModule}, which the lifecycle participant reads too. */
+    static final String MULTI_MODULE_PROPERTY = "gf.pool.multiModule";
+
+    /**
+     * Where the pool of slots is laid out. Created if missing. Defaults to
+     * {@code pool} in the project's build directory, or with
+     * {@link #multiModule} in the top-level project's.
+     */
+    @Parameter(property = "gf.pool.dir")
     protected File poolDir;
+
+    /**
+     * Whether all modules of the build share one pool. {@code poolDir} and
+     * {@code stageDir} then default to the top-level project's build
+     * directory. With {@code <extensions>true</extensions>}, the pool stops
+     * once, after the whole build, instead of after each module's integration
+     * tests. Set it in the parent's plugin configuration, with the rest of
+     * the pool's settings, which all modules share.
+     */
+    @Parameter(property = MULTI_MODULE_PROPERTY, defaultValue = "false")
+    protected boolean multiModule;
+
+    @Parameter(defaultValue = "${project}", readonly = true, required = true)
+    protected MavenProject project;
+
+    @Parameter(defaultValue = "${session}", readonly = true, required = true)
+    protected MavenSession session;
 
     /**
      * Source GlassFish install used as the template for slot clones. Required
@@ -134,6 +158,27 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     @Parameter(property = "glassfish.suspend", defaultValue = "false")
     protected boolean suspend;
 
+    /** {@code poolDir}, or its default. */
+    protected File poolDir() {
+        return (poolDir != null) ? poolDir : inBuildDirectory("pool");
+    }
+
+    /**
+     * {@code name} in the project's build directory, or with
+     * {@link #multiModule} in the top-level project's. Maven's stand-in
+     * project for a run without a pom leaves its build directory unresolved,
+     * so then it's {@code target} where Maven runs.
+     */
+    protected File inBuildDirectory(String name) {
+        MavenProject buildProject = multiModule ? session.getTopLevelProject() : project;
+        String buildDirectory = buildProject.getBuild().getDirectory();
+        if (buildDirectory == null || buildDirectory.contains("${")) {
+            return new File(new File(session.getExecutionRootDirectory(), "target"), name);
+        }
+
+        return new File(buildDirectory, name);
+    }
+
     protected PoolConfig poolConfig() {
         Path source = (poolSource == null) ? null : poolSource.toPath();
         SlotSetup setup = new SlotSetup(
@@ -143,6 +188,6 @@ abstract class AbstractPoolMojo extends AbstractMojo {
                 PoolConfig.parseLines(postBootCommands),
                 PoolConfig.parseLines(postStartCommands),
                 failOnCommandError);
-        return new PoolConfig(poolDir.toPath(), source, poolSize, adminPortBase, portStride, setup, debug, suspend);
+        return new PoolConfig(poolDir().toPath(), source, poolSize, adminPortBase, portStride, setup, debug, suspend);
     }
 }
