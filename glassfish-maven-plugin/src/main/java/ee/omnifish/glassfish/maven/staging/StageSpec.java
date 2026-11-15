@@ -18,8 +18,9 @@ import java.util.Objects;
 /**
  * Aggregates a staging run for {@link GlassFishStaging#stage}: where to unpack
  * the GlassFish dist, which dist artifact to fetch, where the install lands,
- * which overlay jars to drop into its {@code modules/}, and which certificates
- * to import into its truststore. Unpack, overlay and import each have their
+ * which overlay jars to drop into its {@code modules/}, which certificates to
+ * import into its truststore, and which commands to run on it during a brief
+ * start. Unpack, overlay and import each have their
  * own skip flag so callers can opt out of one without the others (e.g. reuse
  * an existing install but still overlay a custom Mojarra into it).
  */
@@ -33,6 +34,7 @@ public final class StageSpec {
     private final List<OverlayCoord> overlays;
     private final boolean overlaySkip;
     private final CertImport certImport;
+    private final StagingCommands commands;
 
     /** A staging run that imports no certificates. */
     public StageSpec(Path stageDir,
@@ -53,6 +55,19 @@ public final class StageSpec {
                      List<OverlayCoord> overlays,
                      boolean overlaySkip,
                      CertImport certImport) {
+        this(stageDir, distribution, unpackSkip, home, overlayTargetDir, overlays, overlaySkip, certImport,
+                StagingCommands.NONE);
+    }
+
+    public StageSpec(Path stageDir,
+                     ArtifactCoord distribution,
+                     boolean unpackSkip,
+                     Path home,
+                     Path overlayTargetDir,
+                     List<OverlayCoord> overlays,
+                     boolean overlaySkip,
+                     CertImport certImport,
+                     StagingCommands commands) {
         this.stageDir = stageDir;
         this.distribution = distribution;
         this.unpackSkip = unpackSkip;
@@ -61,6 +76,7 @@ public final class StageSpec {
         this.overlays = (overlays == null) ? List.of() : Collections.unmodifiableList(overlays);
         this.overlaySkip = overlaySkip;
         this.certImport = (certImport == null) ? CertImport.NONE : certImport;
+        this.commands = (commands == null) ? StagingCommands.NONE : commands;
     }
 
     public Path stageDir() {
@@ -100,6 +116,10 @@ public final class StageSpec {
         return certImport;
     }
 
+    public StagingCommands commands() {
+        return commands;
+    }
+
     /** True iff at least one of unpack, overlay or import would do real work. */
     public boolean hasWork() {
         boolean willUnpack = !unpackSkip && distribution != null;
@@ -120,12 +140,13 @@ public final class StageSpec {
                 && Objects.equals(home, other.home)
                 && Objects.equals(overlayTargetDir, other.overlayTargetDir)
                 && Objects.equals(overlays, other.overlays)
-                && Objects.equals(certImport, other.certImport);
+                && Objects.equals(certImport, other.certImport)
+                && Objects.equals(commands, other.commands);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(stageDir, distribution, unpackSkip, home, overlayTargetDir, overlays, overlaySkip,
-                certImport);
+                certImport, commands);
     }
 }

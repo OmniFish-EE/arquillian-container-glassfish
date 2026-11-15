@@ -27,8 +27,9 @@ import java.util.logging.Logger;
 
 /**
  * Thin wrapper around {@code glassfish/bin/asadmin}. Used by the pool to
- * start, restart and stop a slot's install and to run commands on it. Every
- * call has a deadline.
+ * start, restart and stop a slot's install and to run commands on it, and by
+ * staging to start the staged install briefly for its commands. Every call
+ * has a deadline.
  *
  * <p>Acknowledged duplication with managed's {@code GlassFishServerControl},
  * which streams its output to the console instead.

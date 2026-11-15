@@ -39,9 +39,9 @@ import org.xml.sax.SAXException;
 
 /**
  * DOM-based editor for a GlassFish {@code domain.xml}: rewrites the
- * {@code port} attribute on the admin/http/https {@code <network-listener>}
- * elements, and upserts {@code <jvm-options>} children under each
- * {@code <java-config>}.
+ * {@code port} attribute on the server's admin/http/https
+ * {@code <network-listener>} elements, and upserts {@code <jvm-options>}
+ * children under each {@code <java-config>}.
  *
  * <p>Writes go through a sibling tmp file + atomic move so the underlying
  * inode is replaced rather than truncated, and an interrupted write can't
@@ -49,15 +49,31 @@ import org.xml.sax.SAXException;
  */
 public final class DomainXmlEditor {
 
+    /** The listener the admin port belongs to. */
+    public static final String ADMIN_LISTENER = "admin-listener";
+
+    /** The listener the http port belongs to. */
+    public static final String HTTP_LISTENER = "http-listener-1";
+
+    /** The listener the https port belongs to. */
+    public static final String HTTPS_LISTENER = "http-listener-2";
+
+    private static final List<String> LISTENERS = List.of(ADMIN_LISTENER, HTTP_LISTENER, HTTPS_LISTENER);
+
+    /** The config the DAS runs with when its {@code <server>} element doesn't say. */
+    private static final String DEFAULT_SERVER_CONFIG = "server-config";
+
     private static final Logger LOG = Logger.getLogger(DomainXmlEditor.class.getName());
 
     private DomainXmlEditor() {
     }
 
     /**
-     * Set the admin/http/https ports on the given {@code domain.xml}. Listeners
-     * whose port is already correct or set to a {@code ${...}} placeholder are
-     * left alone.
+     * Set the admin/http/https ports of the server on the given
+     * {@code domain.xml}. Only the config the {@code server} element's
+     * {@code config-ref} names (normally {@code server-config}) is edited, so
+     * templates such as {@code default-config} stay as they are. A
+     * {@code ${...}} placeholder in the server's config is replaced too.
      *
      * @param domainXml path to {@code config/domain.xml}
      * @param admin admin-listener port
@@ -66,31 +82,49 @@ public final class DomainXmlEditor {
      * @throws IOException if the file can't be parsed, rewritten, or moved into place
      */
     public static void setPorts(Path domainXml, int admin, int http, int https) throws IOException {
-        Map<String, Integer> wanted = Map.of(
-                "admin-listener", admin,
-                "http-listener-1", http,
-                "http-listener-2", https);
+        setPorts(domainXml, Map.of(
+                ADMIN_LISTENER, String.valueOf(admin),
+                HTTP_LISTENER, String.valueOf(http),
+                HTTPS_LISTENER, String.valueOf(https)));
+    }
 
+    /**
+     * Set the ports of the server's listeners, keyed by listener name, as
+     * given, so a port read with {@link #ports} can be put back, placeholder
+     * and all. Listeners {@code ports} doesn't name are left alone, and so are
+     * all configs but the server's, as with {@link #setPorts(Path, int, int, int)}.
+     */
+    public static void setPorts(Path domainXml, Map<String, String> ports) throws IOException {
         Document doc = parse(domainXml);
         boolean changed = false;
-        NodeList listeners = doc.getElementsByTagName("network-listener");
-        for (int i = 0; i < listeners.getLength(); i++) {
-            Element listener = (Element) listeners.item(i);
-            Integer target = wanted.get(listener.getAttribute("name"));
-            if (target == null) {
+        for (Element listener : serverListeners(doc, domainXml)) {
+            String wanted = ports.get(listener.getAttribute("name"));
+            if (wanted == null || wanted.equals(listener.getAttribute("port"))) {
                 continue;
             }
-            String current = listener.getAttribute("port");
-            if (current.startsWith("${") || current.equals(target.toString())) {
-                continue;
-            }
-            listener.setAttribute("port", target.toString());
+            listener.setAttribute("port", wanted);
             changed = true;
         }
         if (!changed) {
             return;
         }
         atomicWrite(domainXml, doc);
+    }
+
+    /**
+     * The ports of the server's admin, http and https listeners, keyed by
+     * listener name, as written: a {@code ${...}} placeholder stays one.
+     */
+    public static Map<String, String> ports(Path domainXml) throws IOException {
+        Map<String, String> ports = new LinkedHashMap<>();
+        for (Element listener : serverListeners(parse(domainXml), domainXml)) {
+            String name = listener.getAttribute("name");
+            if (LISTENERS.contains(name)) {
+                ports.put(name, listener.getAttribute("port"));
+            }
+        }
+
+        return ports;
     }
 
     /**
@@ -200,6 +234,36 @@ public final class DomainXmlEditor {
         }
 
         return values;
+    }
+
+    /**
+     * The {@code <network-listener>}s of the config the DAS runs with: the one
+     * its {@code <server name="server">} element's {@code config-ref} names,
+     * else {@code server-config}.
+     */
+    private static List<Element> serverListeners(Document doc, Path domainXml) throws IOException {
+        String configRef = DEFAULT_SERVER_CONFIG;
+        NodeList servers = doc.getElementsByTagName("server");
+        for (int i = 0; i < servers.getLength(); i++) {
+            Element server = (Element) servers.item(i);
+            if ("server".equals(server.getAttribute("name")) && server.hasAttribute("config-ref")) {
+                configRef = server.getAttribute("config-ref");
+            }
+        }
+
+        NodeList configs = doc.getElementsByTagName("config");
+        for (int i = 0; i < configs.getLength(); i++) {
+            Element config = (Element) configs.item(i);
+            if (configRef.equals(config.getAttribute("name"))) {
+                List<Element> listeners = new ArrayList<>();
+                NodeList found = config.getElementsByTagName("network-listener");
+                for (int j = 0; j < found.getLength(); j++) {
+                    listeners.add((Element) found.item(j));
+                }
+                return listeners;
+            }
+        }
+        throw new IOException(domainXml + " has no <config name=\"" + configRef + "\">");
     }
 
     /**

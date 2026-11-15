@@ -75,10 +75,9 @@ import ee.omnifish.arquillian.container.glassfish.process.OutputLoggingConsumer;
 import ee.omnifish.arquillian.container.glassfish.process.ProcessOutputConsumer;
 import ee.omnifish.arquillian.container.glassfish.process.SilentOutputConsumer;
 import ee.omnifish.glassfish.admin.DomainXmlEditor;
+import ee.omnifish.glassfish.admin.PostBootCommands;
 
 import static java.lang.Runtime.getRuntime;
-import static java.util.Arrays.asList;
-import static java.util.Arrays.copyOfRange;
 import static java.util.logging.Level.SEVERE;
 
 /**
@@ -126,23 +125,21 @@ class GlassFishServerControl {
 
         executeAdminDomainCommand("Starting container", "start-domain", args, createProcessOutputConsumer());
 
-        for (String commandLine : config.getPostBootCommandList()) {
-            String[] commandParts = commandLine.split(" ");
+        runPostStartCommands();
+    }
 
-            List<String> arguments;
-            if (commandParts.length > 1) {
-                arguments = asList(copyOfRange(commandParts, 1, commandParts.length));
-            } else {
-                arguments = List.of();
-            }
-
-            try {
-                executeAdminDomainCommand("Executing post boot command", commandParts[0], arguments, createProcessOutputConsumer());
-            } catch (LifecycleException e) {
-                logger.warning(e.getMessage());
-            }
-        }
-
+    /**
+     * Run {@code postBootCommands} and {@code postStartCommands}, its new
+     * name, on the server that has just started. They go to its admin port,
+     * and without the domain operand that start and stop take. A failed
+     * command is logged, and the rest run.
+     */
+    void runPostStartCommands() {
+        List<String> commands = new ArrayList<>(config.getPostBootCommandList());
+        commands.addAll(config.getPostStartCommandList());
+        List<String> asadminArgs = List.of("--port", String.valueOf(config.getAdminPort()));
+        PostBootCommands.execute(commands, (command, arguments) -> executeAdminCommand(
+            "Executing post-start command", command, asadminArgs, arguments, createProcessOutputConsumer()));
     }
 
     void stop() {

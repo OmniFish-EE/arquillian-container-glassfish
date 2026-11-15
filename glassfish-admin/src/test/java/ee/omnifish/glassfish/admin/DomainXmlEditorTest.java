@@ -3,8 +3,12 @@
  */
 package ee.omnifish.glassfish.admin;
 
+import static ee.omnifish.glassfish.admin.DomainXmlEditor.ADMIN_LISTENER;
+import static ee.omnifish.glassfish.admin.DomainXmlEditor.HTTPS_LISTENER;
+import static ee.omnifish.glassfish.admin.DomainXmlEditor.HTTP_LISTENER;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -28,10 +32,13 @@ class DomainXmlEditorTest {
             + "transport=\"tcp\" name=\"http-listener-2\" thread-pool=\"http-thread-pool\"></network-listener>"
             + "</network-listeners>";
 
+    /** A domain whose server runs with {@code server-config}, which has the listeners. */
+    private static final String DOMAIN = domain("server-config", FRAGMENT);
+
     @Test
     void rewritesAllThreePorts(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
-        Files.writeString(domainXml, FRAGMENT);
+        Files.writeString(domainXml, DOMAIN);
 
         DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
 
@@ -45,16 +52,81 @@ class DomainXmlEditorTest {
     }
 
     @Test
-    void leavesPropertyPlaceholdersAlone(@TempDir Path tmp) throws IOException {
+    void replacesAPlaceholderInTheServersConfig(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");
-        String withPlaceholder = FRAGMENT.replace("port=\"4848\"", "port=\"${ADMIN_PORT}\"");
-        Files.writeString(domainXml, withPlaceholder);
+        Files.writeString(domainXml, DOMAIN.replace("port=\"4848\"", "port=\"${ADMIN_PORT}\""));
+
+        DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
+
+        assertEquals(Map.of(ADMIN_LISTENER, "14948", HTTP_LISTENER, "14949", HTTPS_LISTENER, "14950"),
+                DomainXmlEditor.ports(domainXml));
+    }
+
+    /** The stock {@code domain.xml}'s {@code default-config} is a template, with placeholder ports. */
+    @Test
+    void leavesOtherConfigsAlone(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        String template = "<config name=\"default-config\"><network-config>"
+                + FRAGMENT.replace("port=\"4848\"", "port=\"${ASADMIN_LISTENER_PORT}\"")
+                + "</network-config></config>";
+        Files.writeString(domainXml, DOMAIN.replace("</configs>", template + "</configs>"));
 
         DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
 
         String content = Files.readString(domainXml);
-        assertTrue(content.contains("port=\"${ADMIN_PORT}\""), content);
-        assertTrue(content.contains("port=\"14949\""), content);
+        String templatePart = content.substring(content.indexOf("default-config"));
+        assertTrue(templatePart.contains("port=\"${ASADMIN_LISTENER_PORT}\""), content);
+        assertTrue(templatePart.contains("port=\"8080\""), content);
+        assertEquals("14948", DomainXmlEditor.ports(domainXml).get(ADMIN_LISTENER));
+    }
+
+    @Test
+    void followsTheServersConfigRef(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><servers><server name=\"server\" config-ref=\"das-config\"/></servers>"
+                + "<configs>"
+                + "<config name=\"server-config\"><network-config>" + FRAGMENT + "</network-config></config>"
+                + "<config name=\"das-config\"><network-config>" + FRAGMENT + "</network-config></config>"
+                + "</configs></domain>");
+
+        DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
+
+        String content = Files.readString(domainXml);
+        int dasConfig = content.indexOf("das-config\">");
+        assertTrue(content.substring(0, dasConfig).contains("port=\"4848\""), content);
+        assertTrue(content.substring(dasConfig).contains("port=\"14948\""), content);
+    }
+
+    @Test
+    void readsThePortsAsWritten(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, DOMAIN.replace("port=\"4848\"", "port=\"${ADMIN_PORT}\""));
+
+        assertEquals(Map.of(ADMIN_LISTENER, "${ADMIN_PORT}", HTTP_LISTENER, "8080", HTTPS_LISTENER, "8181"),
+                DomainXmlEditor.ports(domainXml));
+    }
+
+    @Test
+    void putsAPortBackAsItWasRead(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, DOMAIN.replace("port=\"4848\"", "port=\"${ADMIN_PORT}\""));
+        String admin = DomainXmlEditor.ports(domainXml).get(ADMIN_LISTENER);
+        DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950);
+
+        DomainXmlEditor.setPorts(domainXml, Map.of(ADMIN_LISTENER, admin));
+
+        assertEquals(Map.of(ADMIN_LISTENER, "${ADMIN_PORT}", HTTP_LISTENER, "14949", HTTPS_LISTENER, "14950"),
+                DomainXmlEditor.ports(domainXml));
+    }
+
+    @Test
+    void aDomainWithoutTheServersConfigFails(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, domain("other-config", FRAGMENT));
+
+        IOException e = assertThrows(IOException.class, () -> DomainXmlEditor.setPorts(domainXml, 14948, 14949, 14950));
+
+        assertTrue(e.getMessage().contains("server-config"), e.getMessage());
     }
 
     private static final String JAVA_CONFIG_FRAGMENT =
@@ -213,7 +285,7 @@ class DomainXmlEditorTest {
         // file is replaced, not truncated and rewritten.
         Path source = tmp.resolve("source.xml");
         Path slot = tmp.resolve("slot.xml");
-        Files.writeString(source, FRAGMENT);
+        Files.writeString(source, DOMAIN);
         try {
             Files.createLink(slot, source);
         } catch (UnsupportedOperationException | IOException e) {
@@ -229,5 +301,11 @@ class DomainXmlEditorTest {
         assertTrue(slotContent.contains("port=\"14948\""), slotContent);
         assertTrue(sourceContent.contains("port=\"4848\""), sourceContent);
         assertFalse(sourceContent.equals(slotContent));
+    }
+
+    /** A {@code domain.xml} with one config, {@code configName}, holding {@code listeners}. */
+    private static String domain(String configName, String listeners) {
+        return "<domain><configs><config name=\"" + configName + "\"><network-config>" + listeners
+                + "</network-config></config></configs></domain>";
     }
 }

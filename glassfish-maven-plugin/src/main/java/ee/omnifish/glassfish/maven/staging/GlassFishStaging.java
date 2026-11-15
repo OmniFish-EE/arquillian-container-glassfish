@@ -72,8 +72,8 @@ public final class GlassFishStaging {
     private static final String MARKER_KEY_DIST = "distribution";
     private static final String MARKER_KEY_FINGERPRINT = "fingerprint";
 
-    /** Where a domain's truststore lives, relative to the install root. */
-    private static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
+    /** Where a domain's configuration, and its truststore, live, relative to the install root. */
+    static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
 
     /** The domain truststores to look for: current versions ship the first, older ones (6, 7.0.0) the second. */
     private static final List<String> DOMAIN_TRUST_STORES = List.of("cacerts.p12", "cacerts.jks");
@@ -91,19 +91,20 @@ public final class GlassFishStaging {
 
     /**
      * Run the staging steps: unpack the distribution, copy the overlays,
-     * import the certificates. Each is a no-op when its skip flag is set or
-     * its inputs are empty.
+     * import the certificates, and run the commands on a brief start. Each
+     * is a no-op when its skip flag is set or its inputs are empty.
      *
-     * <p>When the distribution is unpacked, the three steps are one unit,
-     * recorded by a fingerprint of their inputs in the stage directory's
-     * marker. A matching fingerprint leaves the staged install alone. A
-     * changed one, or a marker without one, stages the directory afresh:
-     * wipe it, unpack again, copy the overlays, import the certificates, and
-     * write the fingerprint last. So a rebuilt zip or overlay, and an overlay
-     * or certificate added, changed or removed, all take effect, and a
-     * staging that didn't finish is redone. A non-empty directory without a
-     * marker is left alone, since it may be an install this plugin didn't
-     * unpack.
+     * <p>When the distribution is unpacked, the steps are one unit, recorded
+     * by a fingerprint of their inputs in the stage directory's marker. A
+     * matching fingerprint leaves the staged install alone. A changed one, or
+     * a marker without one, stages the directory afresh: wipe it, unpack
+     * again, copy the overlays, import the certificates, run the commands,
+     * and write the fingerprint last. So a rebuilt zip or overlay, and an
+     * overlay, certificate or command added, changed or removed, all take
+     * effect, and a staging that didn't finish is redone, after stopping a
+     * server its brief start may have left running. A non-empty directory
+     * without a marker is left alone, since it may be an install this plugin
+     * didn't unpack.
      *
      * <p>Without the unpack, the install isn't staging's to own, so overlays
      * and certificates are applied to it on every run. That install may be
@@ -130,11 +131,16 @@ public final class GlassFishStaging {
         Path zip = resolver.resolve(spec.distribution());
         String fingerprint = fingerprint(spec, zip, resolver);
         if (Files.exists(marker)) {
-            if (fingerprint.equals(readMarker(marker, MARKER_KEY_FINGERPRINT))) {
+            String stagedFingerprint = readMarker(marker, MARKER_KEY_FINGERPRINT);
+            if (fingerprint.equals(stagedFingerprint)) {
                 LOG.debug("Already staged at " + stageDir + " (" + gav + ")");
                 return;
             }
+
             LOG.info("Re-staging " + stageDir + ": its inputs changed, or its last staging didn't finish");
+            if (stagedFingerprint == null) {
+                BriefStart.stopLeftover(spec.home());
+            }
         } else if (!isEmpty(stageDir)) {
             throw new IOException(stageDir + " isn't empty, and this plugin didn't stage it. Empty it, or point "
                     + "the stage directory elsewhere.");
@@ -148,6 +154,9 @@ public final class GlassFishStaging {
         LOG.info("Unpacking " + gav + " to " + stageDir);
         unzip(zip, stageDir);
         applyOverlaysAndCerts(spec, resolver);
+        if (spec.commands().hasWork()) {
+            BriefStart.runCommands(spec.home(), spec.commands());
+        }
         writeMarker(marker, gav, fingerprint);
     }
 
@@ -162,12 +171,12 @@ public final class GlassFishStaging {
 
     /**
      * A fingerprint of what staging puts into the directory: the distribution
-     * and its zip, the install root, the overlays and their files, and the
-     * certificates and their truststore. The install root counts because the
-     * default truststore is found from it. Zips and jars are identified by
-     * size and modification time, so a rebuilt one counts as changed.
-     * Certificates are small, so their content counts, whatever their
-     * timestamps.
+     * and its zip, the install root, the overlays and their files, the
+     * certificates and their truststore, and the commands. The install root
+     * counts because the default truststore is found from it. Zips and jars
+     * are identified by size and modification time, so a rebuilt one counts
+     * as changed. Certificates are small, so their content counts, whatever
+     * their timestamps.
      */
     private static String fingerprint(StageSpec spec, Path zip, ArtifactResolver resolver) throws IOException {
         List<String> inputs = new ArrayList<>();
@@ -186,6 +195,9 @@ public final class GlassFishStaging {
             for (TrustedCert cert : certImport.certs()) {
                 inputs.add("cert " + cert.getAlias() + " " + sha256(Files.readAllBytes(cert.getFile().toPath())));
             }
+        }
+        for (String command : spec.commands().lines()) {
+            inputs.add("command " + command);
         }
 
         return sha256(String.join("\n", inputs).getBytes(StandardCharsets.UTF_8));

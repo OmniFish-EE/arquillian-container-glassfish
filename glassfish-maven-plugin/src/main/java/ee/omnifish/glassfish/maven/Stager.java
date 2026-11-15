@@ -25,6 +25,7 @@ import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 
+import ee.omnifish.glassfish.admin.PostBootCommands;
 import ee.omnifish.glassfish.maven.staging.ArtifactCoord;
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
@@ -32,6 +33,7 @@ import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.ArtifactResolver;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.StagingCommands;
 import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 /**
@@ -78,6 +80,21 @@ public final class Stager {
     public StageSpec spec(DistributionCoord distribution, File stageDir, boolean unpackSkip, File home,
                           List<OverlayCoord> overlays, File overlayTargetDir, boolean overlaySkip,
                           CertImport certImport, String homeParameter) throws MojoExecutionException {
+        return spec(distribution, stageDir, unpackSkip, home, overlays, overlayTargetDir, overlaySkip, certImport,
+                StagingCommands.NONE, homeParameter);
+    }
+
+    /**
+     * Collect a staging run that also runs {@code commands} on the staged
+     * install. The goal checks that it unpacks the install, since the
+     * commands then run once per staging, not on every build.
+     *
+     * @param homeParameter how the goal spells its explicit install root, for messages
+     */
+    public StageSpec spec(DistributionCoord distribution, File stageDir, boolean unpackSkip, File home,
+                          List<OverlayCoord> overlays, File overlayTargetDir, boolean overlaySkip,
+                          CertImport certImport, StagingCommands commands, String homeParameter)
+            throws MojoExecutionException {
         boolean willUnpack = !unpackSkip && distribution != null;
         if (willUnpack) {
             requireVersion(distribution);
@@ -91,8 +108,9 @@ public final class Stager {
         List<OverlayCoord> ov = (overlays == null) ? List.of() : overlays;
         Path overlayDir = overlayDir(overlayTargetDir, installRoot, ov, overlaySkip, homeParameter);
         checkCertImport(certImport, installRoot, homeParameter);
+        checkCommands(commands, installRoot, homeParameter);
         return new StageSpec(stageDir.toPath(), distribution, unpackSkip, installRoot, overlayDir, ov, overlaySkip,
-                certImport);
+                certImport, commands);
     }
 
     /** Run {@code spec}; see {@link GlassFishStaging#stage}. */
@@ -154,6 +172,26 @@ public final class Stager {
         }
         if (certImport.trustStore() == null && home == null) {
             throw new MojoExecutionException("<trustedCerts> need a truststore: set <trustStore> or " + homeParameter);
+        }
+    }
+
+    /** Every command can be read, and the install they run on is known. */
+    private static void checkCommands(StagingCommands commands, Path home, String homeParameter)
+            throws MojoExecutionException {
+        if (!commands.hasWork()) {
+            return;
+        }
+
+        for (String command : commands.lines()) {
+            try {
+                PostBootCommands.words(command);
+            } catch (IllegalArgumentException e) {
+                throw new MojoExecutionException(e.getMessage(), e);
+            }
+        }
+        if (home == null) {
+            throw new MojoExecutionException("Commands to run during staging need the install root: set "
+                    + homeParameter);
         }
     }
 

@@ -147,6 +147,7 @@ build isn't running tests there's no reason to pay for a pool.
 | `trustStore`      | `gf.pool.trustStore`   | the domain's `cacerts.p12`       | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
 | `trustStorePassword` | `gf.pool.trustStorePassword` | `changeit`               | The truststore's password.                                             |
 | `certsSkip`       | `gf.pool.certs.skip`   | `false`                          | Skip the certificate import.                                           |
+| `sourcePostBootCommands` | `gf.pool.sourcePostBootCommands` | (none)             | `asadmin` commands run once on the staged install, on a brief start, before slots are cloned from it. One per line. See *Commands on the source*. |
 
 ### Slot setup (`up`, `provision`)
 
@@ -169,12 +170,12 @@ What every slot gets besides its ports. See [Slot setup](#slot-setup).
 The plugin uses Aether to resolve `<distribution>` through your usual
 repositories and unpacks it under `<stageDir>`
 (default `${project.build.directory}/dist`) before provisioning runs.
-Overlays are copied and trusted certificates imported after the unpack. A
-marker file records a fingerprint of all of that, so re-runs leave the
-staged install alone until something changes: another distribution or
-`poolSource`, a zip or overlay rebuilt with `mvn install`, or an overlay or
-certificate added, changed or removed. Then `stageDir` is wiped and staged
-afresh. A non-empty `stageDir` without the marker fails the build and is
+Overlays are copied, trusted certificates imported and source commands run
+after the unpack. A marker file records a fingerprint of all of that, so
+re-runs leave the staged install alone until something changes: another
+distribution or `poolSource`, a zip or overlay rebuilt with `mvn install`,
+or an overlay, certificate or source command added, changed or removed.
+Then `stageDir` is wiped and staged afresh. A non-empty `stageDir` without the marker fails the build and is
 left alone. With `<unpackSkip>true</unpackSkip>`, the plugin doesn't own the
 install: it copies the overlays and imports the certificates into it on
 every run. If `stageDir` holds an install the plugin staged, such a run
@@ -339,6 +340,25 @@ layout.
   `restartOnRelease` restart, the test class has already finished, so a
   failed command stops the slot instead, and the slot is re-created before
   its next lease. Set it to `false` to log failures and carry on.
+
+### Commands on the source
+
+`<sourcePostBootCommands>` run once on the staged install, during a brief
+start after the overlays and certificates, before any slot is cloned from
+it. Unlike `<postBootCommands>`, they don't run on every slot, but slots
+get only the effects that cloning carries over: what the commands write to
+files a clone copies, such as `domain.xml` and `keyfile`. What lives in
+memory, in the JMS broker's store (`imq/instances`) or in the OSGi cache
+doesn't carry over, since cloning skips those directories. Commands like
+`create-file-user`, `create-jdbc-resource` and `set` qualify.
+
+They are staged like the rest of the source (see *Staging behaviour*):
+changing them stages it afresh, and `failOnCommandError` covers them. The
+brief start runs the domain on three free ports, and gives it its own
+ports back afterwards. Like `glassfish:provision`'s `<postBootCommands>`,
+they need a source this plugin unpacks itself, so they can't be combined
+with `unpackSkip`, and need a `<distribution>`. For a source staged by
+`glassfish:provision`, give that goal the commands instead.
 
 ### Moving settings from failsafe
 

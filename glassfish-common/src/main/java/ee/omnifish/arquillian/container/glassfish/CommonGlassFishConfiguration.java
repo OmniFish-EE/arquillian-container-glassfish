@@ -91,6 +91,7 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     private String type = System.getProperty("glassfish.type");
     private String domain = System.getProperty("glassfish.domain");
     private String postBootCommands = System.getProperty("glassfish.postBootCommands");
+    private String postStartCommands = System.getProperty("glassfish.postStartCommands");
     private String systemProperties = System.getProperty("glassfish.systemProperties");
     private boolean availabilityEnabled = Boolean.getBoolean("glassfish.availabilityenabled");
 
@@ -101,6 +102,7 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
     private boolean addDeployName = Boolean.valueOf(System.getProperty("glassfish.addDeployName", "false"));
 
     private List<String> postBootCommandList = Collections.emptyList();
+    private List<String> postStartCommandList = Collections.emptyList();
     private List<String> systemProperyList = Collections.emptyList();
 
     public CommonGlassFishConfiguration() {
@@ -297,6 +299,22 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
         return postBootCommandList;
     }
 
+    /**
+     * Commands the managed Arquillian Container runs after every start. The
+     * new name for {@code postBootCommands}, which does the same.
+     */
+    public String getPostStartCommands() {
+        return postStartCommands;
+    }
+
+    public void setPostStartCommands(String postStartCommands) {
+        this.postStartCommands = postStartCommands;
+    }
+
+    public List<String> getPostStartCommandList() {
+        return postStartCommandList;
+    }
+
     public String getSystemProperties() {
         return systemProperties;
     }
@@ -399,6 +417,15 @@ public class CommonGlassFishConfiguration implements ContainerConfiguration {
                                 .filter(not(String::isEmpty))
                                 .filter(e -> !e.startsWith("#"))
                                 .collect(toList());
+        }
+
+        if (postStartCommands != null) {
+            postStartCommandList =
+                postStartCommands.lines()
+                                 .map(String::trim)
+                                 .filter(not(String::isEmpty))
+                                 .filter(e -> !e.startsWith("#"))
+                                 .collect(toList());
         }
 
         if (systemProperties != null) {

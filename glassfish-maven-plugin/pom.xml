@@ -77,6 +77,13 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- asadmin and domain.xml, for the brief start that runs <postBootCommands>. -->
+        <dependency>
+            <groupId>ee.omnifish.glassfish</groupId>
+            <artifactId>glassfish-admin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Unzips the dist keeping POSIX permissions (asadmin's +x bit). -->
         <dependency>
             <groupId>org.apache.commons</groupId>

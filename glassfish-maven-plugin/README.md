@@ -2,7 +2,8 @@
 
 Maven plugin for Eclipse GlassFish. Its `provision` goal resolves a
 GlassFish distribution through your Maven repositories, unpacks it under
-`target/`, copies overlay jars into it, and publishes where it landed as
+`target/`, copies overlay jars into it, imports trusted certificates, runs
+setup commands on a brief start, and publishes where it landed as
 `glassfish.home`. That replaces the usual `maven-dependency-plugin` `unpack`
 block, and the [managed connector](../glassfish-managed/) picks the install
 up without further configuration.
@@ -18,7 +19,7 @@ up without further configuration.
 
 | Goal        | Default phase          | Purpose |
 | ----------- | ---------------------- | ------- |
-| `provision` | `process-test-classes` | Resolve, unpack and overlay GlassFish, then set `glassfish.home`. Idempotent: a re-run skips the unpack while the same distribution is in place. |
+| `provision` | `process-test-classes` | Resolve, unpack and overlay GlassFish, import certificates and run post-boot commands, then set `glassfish.home`. A re-run leaves the install alone while these inputs stay the same. |
 
 ## Quick start
 
@@ -111,6 +112,8 @@ note applies:
 | `trustStore`       | `glassfish.trustStore`       | the domain's `cacerts.p12`        | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
 | `trustStorePassword` | `glassfish.trustStorePassword` | `changeit`                    | The truststore's password. |
 | `certsSkip`        | `glassfish.certs.skip`       | `false`                           | Skip the certificate import. |
+| `postBootCommands` | (none)                       | (none)                            | `asadmin` commands run once, on a brief start during staging. One per line. See *Post-boot commands*. |
+| `failOnCommandError` | `glassfish.failOnCommandError` | `true`                        | Whether a failed post-boot command fails the build. |
 | `skip`             | `glassfish.provision.skip`   | `false`                           | Skip the goal: nothing is unpacked or published. |
 
 `provision` also skips on `-DskipTests` and `-Dmaven.test.skip`: if the
@@ -118,6 +121,8 @@ build runs no tests, there's no reason to fetch GlassFish.
 
 `home` and `homeProperty` have no `-D` switch. `glassfish.home` is this
 goal's output, and the extension has to know which property it forwards.
+Neither has `postBootCommands`: `glassfish.postBootCommands` is what the
+Arquillian Containers run after every start.
 
 ### How `glassfish.home` is set
 
@@ -139,19 +144,19 @@ consequences:
 
 `provision` resolves `<distribution>` through the build's repositories and
 unpacks it under `stageDir`, keeping file permissions, so `asadmin` stays
-executable. Then it copies the overlays and imports the trusted
-certificates. A marker file in `stageDir` records a fingerprint of all of
-that: the distribution and its zip, the install root, the overlays and their
-files, and the certificates.
+executable. Then it copies the overlays, imports the trusted certificates
+and runs the post-boot commands. A marker file in `stageDir` records a
+fingerprint of all of that: the distribution and its zip, the install root,
+the overlays and their files, the certificates, and the commands.
 
 - A re-run with the same fingerprint leaves the staged install alone.
 - Any change stages it afresh: `stageDir` is wiped and the zip unpacked
   again. That covers another distribution or `home`, a zip or overlay
-  rebuilt with `mvn install`, and an overlay or certificate added, changed
-  or removed. It costs a full unpack, also while you iterate on a SNAPSHOT
-  overlay.
+  rebuilt with `mvn install`, and an overlay, certificate or command added,
+  changed or removed. It costs a full unpack, plus a brief start when there
+  are commands, also while you iterate on a SNAPSHOT overlay.
 - A staging that didn't finish, for example because the build was
-  interrupted, is redone on the next run.
+  interrupted or a command failed, is redone on the next run.
 - A non-empty `stageDir` without the marker fails the build and is left
   alone, since it may hold an install this plugin didn't unpack. Empty it,
   or point `stageDir` elsewhere.
@@ -236,6 +241,48 @@ temporary file and moved into place, so an interrupted build can't leave
 half of it behind.
 
 `certsSkip` skips the import: `mvn verify -Dglassfish.certs.skip=true`.
+
+## Post-boot commands
+
+`<postBootCommands>` are `asadmin` commands that `provision` runs once on
+the staged install, during a brief start after the overlays and
+certificates. They're for setup whose effects persist, such as users,
+resources and `set` calls:
+
+```xml
+<configuration>
+    <distribution>9.0.0</distribution>
+    <postBootCommands>
+        --passwordfile ${project.build.testOutputDirectory}/j2ee.pass create-file-user --groups staff j2ee
+        set configs.config.server-config.cdi-service.enable-implicit-cdi=true
+    </postBootCommands>
+</configuration>
+```
+
+- One command per line. Quotes group words, and backslashes are passed on
+  as they are, since `asadmin` reads `\:` and `\=` itself. Blank lines and
+  lines starting with `#` are skipped. A line may start with `asadmin`
+  options, such as `--passwordfile`.
+- The domain runs on three free ports, so it doesn't clash with a server
+  that's already running. Afterwards it gets its own ports back, except for
+  a port a command set.
+- The commands are part of the fingerprint (see *Staging behaviour*).
+  Changing them stages the install afresh; until then, re-runs leave it
+  alone, so nothing runs twice.
+- A failed command fails the build, and the next build stages afresh. With
+  `<failOnCommandError>false</failOnCommandError>`, the failure is logged
+  and the remaining commands run.
+- A shutdown hook stops the server if the build is interrupted. If the
+  build is killed outright, the next one stops the server before staging
+  afresh.
+- They need an install that `provision` unpacks itself. With `unpackSkip`,
+  or without a `<distribution>`, the install isn't the plugin's, so the
+  commands would run on every build, and setup such as `create-file-user`
+  fails the second time. Setting them then fails the goal.
+
+The managed Arquillian Container runs `glassfish.postStartCommands`, or its
+old name `glassfish.postBootCommands`, after every start. Setup moved from
+there to `<postBootCommands>` runs once, instead of delaying every start.
 
 ## Recipes
 

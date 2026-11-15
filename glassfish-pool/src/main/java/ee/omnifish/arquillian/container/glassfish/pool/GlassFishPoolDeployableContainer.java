@@ -73,6 +73,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
     private static final String ENABLE_ASSERTIONS = "glassfish.enableAssertions";
 
     private static final AtomicBoolean POST_BOOT_HINT_LOGGED = new AtomicBoolean();
+    private static final AtomicBoolean POST_START_WARNED = new AtomicBoolean();
     private static final AtomicBoolean SETTINGS_CHECKED = new AtomicBoolean();
 
     private GlassFishPoolConfiguration configuration;
@@ -141,6 +142,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             manager.start();
 
             warnAboutMissingSettings(ports);
+            warnAboutPostStartCommands();
             runPostBootCommands(ports);
         } catch (RuntimeException | LifecycleException e) {
             // Arquillian does not call stop() for a container whose start()
@@ -179,6 +181,19 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         AsAdmin asadmin = new AsAdmin(Paths.get(ports.glassFishHome()), ports.adminPort());
         PostBootCommands.execute(commands,
                 (command, args) -> asadmin.run(POSTBOOT_TIMEOUT, command, args.toArray(String[]::new)));
+    }
+
+    /**
+     * Warn once per JVM when the test JVM sets {@code glassfish.postStartCommands}:
+     * the managed Arquillian Container runs them after every start, but a
+     * lease isn't a start.
+     */
+    private void warnAboutPostStartCommands() {
+        if (!configuration.getPostStartCommandList().isEmpty() && POST_START_WARNED.compareAndSet(false, true)) {
+            LOG.warning("The pool's Arquillian Container doesn't run glassfish.postStartCommands, since a lease "
+                    + "isn't a start. To run commands after every slot start, move them to the pool plugin's "
+                    + "<postStartCommands>.");
+        }
     }
 
     /**

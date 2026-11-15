@@ -26,13 +26,14 @@ import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.StagingCommands;
 import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 /**
  * Adds staging configuration on top of {@link AbstractPoolMojo}: which
  * GlassFish distribution to fetch, which overlay jars to drop into the
- * staged install, where to unpack. Shared by {@link UpMojo} and
- * {@link ProvisionMojo}.
+ * staged install, where to unpack, which certificates to import and which
+ * commands to run on it. Shared by {@link UpMojo} and {@link ProvisionMojo}.
  *
  * <p>The staging itself is {@code glassfish:provision}'s, from
  * {@code glassfish-maven-plugin} (see {@link Stager}); only the parameters
@@ -110,6 +111,20 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     @Parameter(property = "gf.pool.certs.skip", defaultValue = "false")
     protected boolean certsSkip;
 
+    /**
+     * {@code asadmin} commands run once on the source install, one per line,
+     * during a brief start after the overlays and certificates, before any
+     * slot is cloned from it. Slots inherit what the commands write to files
+     * that cloning copies, such as {@code domain.xml} and {@code keyfile},
+     * but not what lives in memory, in the JMS broker's store or in the OSGi
+     * cache. Same syntax as {@link #postBootCommands}, and failures are
+     * handled by {@link #failOnCommandError}. Changing them stages the source
+     * afresh. They need a source this goal unpacks, so they can't be combined
+     * with {@code unpackSkip}, and need a {@code distribution}.
+     */
+    @Parameter(property = "gf.pool.sourcePostBootCommands")
+    protected String sourcePostBootCommands;
+
     @Component
     private RepositorySystem repoSystem;
 
@@ -129,11 +144,14 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
      * set, so callers must invoke this <em>before</em> {@link #poolConfig()}.
      */
     protected Runnable buildPreStage() throws MojoExecutionException {
+        StagingCommands sourceCommands = new StagingCommands(sourcePostBootCommands, failOnCommandError);
+        requireUnpack(sourceCommands, unpackSkip, distribution);
+
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
         CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
                 trustStorePassword, certsSkip);
         StageSpec spec = stager.spec(distribution, stageDir, unpackSkip, poolSource, overlays, overlayTargetDir,
-                overlaySkip, certImport, POOL_SOURCE);
+                overlaySkip, certImport, sourceCommands, POOL_SOURCE);
         if (poolSource == null && spec.home() != null) {
             poolSource = spec.home().toFile();
             getLog().info("poolSource not set; using " + poolSource + " from " + distribution.toGav());
@@ -148,5 +166,21 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
                 throw new RuntimeException("Pool staging failed: " + e.getMessage(), e);
             }
         };
+    }
+
+    /**
+     * Fail when there are source commands but no unpack: staging owns only
+     * a source it unpacks. On any other, the commands would run on every
+     * build, and setup such as {@code create-file-user} fails the second
+     * time. Package-private for unit tests.
+     */
+    static void requireUnpack(StagingCommands commands, boolean unpackSkip, DistributionCoord distribution)
+            throws MojoExecutionException {
+        if (commands.hasWork() && (unpackSkip || distribution == null)) {
+            throw new MojoExecutionException("<sourcePostBootCommands> need a source this goal unpacks: with "
+                    + "<unpackSkip>, or without <distribution>, they would run on every build. To set up a source "
+                    + "staged by glassfish:provision, give that goal the commands as <postBootCommands>, or use "
+                    + "<postBootCommands> here, which run once per slot.");
+        }
     }
 }

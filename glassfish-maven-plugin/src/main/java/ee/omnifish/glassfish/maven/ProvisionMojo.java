@@ -31,11 +31,13 @@ import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.StagingCommands;
 import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 /**
  * Provision a GlassFish install for the build: resolve the distribution,
- * unpack it into {@code stageDir}, copy overlay jars into it, and publish the
+ * unpack it into {@code stageDir}, copy overlay jars into it, import trusted
+ * certificates, run post-boot commands on a brief start, and publish the
  * install root as the project property {@code glassfish.home}. Default phase
  * {@code process-test-classes}, the last one before {@code test}, so the
  * install is there for surefire and failsafe alike.
@@ -138,6 +140,29 @@ public class ProvisionMojo extends AbstractMojo {
     @Parameter(property = "glassfish.certs.skip", defaultValue = "false")
     private boolean certsSkip;
 
+    /**
+     * {@code asadmin} commands run once on the staged install, one per line,
+     * during a brief start after the overlays and certificates: setup whose
+     * effects persist, such as users, resources and {@code set} calls. Quotes
+     * group words; backslashes are passed on as they are. Blank lines and
+     * lines starting with {@code #} are skipped. Changing them stages the
+     * install afresh. They need an install this goal unpacks, so they can't
+     * be combined with {@code unpackSkip}, and need a {@code distribution}.
+     *
+     * <p>No {@code -D} switch: {@code glassfish.postBootCommands} is what the
+     * Arquillian Containers run after every start.
+     */
+    @Parameter
+    private String postBootCommands;
+
+    /**
+     * Whether a failed post-boot command fails the build, which then stages
+     * the install afresh. When {@code false}, a failure is logged and the
+     * remaining commands run.
+     */
+    @Parameter(property = "glassfish.failOnCommandError", defaultValue = "true")
+    private boolean failOnCommandError;
+
     /** Skip this goal; nothing is unpacked or published. */
     @Parameter(property = "glassfish.provision.skip", defaultValue = "false")
     private boolean skip;
@@ -184,11 +209,14 @@ public class ProvisionMojo extends AbstractMojo {
                     + "(-Dglassfish.distribution=<version>), or <home> for an existing install");
         }
 
+        StagingCommands commands = new StagingCommands(postBootCommands, failOnCommandError);
+        requireUnpack(commands, unpackSkip, dist);
+
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
         CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
                 trustStorePassword, certsSkip);
         StageSpec spec = stager.spec(dist, stageDir(), unpackSkip, home, overlays, overlayTargetDir,
-                overlaySkip, certImport, HOME_PARAMETER);
+                overlaySkip, certImport, commands, HOME_PARAMETER);
         try {
             stager.stage(spec);
         } catch (IOException e) {
@@ -217,6 +245,21 @@ public class ProvisionMojo extends AbstractMojo {
             return new File(executionRootDirectory, "target/dist");
         }
         return stageDir;
+    }
+
+    /**
+     * Fail when there are commands but no unpack: staging owns only an
+     * install it unpacks. On any other, the commands would run on every
+     * build, and setup such as {@code create-file-user} fails the second
+     * time. Package-private for unit tests.
+     */
+    static void requireUnpack(StagingCommands commands, boolean unpackSkip, DistributionCoord distribution)
+            throws MojoExecutionException {
+        if (commands.hasWork() && (unpackSkip || distribution == null)) {
+            throw new MojoExecutionException("<postBootCommands> need an install this goal unpacks: with "
+                    + "<unpackSkip>, or without <distribution>, they would run on every build. For commands that "
+                    + "run after every start, use the managed Arquillian Container's glassfish.postStartCommands.");
+        }
     }
 
     /**
