@@ -22,9 +22,11 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.RemoteRepository;
 
 import ee.omnifish.glassfish.maven.Stager;
+import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 /**
  * Adds staging configuration on top of {@link AbstractPoolMojo}: which
@@ -77,6 +79,37 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     @Parameter(property = "gf.pool.overlay.skip", defaultValue = "false")
     protected boolean overlaySkip;
 
+    /**
+     * Certificates GlassFish should trust, imported into the staged install's
+     * truststore so they are there from its first start: an external identity
+     * provider's server certificate for OpenID, or a client certificate for
+     * {@code CLIENT-CERT}. Each {@code <trustedCert>} is an {@code <alias>}
+     * and a PEM or DER {@code <file>}.
+     * Slots inherit them, since they are cloned from the staged install.
+     * The import only adds and replaces entries: a certificate removed from
+     * this list stays in the truststore until GlassFish is staged afresh.
+     */
+    @Parameter
+    protected List<TrustedCert> trustedCerts;
+
+    /**
+     * The truststore the certificates go into. Defaults to the domain's own,
+     * {@code ${gf.pool.source}/glassfish/domains/domain1/config/cacerts.p12}, or
+     * {@code cacerts.jks} in older versions. This only changes where the
+     * certificates go: GlassFish keeps reading the truststore its domain
+     * configuration names.
+     */
+    @Parameter(property = "gf.pool.trustStore")
+    protected File trustStore;
+
+    /** The truststore's password. */
+    @Parameter(property = "gf.pool.trustStorePassword", defaultValue = CertImport.DEFAULT_PASSWORD)
+    protected String trustStorePassword;
+
+    /** Skip the certificate import. */
+    @Parameter(property = "gf.pool.certs.skip", defaultValue = "false")
+    protected boolean certsSkip;
+
     @Component
     private RepositorySystem repoSystem;
 
@@ -97,8 +130,10 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
      */
     protected Runnable buildPreStage() throws MojoExecutionException {
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
+        CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
+                trustStorePassword, certsSkip);
         StageSpec spec = stager.spec(distribution, stageDir, unpackSkip, poolSource, overlays, overlayTargetDir,
-                overlaySkip, POOL_SOURCE);
+                overlaySkip, certImport, POOL_SOURCE);
         if (poolSource == null && spec.home() != null) {
             poolSource = spec.home().toFile();
             getLog().info("poolSource not set; using " + poolSource + " from " + distribution.toGav());

@@ -107,6 +107,10 @@ note applies:
 | `overlays`         | (nested `<overlays>`)        | (empty)                           | Artifacts copied into `overlayTargetDir`. See *Overlays*. |
 | `overlayTargetDir` | `glassfish.overlayTargetDir` | `${home}/glassfish/modules`       | Where overlay jars land. |
 | `overlaySkip`      | `glassfish.overlay.skip`     | `false`                           | Skip all overlays. |
+| `trustedCerts`     | (nested `<trustedCerts>`)    | (empty)                           | Certificates imported into the truststore. See *Trusted certificates*. |
+| `trustStore`       | `glassfish.trustStore`       | the domain's `cacerts.p12`        | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
+| `trustStorePassword` | `glassfish.trustStorePassword` | `changeit`                    | The truststore's password. |
+| `certsSkip`        | `glassfish.certs.skip`       | `false`                           | Skip the certificate import. |
 | `skip`             | `glassfish.provision.skip`   | `false`                           | Skip the goal: nothing is unpacked or published. |
 
 `provision` also skips on `-DskipTests` and `-Dmaven.test.skip`: if the
@@ -142,7 +146,9 @@ executable. A marker file in `stageDir` records the distribution:
   and so does a zip that is newer than the unpack, such as a SNAPSHOT you
   rebuilt with `mvn install`;
 - overlays are copied on every run, so a new overlay version applies
-  without a wipe.
+  without a wipe;
+- trusted certificates are imported on every run too, after the overlays.
+  A truststore that already holds them is left as it is.
 
 Modules of a parallel (`-T`) build that share a `stageDir` unpack it once.
 
@@ -173,6 +179,47 @@ Drop additional jars (or replace shipped ones) into the install's
 | `skip`          | boolean | `false`                     | Skip just this overlay, e.g. `<skip>${soteria.noupdate}</skip>`. |
 
 `overlaySkip` skips them all: `mvn verify -Dglassfish.overlay.skip=true`.
+
+## Trusted certificates
+
+Make GlassFish trust a certificate it doesn't know: an external identity
+provider's server certificate for OpenID, or a client certificate for
+`CLIENT-CERT`. Each `<trustedCert>` is an `<alias>` and a PEM or DER
+`<file>`:
+
+```xml
+<configuration>
+    <distribution>9.0.0</distribution>
+    <trustedCerts>
+        <trustedCert>
+            <alias>tomcat</alias>
+            <file>${project.basedir}/tomcat.cert</file>
+        </trustedCert>
+    </trustedCerts>
+</configuration>
+```
+
+They are imported into the staged domain's truststore, `cacerts.p12` (or
+`cacerts.jks` in older versions), unless `trustStore` names another. That
+happens before GlassFish first starts, which matters: GlassFish reads its
+truststore once, when it first opens a TLS connection, so a certificate
+added to a running server isn't picked up.
+
+`trustStore` only changes where the certificates go. GlassFish keeps
+reading the truststore its domain configuration names
+(`javax.net.ssl.trustStore`, the domain's own), so another file only helps
+if the domain is set up to use it.
+
+The import runs on every build. A certificate the truststore already holds
+under its alias is left alone, and a changed one replaces it. The truststore
+is written to a temporary file and moved into place, so an interrupted build
+can't leave half of it behind.
+
+The import only adds and replaces. Removing a `<trustedCert>`, or setting
+`certsSkip`, leaves a certificate that an earlier build imported where it
+is. Staging GlassFish afresh, for example after `mvn clean`, drops it.
+
+`certsSkip` skips the import: `mvn verify -Dglassfish.certs.skip=true`.
 
 ## Recipes
 

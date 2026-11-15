@@ -4,14 +4,22 @@
 package ee.omnifish.glassfish.maven.staging;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.attribute.FileTime;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -21,7 +29,15 @@ import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import ee.omnifish.glassfish.maven.staging.GlassFishStaging.ArtifactResolver;
+
 class GlassFishStagingTest {
+
+    private static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
+
+    private static final ArtifactResolver NO_ARTIFACTS = coord -> {
+        throw new AssertionError("resolved " + coord.toGav());
+    };
 
     @Test
     void perOverlaySkipIsHonoured(@TempDir Path tmp) throws IOException {
@@ -135,6 +151,129 @@ class GlassFishStagingTest {
         assertThat(Files.isRegularFile(stage.resolve("glassfish9/new.txt")), is(true));
     }
 
+    // --- trusted certificates ---
+
+    @Test
+    void importsTrustedCertsIntoTheDomainTruststore(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.p12", "PKCS12");
+
+        GlassFishStaging.stage(certSpec(tmp, home, certs(trusted("idp", "trusted-a.pem"))), NO_ARTIFACTS);
+
+        KeyStore store = load(home.resolve(DOMAIN_CONFIG).resolve("cacerts.p12"), "changeit");
+        assertThat(store.getType(), equalTo("PKCS12"));
+        assertThat(store.getCertificate("idp"), equalTo(certificate("trusted-a.pem")));
+        assertThat(store.containsAlias("existing"), is(true));
+    }
+
+    /** Older GlassFish versions ship cacerts.jks; the store keeps its type. */
+    @Test
+    void fallsBackToAJksTruststore(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.jks", "JKS");
+
+        GlassFishStaging.stage(certSpec(tmp, home, certs(trusted("idp", "trusted-a.der"))), NO_ARTIFACTS);
+
+        KeyStore store = load(home.resolve(DOMAIN_CONFIG).resolve("cacerts.jks"), "changeit");
+        assertThat(store.getType(), equalTo("JKS"));
+        // The DER file holds the same certificate as the PEM one.
+        assertThat(store.getCertificate("idp"), equalTo(certificate("trusted-a.pem")));
+    }
+
+    /** Staging runs on every build, and the import with it. */
+    @Test
+    void leavesATrustedCertAloneAndReplacesAChangedOne(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.p12", "PKCS12");
+        Path trustStore = home.resolve(DOMAIN_CONFIG).resolve("cacerts.p12");
+        GlassFishStaging.stage(certSpec(tmp, home, certs(trusted("idp", "trusted-a.pem"))), NO_ARTIFACTS);
+        byte[] written = Files.readAllBytes(trustStore);
+
+        GlassFishStaging.stage(certSpec(tmp, home, certs(trusted("idp", "trusted-a.pem"))), NO_ARTIFACTS);
+
+        // A PKCS12 store is written with fresh salts, so writing it again would change its bytes.
+        assertThat(Files.readAllBytes(trustStore), equalTo(written));
+
+        GlassFishStaging.stage(certSpec(tmp, home, certs(trusted("idp", "trusted-b.pem"))), NO_ARTIFACTS);
+
+        assertThat(load(trustStore, "changeit").getCertificate("idp"), equalTo(certificate("trusted-b.pem")));
+    }
+
+    /**
+     * The truststore is replaced, not rewritten in place, so whoever copies it
+     * meanwhile reads the old file or the new one. A second name for the old
+     * file shows the difference.
+     */
+    @Test
+    void replacesTheTruststoreRatherThanRewritingIt(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.p12", "PKCS12");
+        Path trustStore = home.resolve(DOMAIN_CONFIG).resolve("cacerts.p12");
+        Path oldName = tmp.resolve("old-cacerts.p12");
+        try {
+            Files.createLink(oldName, trustStore);
+        } catch (UnsupportedOperationException | IOException e) {
+            // No hardlinks on this filesystem.
+            return;
+        }
+
+        GlassFishStaging.stage(certSpec(tmp, home, certs(trusted("idp", "trusted-a.pem"))), NO_ARTIFACTS);
+
+        assertThat(load(trustStore, "changeit").containsAlias("idp"), is(true));
+        assertThat(load(oldName, "changeit").containsAlias("idp"), is(false));
+    }
+
+    @Test
+    void importsIntoANamedTruststore(@TempDir Path tmp) throws Exception {
+        Path trustStore = trustStore(tmp.resolve("custom.p12"), "PKCS12", "secret");
+        CertImport certImport = new CertImport(List.of(trusted("idp", "trusted-a.pem")), trustStore, "secret", false);
+
+        GlassFishStaging.stage(certSpec(tmp, null, certImport), NO_ARTIFACTS);
+
+        assertThat(load(trustStore, "secret").getCertificate("idp"), equalTo(certificate("trusted-a.pem")));
+    }
+
+    @Test
+    void certsSkipImportsNothing(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.p12", "PKCS12");
+        Path trustStore = home.resolve(DOMAIN_CONFIG).resolve("cacerts.p12");
+        byte[] staged = Files.readAllBytes(trustStore);
+        CertImport certImport = new CertImport(List.of(trusted("idp", "trusted-a.pem")), null, null, true);
+
+        GlassFishStaging.stage(certSpec(tmp, home, certImport), NO_ARTIFACTS);
+
+        assertThat(Files.readAllBytes(trustStore), equalTo(staged));
+    }
+
+    @Test
+    void aWrongPasswordNamesTheTruststore(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.p12", "PKCS12");
+        CertImport certImport = new CertImport(List.of(trusted("idp", "trusted-a.pem")), null, "wrong", false);
+
+        IOException e = assertThrows(IOException.class,
+                () -> GlassFishStaging.stage(certSpec(tmp, home, certImport), NO_ARTIFACTS));
+
+        assertThat(e.getMessage(), containsString("cacerts.p12"));
+    }
+
+    @Test
+    void aFileWithoutACertificateIsNamed(@TempDir Path tmp) throws Exception {
+        Path home = install(tmp, "cacerts.p12", "PKCS12");
+        Path notACert = Files.writeString(tmp.resolve("not-a.cert"), "hello");
+
+        IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(
+                certSpec(tmp, home, certs(new TrustedCert("idp", notACert.toFile()))), NO_ARTIFACTS));
+
+        assertThat(e.getMessage(), containsString("not-a.cert"));
+    }
+
+    @Test
+    void aDomainWithoutATruststoreIsNamed(@TempDir Path tmp) throws Exception {
+        Path home = tmp.resolve("glassfish9");
+        Files.createDirectories(home.resolve(DOMAIN_CONFIG));
+
+        IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(
+                certSpec(tmp, home, certs(trusted("idp", "trusted-a.pem"))), NO_ARTIFACTS));
+
+        assertThat(e.getMessage(), containsString("cacerts.p12 or cacerts.jks"));
+    }
+
     private static DistributionCoord distribution(String version) {
         DistributionCoord dist = new DistributionCoord();
         dist.setVersion(version);
@@ -154,5 +293,50 @@ class GlassFishStagingTest {
             }
         }
         return zip;
+    }
+
+    /** An install whose domain has a truststore of the given file name and type. */
+    private static Path install(Path tmp, String trustStoreName, String type) throws Exception {
+        Path home = tmp.resolve("glassfish9");
+        Path config = Files.createDirectories(home.resolve(DOMAIN_CONFIG));
+        trustStore(config.resolve(trustStoreName), type, "changeit");
+        return home;
+    }
+
+    /** A truststore holding one certificate, as {@code existing}. */
+    private static Path trustStore(Path file, String type, String password) throws Exception {
+        KeyStore store = KeyStore.getInstance(type);
+        store.load(null, null);
+        store.setCertificateEntry("existing", certificate("trusted-b.pem"));
+        try (OutputStream out = Files.newOutputStream(file)) {
+            store.store(out, password.toCharArray());
+        }
+        return file;
+    }
+
+    private static StageSpec certSpec(Path tmp, Path home, CertImport certImport) {
+        return new StageSpec(tmp.resolve("stage"), null, true, home, null, List.of(), false, certImport);
+    }
+
+    private static CertImport certs(TrustedCert... certs) {
+        return new CertImport(List.of(certs), null, null, false);
+    }
+
+    private static TrustedCert trusted(String alias, String fixture) throws Exception {
+        return new TrustedCert(alias, fixture(fixture).toFile());
+    }
+
+    private static Certificate certificate(String fixture) throws Exception {
+        try (InputStream in = Files.newInputStream(fixture(fixture))) {
+            return CertificateFactory.getInstance("X.509").generateCertificate(in);
+        }
+    }
+
+    private static Path fixture(String name) throws Exception {
+        return Paths.get(GlassFishStagingTest.class.getResource("/certs/" + name).toURI());
+    }
+
+    private static KeyStore load(Path trustStore, String password) throws Exception {
+        return KeyStore.getInstance(trustStore.toFile(), password.toCharArray());
     }
 }

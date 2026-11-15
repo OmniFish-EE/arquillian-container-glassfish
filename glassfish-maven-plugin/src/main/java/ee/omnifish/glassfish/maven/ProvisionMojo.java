@@ -27,9 +27,11 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.RemoteRepository;
 
+import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 /**
  * Provision a GlassFish install for the build: resolve the distribution,
@@ -106,6 +108,36 @@ public class ProvisionMojo extends AbstractMojo {
     @Parameter(property = "glassfish.overlay.skip", defaultValue = "false")
     private boolean overlaySkip;
 
+    /**
+     * Certificates GlassFish should trust, imported into the staged install's
+     * truststore so they are there from its first start: an external identity
+     * provider's server certificate for OpenID, or a client certificate for
+     * {@code CLIENT-CERT}. Each {@code <trustedCert>} is an {@code <alias>}
+     * and a PEM or DER {@code <file>}.
+     * The import only adds and replaces entries: a certificate removed from
+     * this list stays in the truststore until GlassFish is staged afresh.
+     */
+    @Parameter
+    private List<TrustedCert> trustedCerts;
+
+    /**
+     * The truststore the certificates go into. Defaults to the domain's own,
+     * {@code ${home}/glassfish/domains/domain1/config/cacerts.p12}, or
+     * {@code cacerts.jks} in older versions. This only changes where the
+     * certificates go: GlassFish keeps reading the truststore its domain
+     * configuration names.
+     */
+    @Parameter(property = "glassfish.trustStore")
+    private File trustStore;
+
+    /** The truststore's password. */
+    @Parameter(property = "glassfish.trustStorePassword", defaultValue = CertImport.DEFAULT_PASSWORD)
+    private String trustStorePassword;
+
+    /** Skip the certificate import. */
+    @Parameter(property = "glassfish.certs.skip", defaultValue = "false")
+    private boolean certsSkip;
+
     /** Skip this goal; nothing is unpacked or published. */
     @Parameter(property = "glassfish.provision.skip", defaultValue = "false")
     private boolean skip;
@@ -153,8 +185,10 @@ public class ProvisionMojo extends AbstractMojo {
         }
 
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
+        CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
+                trustStorePassword, certsSkip);
         StageSpec spec = stager.spec(dist, stageDir(), unpackSkip, home, overlays, overlayTargetDir,
-                overlaySkip, HOME_PARAMETER);
+                overlaySkip, certImport, HOME_PARAMETER);
         try {
             stager.stage(spec);
         } catch (IOException e) {

@@ -143,6 +143,10 @@ build isn't running tests there's no reason to pay for a pool.
 | `overlays`        | (nested `<overlays>`)  | (empty)                          | Artifacts copied into `overlayTargetDir` after unpack. See *Overlays*.  |
 | `overlayTargetDir`| `gf.pool.overlayTargetDir` | `${poolSource}/glassfish/modules` | Where overlay jars land. Default matches the standard GlassFish layout. |
 | `overlaySkip`     | `gf.pool.overlay.skip` | `false`                          | Skip overlay copying.                                                  |
+| `trustedCerts`    | (nested `<trustedCerts>`) | (empty)                       | Certificates imported into the staged install's truststore, so every slot trusts them. See *Trusted certificates*. |
+| `trustStore`      | `gf.pool.trustStore`   | the domain's `cacerts.p12`       | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
+| `trustStorePassword` | `gf.pool.trustStorePassword` | `changeit`               | The truststore's password.                                             |
+| `certsSkip`       | `gf.pool.certs.skip`   | `false`                          | Skip the certificate import.                                           |
 
 ### Slot setup (`up`, `provision`)
 
@@ -246,6 +250,44 @@ plus a `<destFileName>`:
 opt out of the impl overlay against a SNAPSHOT it doesn't yet match).
 
 Skip everything in CI without editing the pom: `mvn verify -Dgf.pool.overlay.skip=true`.
+
+## Trusted certificates
+
+Make every slot trust a certificate GlassFish doesn't know, such as an
+external identity provider's server certificate for OpenID. Each
+`<trustedCert>` is an `<alias>` and a PEM or DER `<file>`:
+
+```xml
+<configuration>
+    <distribution>
+        <version>9.0.0</version>
+    </distribution>
+    <trustedCerts>
+        <trustedCert>
+            <alias>tomcat</alias>
+            <file>${project.basedir}/tomcat.cert</file>
+        </trustedCert>
+    </trustedCerts>
+</configuration>
+```
+
+Staging imports them into the staged install's truststore before any slot
+is cloned from it, so the slots have them from their first start. That
+matters: GlassFish reads its truststore once, when it first opens a TLS
+connection, so a certificate added to a running slot isn't picked up. Slots
+still running from an earlier build keep their truststore, as `up` reuses
+them as they are.
+
+The import only adds and replaces. Removing a `<trustedCert>` leaves the
+certificate in the staged install, and in the slots cloned from it, until
+GlassFish is staged afresh, for example after `mvn clean`. And `trustStore`
+only changes where the certificates go: for the slots to use them, it must
+be the truststore GlassFish reads, inside the staged install, as the
+default is.
+
+This is the same import as `glassfish:provision`'s; see
+[Trusted certificates](../glassfish-maven-plugin/README.md#trusted-certificates)
+for the details.
 
 ## Slot setup
 
