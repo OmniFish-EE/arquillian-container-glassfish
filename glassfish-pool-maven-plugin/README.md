@@ -144,7 +144,7 @@ build isn't running tests there's no reason to pay for a pool.
 | `overlayTargetDir`| `gf.pool.overlayTargetDir` | `${poolSource}/glassfish/modules` | Where overlay jars land. Default matches the standard GlassFish layout. |
 | `overlaySkip`     | `gf.pool.overlay.skip` | `false`                          | Skip overlay copying.                                                  |
 | `trustedCerts`    | (nested `<trustedCerts>`) | (empty)                       | Certificates imported into the staged install's truststore, so every slot trusts them. See *Trusted certificates*. |
-| `trustStore`      | `gf.pool.trustStore`   | the domain's `cacerts.p12`       | The truststore they go into; `cacerts.jks` in older versions.          |
+| `trustStore`      | `gf.pool.trustStore`   | the domain's `cacerts.p12`       | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
 | `trustStorePassword` | `gf.pool.trustStorePassword` | `changeit`               | The truststore's password.                                             |
 | `certsSkip`       | `gf.pool.certs.skip`   | `false`                          | Skip the certificate import.                                           |
 
@@ -277,6 +277,13 @@ matters: GlassFish reads its truststore once, when it first opens a TLS
 connection, so a certificate added to a running slot isn't picked up. Slots
 still running from an earlier build keep their truststore, as `up` reuses
 them as they are.
+
+The import only adds and replaces. Removing a `<trustedCert>` leaves the
+certificate in the staged install, and in the slots cloned from it, until
+GlassFish is staged afresh, for example after `mvn clean`. And `trustStore`
+only changes where the certificates go: for the slots to use them, it must
+be the truststore GlassFish reads, inside the staged install, as the
+default is.
 
 This is the same import as `glassfish:provision`'s; see
 [Trusted certificates](../glassfish-maven-plugin/README.md#trusted-certificates)

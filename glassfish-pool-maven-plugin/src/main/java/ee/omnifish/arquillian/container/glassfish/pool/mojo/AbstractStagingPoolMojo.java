@@ -86,6 +86,8 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
      * {@code CLIENT-CERT}. Each {@code <trustedCert>} is an {@code <alias>}
      * and a PEM or DER {@code <file>}.
      * Slots inherit them, since they are cloned from the staged install.
+     * The import only adds and replaces entries: a certificate removed from
+     * this list stays in the truststore until GlassFish is staged afresh.
      */
     @Parameter
     protected List<TrustedCert> trustedCerts;
@@ -93,7 +95,9 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     /**
      * The truststore the certificates go into. Defaults to the domain's own,
      * {@code ${gf.pool.source}/glassfish/domains/domain1/config/cacerts.p12}, or
-     * {@code cacerts.jks} in older versions.
+     * {@code cacerts.jks} in older versions. This only changes where the
+     * certificates go: GlassFish keeps reading the truststore its domain
+     * configuration names.
      */
     @Parameter(property = "gf.pool.trustStore")
     protected File trustStore;

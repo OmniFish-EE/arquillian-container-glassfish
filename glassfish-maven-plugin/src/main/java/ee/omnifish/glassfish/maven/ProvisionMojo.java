@@ -114,6 +114,8 @@ public class ProvisionMojo extends AbstractMojo {
      * provider's server certificate for OpenID, or a client certificate for
      * {@code CLIENT-CERT}. Each {@code <trustedCert>} is an {@code <alias>}
      * and a PEM or DER {@code <file>}.
+     * The import only adds and replaces entries: a certificate removed from
+     * this list stays in the truststore until GlassFish is staged afresh.
      */
     @Parameter
     private List<TrustedCert> trustedCerts;
@@ -121,7 +123,9 @@ public class ProvisionMojo extends AbstractMojo {
     /**
      * The truststore the certificates go into. Defaults to the domain's own,
      * {@code ${home}/glassfish/domains/domain1/config/cacerts.p12}, or
-     * {@code cacerts.jks} in older versions.
+     * {@code cacerts.jks} in older versions. This only changes where the
+     * certificates go: GlassFish keeps reading the truststore its domain
+     * configuration names.
      */
     @Parameter(property = "glassfish.trustStore")
     private File trustStore;

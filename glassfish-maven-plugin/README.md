@@ -108,7 +108,7 @@ note applies:
 | `overlayTargetDir` | `glassfish.overlayTargetDir` | `${home}/glassfish/modules`       | Where overlay jars land. |
 | `overlaySkip`      | `glassfish.overlay.skip`     | `false`                           | Skip all overlays. |
 | `trustedCerts`     | (nested `<trustedCerts>`)    | (empty)                           | Certificates imported into the truststore. See *Trusted certificates*. |
-| `trustStore`       | `glassfish.trustStore`       | the domain's `cacerts.p12`        | The truststore they go into; `cacerts.jks` in older versions. |
+| `trustStore`       | `glassfish.trustStore`       | the domain's `cacerts.p12`        | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
 | `trustStorePassword` | `glassfish.trustStorePassword` | `changeit`                    | The truststore's password. |
 | `certsSkip`        | `glassfish.certs.skip`       | `false`                           | Skip the certificate import. |
 | `skip`             | `glassfish.provision.skip`   | `false`                           | Skip the goal: nothing is unpacked or published. |
@@ -205,10 +205,19 @@ happens before GlassFish first starts, which matters: GlassFish reads its
 truststore once, when it first opens a TLS connection, so a certificate
 added to a running server isn't picked up.
 
+`trustStore` only changes where the certificates go. GlassFish keeps
+reading the truststore its domain configuration names
+(`javax.net.ssl.trustStore`, the domain's own), so another file only helps
+if the domain is set up to use it.
+
 The import runs on every build. A certificate the truststore already holds
 under its alias is left alone, and a changed one replaces it. The truststore
 is written to a temporary file and moved into place, so an interrupted build
 can't leave half of it behind.
+
+The import only adds and replaces. Removing a `<trustedCert>`, or setting
+`certsSkip`, leaves a certificate that an earlier build imported where it
+is. Staging GlassFish afresh, for example after `mvn clean`, drops it.
 
 `certsSkip` skips the import: `mvn verify -Dglassfish.certs.skip=true`.
 
