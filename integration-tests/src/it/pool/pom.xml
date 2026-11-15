@@ -98,12 +98,26 @@
                     <distribution>
                         <version>${glassfish.version}</version>
                     </distribution>
+                    <!--
+                        The slot setup: every slot gets it, including the one
+                        the test grows. The quotes keep the value's spaces.
+                    -->
+                    <systemProperties>
+                        pool.it.sysprop=present
+                    </systemProperties>
+                    <maxHeapSize>1g</maxHeapSize>
+                    <postBootCommands>
+                        create-system-properties pool.it.postboot=applied
+                    </postBootCommands>
+                    <postStartCommands>
+                        create-system-properties "pool.it.poststart=applied after start"
+                    </postStartCommands>
                 </configuration>
             </plugin>
 
             <!--
                 No <systemPropertyVariables>: glassfish-pool:up publishes
-                gf.pool.dir/source/adminBase/portStride and the extension
+                the pool layout and the slot setup, and the extension
                 forwards them to the forked test JVM.
             -->
             <plugin>

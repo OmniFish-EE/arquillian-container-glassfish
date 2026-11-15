@@ -14,6 +14,9 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -26,7 +29,9 @@ import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
+import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
 import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
+import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
 
 /**
  * Test-JVM-side container: leases a pre-started slot at {@link #setup} time,
@@ -50,15 +55,27 @@ import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
  * sysprops are absent the leaser still works against an existing pool — it
  * just can't grow new slots, which is fine for fixed-size pre-provisioned
  * pools and only matters when {@code -TN} > {@code pool.size}.
+ *
+ * <p>The same goes for the {@link SlotSetup}, the settings and commands every
+ * slot gets: {@code up} forwards them, so slots created here, when the pool
+ * grows or a dead slot is recycled, get the same setup as those {@code up}
+ * started.
  */
 public class GlassFishPoolDeployableContainer implements DeployableContainer<GlassFishPoolConfiguration> {
 
     private static final Logger LOG = Logger.getLogger(GlassFishPoolDeployableContainer.class.getName());
 
-    private static final Duration RESTART_TIMEOUT = Duration.ofSeconds(90);
     private static final Duration POSTBOOT_TIMEOUT = Duration.ofSeconds(60);
 
+    /** Server settings the managed Arquillian Container reads, which pool slots get from the pool plugin. */
+    private static final String MAX_HEAP_SIZE = "glassfish.maxHeapSize";
+    private static final String ENABLE_ASSERTIONS = "glassfish.enableAssertions";
+
+    private static final AtomicBoolean POST_BOOT_HINT_LOGGED = new AtomicBoolean();
+    private static final AtomicBoolean SETTINGS_CHECKED = new AtomicBoolean();
+
     private GlassFishPoolConfiguration configuration;
+    private PoolConfig poolConfig;
     private CommonGlassFishManager<GlassFishPoolConfiguration> manager;
     private LeaseHandle handle;
 
@@ -87,14 +104,9 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         // even those not selected; lease only when the container is being
         // started for actual use.
         Path poolDir = Paths.get(configuration.getPoolDir());
-        // Source / port layout come from system properties (forwarded by
-        // surefire/failsafe) — see class Javadoc for the rationale.
-        PoolConfig poolConfig = new PoolConfig(
-                poolDir,
-                pathOrNull(System.getProperty(PoolConfig.SYS_SOURCE)),
-                0,
-                Integer.getInteger(PoolConfig.SYS_ADMIN_BASE, PoolConfig.DEFAULT_ADMIN_BASE),
-                Integer.getInteger(PoolConfig.SYS_PORT_STRIDE, PoolConfig.DEFAULT_PORT_STRIDE));
+        // Source, port layout and slot setup come from system properties
+        // (forwarded by surefire/failsafe) — see class Javadoc for the rationale.
+        poolConfig = PoolConfig.forTestJvm(poolDir);
         SlotLeaser leaser = new SlotLeaser(poolConfig, configuration.getLeaseTimeoutSeconds());
         String slotGroup = configuration.getSlotGroup();
         boolean shared = slotGroup != null && !slotGroup.isEmpty();
@@ -109,6 +121,8 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
                 Thread.currentThread().interrupt();
             }
             throw new LifecycleException("Could not lease a pool slot", e);
+        } catch (CommandFailedException e) {
+            throw new LifecycleException("Could not set up a pool slot: " + e.getMessage(), e);
         }
         try {
             SlotPorts ports = handle.ports();
@@ -125,6 +139,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             manager = new CommonGlassFishManager<>(configuration);
             manager.start();
 
+            warnAboutMissingSettings(ports);
             runPostBootCommands(ports);
         } catch (RuntimeException | LifecycleException e) {
             // Arquillian does not call stop() for a container whose start()
@@ -145,13 +160,55 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         manager = null;
     }
 
+    /**
+     * Run {@code glassfish.postBootCommands}, which the pool keeps running on
+     * every lease, as it always has. Logs once per JVM where the commands
+     * belong now.
+     */
     private void runPostBootCommands(SlotPorts ports) {
+        List<String> commands = configuration.getPostBootCommandList();
+        if (!commands.isEmpty() && POST_BOOT_HINT_LOGGED.compareAndSet(false, true)) {
+            LOG.info("glassfish.postBootCommands runs on every lease of a pool slot. To run commands once per "
+                    + "slot, or after every slot start, move them to the pool plugin's <postBootCommands> or "
+                    + "<postStartCommands>.");
+        }
         // --port targets the leased slot's DAS: post-boot subcommands like
         // create-file-user connect to a running DAS, which sits on a per-slot
         // offset port rather than the default 4848.
         AsAdmin asadmin = new AsAdmin(Paths.get(ports.glassFishHome()), ports.adminPort());
-        PostBootCommands.execute(configuration.getPostBootCommandList(),
+        PostBootCommands.execute(commands,
                 (command, args) -> asadmin.run(POSTBOOT_TIMEOUT, command, args.toArray(String[]::new)));
+    }
+
+    /**
+     * Warn once per JVM when the test JVM sets server settings, the way the
+     * managed Arquillian Container takes them, that the leased slot's
+     * {@code domain.xml} lacks: pool slots get them from the pool plugin.
+     */
+    private void warnAboutMissingSettings(SlotPorts ports) {
+        List<String> wanted = new ArrayList<>();
+        for (String property : configuration.getSystemProperyList()) {
+            wanted.add("-D" + property);
+        }
+        wanted.addAll(DomainXmlEditor.heapAndAssertionOptions(
+                System.getProperty(MAX_HEAP_SIZE), System.getProperty(ENABLE_ASSERTIONS)).values());
+        if (wanted.isEmpty() || !SETTINGS_CHECKED.compareAndSet(false, true)) {
+            return;
+        }
+
+        Path domainXml = PoolProvisioner.domainXml(Paths.get(ports.glassFishHome()));
+        try {
+            wanted.removeAll(DomainXmlEditor.jvmOptions(domainXml));
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "Could not read " + domainXml, e);
+            return;
+        }
+        if (!wanted.isEmpty()) {
+            LOG.warning("Pool slot " + handle.slotIndex() + " lacks the server settings " + wanted
+                    + " that this test JVM sets through glassfish.systemProperties, " + MAX_HEAP_SIZE + " or "
+                    + ENABLE_ASSERTIONS + ". Pool slots get them from the pool plugin's <systemProperties>, "
+                    + "<maxHeapSize> and <enableAssertions>.");
+        }
     }
 
     @Override
@@ -179,20 +236,21 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         manager = null;
     }
 
+    /**
+     * Restart the slot and run its post-start commands. A failure leaves the
+     * slot stopped and without {@code ports.properties}, so it is re-created
+     * (from {@code gf.pool.source}, if forwarded) before it is leased again.
+     * The test class has already finished, so its result stands.
+     */
     private void restartLeasedDomain(SlotLease lease) {
-        SlotPorts ports = lease.ports();
         try {
-            new AsAdmin(Paths.get(ports.glassFishHome())).run(RESTART_TIMEOUT, "restart-domain", "domain1");
+            new PoolProvisioner(poolConfig).restartSlot(lease.slotIndex(), lease.ports());
             LOG.info("Restarted GlassFish on slot " + lease.slotIndex()
-                    + " (adminPort=" + ports.adminPort() + ")");
-        } catch (RuntimeException e) {
-            // Log+continue: next leaser's port-health probe will skip the slot
-            // and tryGrow's claimRecyclableSlot will re-provision it from
-            // gf.pool.source (if forwarded). Bounded timeout above guarantees
-            // we never wedge the suite on a hung asadmin.
+                    + " (adminPort=" + lease.ports().adminPort() + ")");
+        } catch (IOException | RuntimeException e) {
             LOG.log(Level.WARNING,
-                    "restart-domain failed on slot " + lease.slotIndex()
-                    + "; releasing lease anyway — slot will be recycled on next lease",
+                    "Restarting slot " + lease.slotIndex()
+                    + " failed; releasing lease anyway — the slot will be re-created before its next lease",
                     e);
         }
     }
@@ -215,9 +273,5 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
     @Override
     public void undeploy(Descriptor descriptor) throws DeploymentException {
         throw new UnsupportedOperationException("Not implemented");
-    }
-
-    private static Path pathOrNull(String s) {
-        return (s == null || s.isEmpty()) ? null : Paths.get(s);
     }
 }

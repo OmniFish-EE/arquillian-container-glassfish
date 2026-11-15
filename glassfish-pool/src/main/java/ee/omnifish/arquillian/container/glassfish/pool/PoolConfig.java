@@ -12,7 +12,6 @@ package ee.omnifish.arquillian.container.glassfish.pool;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -47,18 +46,28 @@ public final class PoolConfig {
      * Mirrors {@code glassfish.systemProperties} on the managed container.
      */
     public static final String SYS_SYSTEM_PROPERTIES = "gf.pool.systemProperties";
+    /** Each slot's {@code -Xmx} value. Mirrors {@code glassfish.maxHeapSize} on the managed container. */
+    public static final String SYS_MAX_HEAP_SIZE = "gf.pool.maxHeapSize";
+    /** What follows each slot's {@code -ea}. Mirrors {@code glassfish.enableAssertions} on the managed container. */
+    public static final String SYS_ENABLE_ASSERTIONS = "gf.pool.enableAssertions";
+    /** Newline-separated {@code asadmin} commands run once per slot. See {@link SlotSetup}. */
+    public static final String SYS_POST_BOOT_COMMANDS = "gf.pool.postBootCommands";
+    /** Newline-separated {@code asadmin} commands run after every slot start. See {@link SlotSetup}. */
+    public static final String SYS_POST_START_COMMANDS = "gf.pool.postStartCommands";
+    /** Whether a failed command fails a slot's setup. Default {@code true}. */
+    public static final String SYS_FAIL_ON_COMMAND_ERROR = "gf.pool.failOnCommandError";
 
     private final Path poolDir;
     private final Path source;
     private final int size;
     private final int adminPortBase;
     private final int portStride;
-    private final List<String> systemProperties;
+    private final SlotSetup setup;
     private final boolean debug;
     private final boolean suspend;
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride) {
-        this(poolDir, source, size, adminPortBase, portStride, List.of());
+        this(poolDir, source, size, adminPortBase, portStride, SlotSetup.NONE, false, false);
     }
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
@@ -68,6 +77,12 @@ public final class PoolConfig {
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
                       List<String> systemProperties, boolean debug, boolean suspend) {
+        this(poolDir, source, size, adminPortBase, portStride,
+                new SlotSetup(systemProperties, null, null, List.of(), List.of(), true), debug, suspend);
+    }
+
+    public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
+                      SlotSetup setup, boolean debug, boolean suspend) {
         if (portStride < MIN_PORT_STRIDE) {
             throw new IllegalArgumentException(
                     "portStride must be >= " + MIN_PORT_STRIDE + " (got " + portStride + ")");
@@ -89,9 +104,7 @@ public final class PoolConfig {
         this.size = size;
         this.adminPortBase = adminPortBase;
         this.portStride = portStride;
-        this.systemProperties = (systemProperties == null)
-                ? List.of()
-                : Collections.unmodifiableList(List.copyOf(systemProperties));
+        this.setup = (setup == null) ? SlotSetup.NONE : setup;
         this.debug = debug;
         this.suspend = suspend;
     }
@@ -135,7 +148,12 @@ public final class PoolConfig {
      * Each entry is a bare {@code key=value} pair (no leading {@code -D}).
      */
     public List<String> systemProperties() {
-        return systemProperties;
+        return setup.systemProperties();
+    }
+
+    /** The settings and commands every slot gets. */
+    public SlotSetup setup() {
+        return setup;
     }
 
     /**
@@ -170,9 +188,28 @@ public final class PoolConfig {
                 Integer.parseInt(System.getProperty(SYS_SIZE, "1")),
                 Integer.parseInt(System.getProperty(SYS_ADMIN_BASE, String.valueOf(DEFAULT_ADMIN_BASE))),
                 Integer.parseInt(System.getProperty(SYS_PORT_STRIDE, String.valueOf(DEFAULT_PORT_STRIDE))),
-                parseSystemProperties(System.getProperty(SYS_SYSTEM_PROPERTIES)),
+                SlotSetup.fromSystemProperties(),
                 Boolean.getBoolean("glassfish.debug"),
                 Boolean.getBoolean("glassfish.suspend"));
+    }
+
+    /**
+     * The config a test JVM leases from {@code poolDir} with, built from the
+     * system properties {@link #fromSystemProperties} reads, as {@code up}
+     * forwards them. {@code debug} and {@code suspend} aren't forwarded, so
+     * slots the test JVM creates start without them. Without a forwarded
+     * source, the test JVM can't create slots, only lease existing ones.
+     */
+    static PoolConfig forTestJvm(Path poolDir) {
+        return new PoolConfig(
+                poolDir,
+                pathOrNull(System.getProperty(SYS_SOURCE)),
+                0,
+                Integer.getInteger(SYS_ADMIN_BASE, DEFAULT_ADMIN_BASE),
+                Integer.getInteger(SYS_PORT_STRIDE, DEFAULT_PORT_STRIDE),
+                SlotSetup.fromSystemProperties(),
+                false,
+                false);
     }
 
     /**
@@ -181,6 +218,14 @@ public final class PoolConfig {
      * {@code glassfish.systemProperties} convention.
      */
     public static List<String> parseSystemProperties(String multiline) {
+        return parseLines(multiline);
+    }
+
+    /**
+     * Split a multiline block, such as a command list, into trimmed lines.
+     * Blank lines and lines starting with {@code #} are dropped.
+     */
+    public static List<String> parseLines(String multiline) {
         if (multiline == null || multiline.isBlank()) {
             return List.of();
         }

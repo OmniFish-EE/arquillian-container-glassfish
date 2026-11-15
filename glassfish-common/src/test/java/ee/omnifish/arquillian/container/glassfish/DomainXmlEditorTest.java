@@ -191,6 +191,22 @@ class DomainXmlEditorTest {
     }
 
     @Test
+    void mapsHeapAndAssertionsAsManagedDoes() {
+        assertEquals(Map.of("-Xmx", "-Xmx2048m", "-ea", "-ea:org.jboss.cdi.tck..."),
+                DomainXmlEditor.heapAndAssertionOptions("2048m", ":org.jboss.cdi.tck..."));
+        assertTrue(DomainXmlEditor.heapAndAssertionOptions(null, null).isEmpty());
+    }
+
+    @Test
+    void readsTheJvmOptions(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, JAVA_CONFIG_FRAGMENT);
+
+        assertEquals(List.of("-Xmx512m", "-Djavax.net.ssl.trustStore=cacerts.p12"),
+                DomainXmlEditor.jvmOptions(domainXml));
+    }
+
+    @Test
     void atomicWriteReplacesInodeNotTruncatesIt(@TempDir Path tmp) throws IOException {
         // A second name pointing at the same inode. After setPorts, the old
         // inode (and so its other names) should NOT see the new content: the

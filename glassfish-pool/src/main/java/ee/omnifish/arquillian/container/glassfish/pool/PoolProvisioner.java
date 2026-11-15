@@ -15,6 +15,8 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -22,11 +24,19 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
+import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
 
 /**
  * Provisions a single slot: clone the source install, patch the per-slot
- * ports into {@code domain.xml}, run {@code asadmin start-domain}, then
- * publish a {@code ports.properties} so the test JVM can pick up the slot.
+ * ports and the {@link SlotSetup} settings into {@code domain.xml}, run
+ * {@code asadmin start-domain} and the setup's commands, then publish a
+ * {@code ports.properties} so the test JVM can pick up the slot.
+ *
+ * <p>The slot lock says who owns a slot; {@code ports.properties} says its
+ * setup is complete. It is removed before every start or restart and written
+ * after the last step, so a half-configured slot is never leased. A slot with
+ * a free lock and no {@code ports.properties} was abandoned, for example by a
+ * JVM killed during its setup, and is re-created.
  *
  * <p>Idempotent: a slot whose admin port already responds is left alone.
  * Lets {@link PoolBootstrap#up} be re-run safely after a partial failure.
@@ -38,6 +48,15 @@ public final class PoolProvisioner {
     /** Subdirectory under each slot dir holding the cloned GlassFish install. */
     public static final String SLOT_INSTALL_DIRNAME = "glassfish";
 
+    /** Deadline for {@code start-domain} and {@code restart-domain}. */
+    private static final Duration START_TIMEOUT = Duration.ofMinutes(5);
+
+    /** Deadline for each command of a list, and for the restart check. */
+    private static final Duration COMMAND_TIMEOUT = Duration.ofMinutes(5);
+
+    /** Deadline for {@code stop-domain}. */
+    private static final Duration STOP_TIMEOUT = Duration.ofMinutes(2);
+
     private static final int HEALTH_PROBE_TIMEOUT_MILLIS = 1000;
 
     private final PoolConfig config;
@@ -48,32 +67,39 @@ public final class PoolProvisioner {
 
     /**
      * Provision slot {@code idx}. Returns the slot's published
-     * {@link SlotPorts} on success.
+     * {@link SlotPorts} on success, or {@code null} when another JVM owns a
+     * slot that hasn't published any yet.
+     *
+     * <p>Holds the slot lock while it checks and builds the slot, as the grow
+     * path does, so a free lock always means nobody is building the slot.
      */
     public SlotPorts provisionSlot(int idx) throws IOException {
         requireSource();
-        int adminPort = config.adminPort(idx);
         Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
+        Files.createDirectories(PoolPaths.slotDir(config.poolDir(), idx));
 
-        // Idempotency: skip the heavy work if the slot is already alive and the
-        // ports file is consistent. A busy slot lock also counts — the owning
-        // leaser may be mid-restart (restartOnRelease) with the port briefly
-        // closed; trying to start-domain into that window would fail with
-        // "port already in use" the moment GF re-binds.
-        if (Files.exists(portsFile)
-                && (isPortHealthy(adminPort) || PoolBootstrap.isLockBusy(config.poolDir(), idx))) {
-            LOG.fine(() -> "Slot " + idx + " already provisioned (adminPort=" + adminPort + ")");
-            return SlotPorts.readFrom(portsFile);
+        PoolLocks.Held lock = PoolLocks.tryLock(PoolPaths.lockFile(config.poolDir(), idx));
+        if (lock == null) {
+            // Another JVM owns the slot: it has leased it, or is growing or
+            // restarting it, and publishes ports.properties when it's done.
+            LOG.fine(() -> "Slot " + idx + " is owned by another JVM");
+            return Files.exists(portsFile) ? SlotPorts.readFrom(portsFile) : null;
         }
-        return createSlot(idx);
+
+        try (lock) {
+            if (Files.exists(portsFile) && isPortHealthy(config.adminPort(idx))) {
+                LOG.fine(() -> "Slot " + idx + " already provisioned (adminPort=" + config.adminPort(idx) + ")");
+                return SlotPorts.readFrom(portsFile);
+            }
+            return createSlot(idx);
+        }
     }
 
     /**
      * Provision slot {@code idx} for a caller that holds its lock: a slot
-     * {@link SlotLeaser} claimed to grow the pool or to recycle a dead slot.
-     * Unlike {@link #provisionSlot}, this skips the reuse check, which would
-     * count the caller's own lock as busy and hand the dead slot back, and
-     * always re-creates the slot.
+     * {@link SlotLeaser} claimed to grow the pool or to recycle a dead or
+     * abandoned slot. Unlike {@link #provisionSlot}, this skips the reuse
+     * check and always re-creates the slot.
      */
     SlotPorts provisionClaimedSlot(int idx) throws IOException {
         requireSource();
@@ -102,6 +128,14 @@ public final class PoolProvisioner {
         // slot while it is being re-created.
         Files.deleteIfExists(portsFile);
 
+        // A setup abandoned after start-domain, or a failed stop, can leave a
+        // server running from the old install, on the slot's ports.
+        stopIfStarted(idx, adminPort);
+        if (isPortHealthy(adminPort)) {
+            throw new IOException("Slot " + idx + ": a server still answers on admin port " + adminPort
+                    + " and didn't stop");
+        }
+
         // tryGrow may have pre-created an empty slot dir to claim the index;
         // wipe its contents (but not the dir itself) so a concurrent caller's
         // Files.exists check still sees the claim while we re-clone.
@@ -112,30 +146,82 @@ public final class PoolProvisioner {
         LOG.info("Cloning source install for slot " + idx + " (adminPort=" + adminPort + ")");
         PoolSourceCloner.clone(config.source(), slotInstall);
 
-        Path domainXml = slotInstall
-                .resolve("glassfish").resolve("domains").resolve("domain1")
-                .resolve("config").resolve("domain.xml");
+        Path domainXml = domainXml(slotInstall);
         DomainXmlEditor.setPorts(domainXml, adminPort, httpPort, httpsPort);
-        DomainXmlEditor.setSystemProperties(domainXml, config.systemProperties());
+        DomainXmlEditor.setSystemProperties(domainXml, config.setup().systemProperties());
+        DomainXmlEditor.setJvmOptions(domainXml, config.setup().jvmOptions());
 
-        AsAdmin asadmin = new AsAdmin(slotInstall);
         try {
-            asadmin.run("start-domain", startDomainArgs());
+            new AsAdmin(slotInstall).run(START_TIMEOUT, "start-domain", startDomainArgs());
         } catch (AsAdmin.AsAdminException e) {
             LOG.log(Level.SEVERE, "Slot " + idx + " start-domain failed", e);
-            stopIfStarted(idx);
+            stopIfStarted(idx, adminPort);
             throw new IOException("Slot " + idx + " start-domain failed: " + e.getMessage(), e);
         }
 
         SlotPorts ports = new SlotPorts(adminPort, httpPort, httpsPort, slotInstall.toString());
         try {
+            runCommands(idx, ports, true);
             ports.writeTo(portsFile);
-        } catch (IOException e) {
-            stopIfStarted(idx);
+        } catch (IOException | RuntimeException e) {
+            stopIfStarted(idx, adminPort);
             throw e;
         }
         LOG.info("Slot " + idx + " provisioned: adminPort=" + adminPort + ", http=" + httpPort);
         return ports;
+    }
+
+    /**
+     * Restart slot {@code idx} for its next lease, then run the post-start
+     * list. The caller holds the slot lock. {@code ports.properties} is
+     * removed first and written again at the end, so after a failed restart
+     * or command, or a JVM killed in between, the slot is re-created rather
+     * than leased as it is. A failure also stops the slot.
+     */
+    void restartSlot(int idx, SlotPorts ports) throws IOException {
+        Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
+        Files.deleteIfExists(portsFile);
+        try {
+            new AsAdmin(Paths.get(ports.glassFishHome())).run(START_TIMEOUT, "restart-domain", "domain1");
+            runCommands(idx, ports, false);
+            ports.writeTo(portsFile);
+        } catch (IOException | RuntimeException e) {
+            stopIfStarted(idx, ports.adminPort());
+            throw e;
+        }
+    }
+
+    /**
+     * Run the setup's commands on slot {@code idx}, which has just started:
+     * for a new domain the post-boot list and, if GlassFish asks for one, a
+     * restart; then the post-start list. With {@code failOnCommandError}, a
+     * failed command throws {@link PostBootCommands.CommandFailedException}.
+     */
+    private void runCommands(int idx, SlotPorts ports, boolean newDomain) {
+        SlotSetup setup = config.setup();
+        Path home = Paths.get(ports.glassFishHome());
+        AsAdmin remote = new AsAdmin(home, ports.adminPort());
+        if (newDomain && !setup.postBootCommands().isEmpty()) {
+            runList(remote, setup.postBootCommands());
+            if (isRestartRequired(remote)) {
+                LOG.info("Restarting slot " + idx + ", as its post-boot commands require");
+                new AsAdmin(home).run(START_TIMEOUT, "restart-domain", "domain1");
+            }
+        }
+        runList(remote, setup.postStartCommands());
+    }
+
+    private void runList(AsAdmin remote, List<String> commandLines) {
+        PostBootCommands.run(commandLines,
+                (command, args) -> remote.run(COMMAND_TIMEOUT, command, args.toArray(String[]::new)),
+                config.setup().failOnCommandError());
+    }
+
+    /** Whether the server holds changes it applies only after a restart. */
+    private static boolean isRestartRequired(AsAdmin remote) {
+        return remote.run(COMMAND_TIMEOUT, "_get-restart-required").lines()
+                .map(String::trim)
+                .anyMatch("true"::equals);
     }
 
     /**
@@ -156,27 +242,47 @@ public final class PoolProvisioner {
     }
 
     /**
-     * After a failed setup, stop slot {@code idx} if its admin port answers,
-     * so the failure doesn't leave a GlassFish running behind it.
+     * Stop slot {@code idx} if its admin port answers, so a failed setup
+     * doesn't leave a GlassFish running behind it.
      */
-    private void stopIfStarted(int idx) {
-        if (isPortHealthy(config.adminPort(idx))) {
+    private void stopIfStarted(int idx, int adminPort) {
+        if (isPortHealthy(adminPort)) {
             stopSlot(idx);
         }
     }
 
-    /** Stop a slot's GlassFish if its admin port is responding. Best-effort; logs failures. */
+    /**
+     * Stop a slot's GlassFish with {@code stop-domain}, and with
+     * {@code stop-domain --kill} if that fails. Logs failures; a caller that
+     * must know whether the server is gone probes its admin port afterwards.
+     */
     public void stopSlot(int idx) {
         Path slotInstall = PoolPaths.slotDir(config.poolDir(), idx).resolve(SLOT_INSTALL_DIRNAME);
         if (!Files.isDirectory(slotInstall)) {
             return;
         }
+
+        AsAdmin asadmin = new AsAdmin(slotInstall);
         try {
-            new AsAdmin(slotInstall).run("stop-domain", "domain1");
+            asadmin.run(STOP_TIMEOUT, "stop-domain", "domain1");
             LOG.info("Slot " + idx + " stopped");
-        } catch (AsAdmin.AsAdminException e) {
-            LOG.log(Level.WARNING, "Slot " + idx + " stop-domain failed: " + e.getMessage());
+            return;
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Slot " + idx + " stop-domain failed, killing it: " + e.getMessage());
         }
+
+        try {
+            asadmin.run(STOP_TIMEOUT, "stop-domain", "--kill", "domain1");
+            LOG.info("Slot " + idx + " killed");
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Slot " + idx + " stop-domain --kill failed: " + e.getMessage());
+        }
+    }
+
+    /** A slot install's {@code domain.xml}. */
+    static Path domainXml(Path slotInstall) {
+        return slotInstall.resolve("glassfish").resolve("domains").resolve("domain1")
+                .resolve("config").resolve("domain.xml");
     }
 
     /** TCP probe — same heuristic SlotLeaser uses to decide a slot is alive. */

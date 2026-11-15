@@ -63,7 +63,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -227,15 +226,8 @@ class GlassFishServerControl {
         Path domainXml = Paths.get(config.getDomainXmlPath());
         try {
             DomainXmlEditor.setPorts(domainXml, config.getAdminPort(), config.getHttpPort(), config.getHttpsPort());
-
-            Map<String, String> jvmOptions = new LinkedHashMap<>();
-            if (config.getMaxHeapSize() != null) {
-                jvmOptions.put("-Xmx", "-Xmx" + config.getMaxHeapSize());
-            }
-            if (config.getEnableAssertions() != null) {
-                jvmOptions.put("-ea", "-ea" + config.getEnableAssertions());
-            }
-            DomainXmlEditor.setJvmOptions(domainXml, jvmOptions);
+            DomainXmlEditor.setJvmOptions(domainXml,
+                DomainXmlEditor.heapAndAssertionOptions(config.getMaxHeapSize(), config.getEnableAssertions()));
 
             DomainXmlEditor.setSystemProperties(domainXml, config.getSystemProperyList());
         } catch (IOException e) {

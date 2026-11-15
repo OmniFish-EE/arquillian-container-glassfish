@@ -176,12 +176,18 @@ isn't already set (so a pom property or `-D` still wins):
 | `gf.pool.source`     | the clone source (`poolSource`), when known           |
 | `gf.pool.adminBase`  | `adminPortBase`                                       |
 | `gf.pool.portStride` | `portStride`                                          |
+| `gf.pool.systemProperties`, `gf.pool.maxHeapSize`, `gf.pool.enableAssertions` | the server settings, when set |
+| `gf.pool.postBootCommands`, `gf.pool.postStartCommands`, `gf.pool.failOnCommandError` | the commands, when set, and their switch |
+
+The last two rows are the [slot setup](../glassfish-pool-maven-plugin/README.md#slot-setup),
+so that slots a test JVM creates get the same setup as the ones `up`
+started.
 
 Failsafe forwards `-D` properties and its own `<systemPropertyVariables>`
 to the forked JVM, but not project properties. So for every project that
 declares the pool plugin with `<extensions>true</extensions>`, the plugin
 adds `<gf.pool.dir>${gf.pool.dir}</gf.pool.dir>` (and likewise for the
-other three) to failsafe's `<systemPropertyVariables>`. Maven resolves
+others) to failsafe's `<systemPropertyVariables>`. Maven resolves
 those references when failsafe runs, after `up`. Entries you configure
 yourself are kept, so `<gf.pool.dir>/elsewhere</gf.pool.dir>` overrides
 the forwarded value.
@@ -195,6 +201,12 @@ They still avoid repeating any path:
     <gf.pool.source>${gf.pool.source}</gf.pool.source>
     <gf.pool.adminBase>${gf.pool.adminBase}</gf.pool.adminBase>
     <gf.pool.portStride>${gf.pool.portStride}</gf.pool.portStride>
+    <gf.pool.systemProperties>${gf.pool.systemProperties}</gf.pool.systemProperties>
+    <gf.pool.maxHeapSize>${gf.pool.maxHeapSize}</gf.pool.maxHeapSize>
+    <gf.pool.enableAssertions>${gf.pool.enableAssertions}</gf.pool.enableAssertions>
+    <gf.pool.postBootCommands>${gf.pool.postBootCommands}</gf.pool.postBootCommands>
+    <gf.pool.postStartCommands>${gf.pool.postStartCommands}</gf.pool.postStartCommands>
+    <gf.pool.failOnCommandError>${gf.pool.failOnCommandError}</gf.pool.failOnCommandError>
 </systemPropertyVariables>
 ```
 
@@ -263,9 +275,9 @@ the leased slot wins.
 
 ### System properties forwarded by the build
 
-These configure the pool layout. The Maven plugin sets them automatically,
-and forwards `gf.pool.dir`/`source`/`adminBase`/`portStride` to the test
-JVMs (see [Forwarding to failsafe](#forwarding-to-failsafe)). You only need
+These configure the pool layout and the slot setup. The Maven plugin sets
+them automatically, and forwards the layout and the setup to the test JVMs
+(see [Forwarding to failsafe](#forwarding-to-failsafe)). You only need
 to set them by hand if you drive the lifecycle from antrun, an IDE, or a
 shell script.
 
@@ -277,6 +289,11 @@ shell script.
 | `gf.pool.adminBase`        | `14848` | Admin port for slot 1.                                 |
 | `gf.pool.portStride`       | `100`   | Per-slot port spacing. Must be ≥ 10.                   |
 | `gf.pool.systemProperties` | (none)  | Newline-separated `key=value` jvm options (see below). |
+| `gf.pool.maxHeapSize`      | (none)  | Each slot's `-Xmx` value. |
+| `gf.pool.enableAssertions` | (none)  | What follows each slot's `-ea`. |
+| `gf.pool.postBootCommands` | (none)  | Newline-separated `asadmin` commands run once per slot. |
+| `gf.pool.postStartCommands` | (none) | Newline-separated `asadmin` commands run after every slot start. |
+| `gf.pool.failOnCommandError` | `true` | Whether a failed command fails the slot's setup. |
 | `gf.pool.restartOnRelease` | `false` | Seeds `restartOnRelease` for every test JVM the build forks. |
 | `gf.pool.shareGroupSlot`   | `false` | When `true`, members of a `<group>` share one slot (http+https idiom). Default keeps a slot per member. |
 | `glassfish.debug`          | `false` | Start each slot's domain in debug mode (`start-domain --debug`). Requires `gf.pool.size=1` (see below). Same property name as the managed container. |
@@ -314,6 +331,9 @@ lines are ignored, mirroring the
 Each entry becomes a `<jvm-options>-Dkey=value</jvm-options>` child of every
 `<java-config>` in each slot's own `domain.xml`; the source install stays as
 staged. Override at the command line with `-Dglassfish.systemProperties=…`.
+`<maxHeapSize>` and `<enableAssertions>` work the same way, and
+`<postBootCommands>` and `<postStartCommands>` run `asadmin` commands on each
+slot; see the plugin's [Slot setup](../glassfish-pool-maven-plugin/README.md#slot-setup).
 
 ### Debugging a slot
 
@@ -337,6 +357,11 @@ up. With `<extensions>true</extensions>` the plugin forwards
 `gf.pool.source` (together with `gf.pool.adminBase` and
 `gf.pool.portStride`, so grown slots land in the same port window), so
 growing is on by default.
+
+Grown slots get the same [slot setup](../glassfish-pool-maven-plugin/README.md#slot-setup)
+as the ones `up` started, since the plugin forwards that too. A slot whose
+setup was abandoned, for example by a test JVM killed during it, is
+re-created the same way.
 
 To keep the pool at exactly `poolSize` and make test JVMs wait for an idle
 slot instead, blank the forwarded source in failsafe's configuration:
@@ -442,8 +467,9 @@ some tests leak JVM-scoped state that `undeploy` alone doesn't clear:
 classloader pins, datasource pool handles, ThreadLocals, EclipseLink
 session caches, etc. Set `restartOnRelease=true` and the container will
 run `asadmin restart-domain domain1` against the leased slot's install
-just before the lock is released, so the next leaser sees a fresh GF
-JVM on the same ports.
+just before the lock is released, followed by the plugin's
+`<postStartCommands>`, so the next leaser sees a fresh GF JVM on the same
+ports.
 
 The flag is exposed at three layers of increasing granularity. Pick the
 narrowest one that fits.
@@ -472,10 +498,10 @@ forwarded by the pool plugin itself; see
 ```
 
 Keep `gf.pool.source` forwarded (the default with `<extensions>true</extensions>`)
-when this is on: if a restart fails, the next leaser's port-health probe
-marks the slot dead and `tryGrow` recycles it by re-provisioning from
-`gf.pool.source`. Without a source, a failed restart leaves a permanently
-dead slot.
+when this is on: if a restart or a post-start command fails, the slot is
+stopped and left without its `ports.properties`, and the next grow
+re-creates it from `gf.pool.source`. Without a source, a failed restart
+leaves a slot that is never leased again.
 
 ### 2. Per-module override (child pom)
 
@@ -515,9 +541,12 @@ test JVMs that resolve this `arquillian.xml`.
 
 Restart adds the GF cold-start cost (typically 5–15 s) to each lease
 release. On a `forkCount=4`, hundreds-of-test-class suite this can be
-significant — measure before enabling globally. The restart is bounded
-to a 90 s timeout; if it times out, the asadmin process is force-killed,
-the lease releases anyway, and the next leaser will recycle the slot.
+significant — measure before enabling globally. The restart and each
+post-start command have a deadline; if one passes, the asadmin process is
+killed. A failed restart or command leaves the slot stopped and without its
+`ports.properties`, the lease releases anyway, and the slot is re-created
+before it is leased again. The test class has already finished, so its
+result stands.
 
 The container holds the slot's file lock *during* the restart, so a
 concurrent test JVM cannot pick up the slot mid-restart and misclassify

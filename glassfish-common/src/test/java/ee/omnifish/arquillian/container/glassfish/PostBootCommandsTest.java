@@ -5,11 +5,15 @@ package ee.omnifish.arquillian.container.glassfish;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+
+import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
 
 class PostBootCommandsTest {
 
@@ -62,6 +66,68 @@ class PostBootCommandsTest {
         PostBootCommands.execute(List.of(), (command, args) -> {
             throw new AssertionError("should not be called");
         });
+    }
+
+    // --- run(), for the pool plugin's lists ---
+
+    @Test
+    void wordsGroupQuotedText() {
+        assertEquals(List.of("create-file-user", "--groups", "Manager Employee", "joe"),
+                PostBootCommands.words("create-file-user --groups \"Manager Employee\" joe"));
+        assertEquals(List.of("set", "a=it's"), PostBootCommands.words("set \"a=it's\""));
+        assertEquals(List.of("--property", "a=b c:d"), PostBootCommands.words("--property a='b c':d"));
+        assertEquals(List.of("x", ""), PostBootCommands.words("x ''"));
+        assertEquals(List.of(), PostBootCommands.words("   "));
+    }
+
+    /** asadmin reads backslash escapes such as {@code \:} itself. */
+    @Test
+    void wordsKeepBackslashes() {
+        assertEquals(List.of("create-jvm-options", "-Dhosts=a\\:b", "\\\""),
+                PostBootCommands.words("create-jvm-options -Dhosts=a\\:b '\\\"'"));
+    }
+
+    @Test
+    void wordsRejectAnUnclosedQuote() {
+        assertThrows(IllegalArgumentException.class, () -> PostBootCommands.words("set \"a=b"));
+    }
+
+    @Test
+    void runPassesQuotedTextAsOneArgument() {
+        List<String[]> captured = new ArrayList<>();
+        PostBootCommands.run(List.of("create-file-user --groups 'a b' joe"),
+                (command, args) -> captured.add(prepend(command, args)), true);
+
+        assertArrayEquals(new String[] { "create-file-user", "--groups", "a b", "joe" }, captured.get(0));
+    }
+
+    @Test
+    void runStopsAtTheFirstFailureWhenToldTo() {
+        List<String> run = new ArrayList<>();
+        CommandFailedException e = assertThrows(CommandFailedException.class,
+                () -> PostBootCommands.run(List.of("first", "boom now", "third"), (command, args) -> {
+                    run.add(command);
+                    if ("boom".equals(command)) {
+                        throw new IllegalStateException("user already exists");
+                    }
+                }, true));
+
+        assertEquals(List.of("first", "boom"), run);
+        assertTrue(e.getMessage().contains("boom now"), e.getMessage());
+        assertTrue(e.getMessage().contains("user already exists"), e.getMessage());
+    }
+
+    @Test
+    void runContinuesAfterAFailureOtherwise() {
+        List<String> run = new ArrayList<>();
+        PostBootCommands.run(List.of("first", "boom", "third"), (command, args) -> {
+            run.add(command);
+            if ("boom".equals(command)) {
+                throw new IllegalStateException("user already exists");
+            }
+        }, false);
+
+        assertEquals(List.of("first", "boom", "third"), run);
     }
 
     private static String[] prepend(String command, List<String> args) {

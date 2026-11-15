@@ -27,7 +27,8 @@ import java.util.logging.Logger;
 
 /**
  * Thin wrapper around {@code glassfish/bin/asadmin}. Used by the provisioner
- * to run {@code start-domain}/{@code stop-domain} against a per-slot install.
+ * to start, restart and stop a per-slot install and to run commands on it.
+ * Every call has a deadline.
  *
  * <p>Acknowledged duplication with managed's {@code GlassFishServerControl};
  * a follow-up PR can promote this to {@code glassfish-common}.
@@ -35,6 +36,9 @@ import java.util.logging.Logger;
 final class AsAdmin {
 
     private static final Logger LOG = Logger.getLogger(AsAdmin.class.getName());
+
+    /** How long the output may trail the process's exit. */
+    private static final long DRAIN_GRACE_MILLIS = 5_000L;
 
     private static final String JAVA = System.getProperty("os.name").toLowerCase().contains("win")
             ? "java.exe"
@@ -60,23 +64,14 @@ final class AsAdmin {
     }
 
     /**
-     * Run {@code asadmin <command> <args...>}. Output is collected and logged
-     * at the level corresponding to the exit code; {@link AsAdminException}
-     * is thrown with the captured output on non-zero. Waits unbounded for
-     * the process to exit — use {@link #run(Duration, String, String...)}
-     * if the caller can't tolerate a wedged asadmin.
+     * Run {@code asadmin <command> <args...>} and return its output. A
+     * non-zero exit throws an {@link AsAdminException} with the output. If
+     * asadmin hasn't exited within {@code timeout}, it is killed, together
+     * with any processes it started, and an {@link AsAdminException} is thrown.
+     * An interrupted call kills them the same way, and keeps the thread's
+     * interrupt status.
      */
-    void run(String command, String... args) throws AsAdminException {
-        run(null, command, args);
-    }
-
-    /**
-     * Like {@link #run(String, String...)} but bounded: if the asadmin process
-     * does not exit within {@code timeout}, it is force-killed and an
-     * {@link AsAdminException} is thrown. A {@code null} timeout means wait
-     * unbounded.
-     */
-    void run(Duration timeout, String command, String... args) throws AsAdminException {
+    String run(Duration timeout, String command, String... args) throws AsAdminException {
         Path asadmin = asadminScript();
         List<String> cmd = new ArrayList<>();
         cmd.add(asadmin.toString());
@@ -95,31 +90,39 @@ final class AsAdmin {
         pb.environment().putIfAbsent("AS_JAVA", javaHome.toString());
         pb.environment().putIfAbsent("JAVA_HOME", javaHome.toString());
 
+        // Raw bytes, decoded once, so multi-byte characters split across reads
+        // survive. ByteArrayOutputStream is synchronized, so the output so far
+        // can be read while the drainer still writes.
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        Process process;
+        try {
+            process = pb.start();
+        } catch (IOException e) {
+            throw new AsAdminException("asadmin " + command + " failed to run", e);
+        }
+
+        // Drain on another thread: asadmin can fill the pipe buffer, and a
+        // hung asadmin keeps its output open, so reading it here would keep
+        // the deadline below from ever being checked.
+        Thread drainer = new Thread(() -> drain(process, buf), "asadmin-" + command);
+        drainer.setDaemon(true);
+        drainer.start();
         int exit;
         try {
-            Process process = pb.start();
-            // Drain inline: asadmin can write enough to fill the OS pipe buffer,
-            // so consuming after waitFor() risks deadlock. Buffer raw bytes and
-            // decode once to avoid mangling multi-byte chars across read chunks.
-            try (InputStream in = process.getInputStream()) {
-                in.transferTo(buf);
-            }
-            if (timeout == null) {
-                exit = process.waitFor();
-            } else if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-                process.destroyForcibly();
+            if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                destroyTree(process);
                 throw new AsAdminException(
                         "asadmin " + command + " timed out after " + timeout + "; output so far:\n"
                         + buf.toString(StandardCharsets.UTF_8));
-            } else {
-                exit = process.exitValue();
             }
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new AsAdminException("asadmin " + command + " failed to run", e);
+            // The end of the output can trail the exit a little.
+            drainer.join(DRAIN_GRACE_MILLIS);
+            exit = process.exitValue();
+        } catch (InterruptedException e) {
+            // A cancelled call must not leave asadmin, or what it started, running.
+            destroyTree(process);
+            Thread.currentThread().interrupt();
+            throw new AsAdminException("asadmin " + command + " was interrupted", e);
         }
         String out = buf.toString(StandardCharsets.UTF_8);
         if (exit != 0) {
@@ -128,6 +131,26 @@ final class AsAdmin {
         if (LOG.isLoggable(Level.FINE)) {
             LOG.fine("asadmin " + command + " ok\n" + out);
         }
+
+        return out;
+    }
+
+    private static void drain(Process process, ByteArrayOutputStream buf) {
+        try (InputStream in = process.getInputStream()) {
+            in.transferTo(buf);
+        } catch (IOException e) {
+            // The process was killed; the output so far is in buf.
+        }
+    }
+
+    /**
+     * Kill {@code process} and what it started: the asadmin launcher script
+     * may have children that keep running, and keep its output open, after
+     * the script itself is gone.
+     */
+    private static void destroyTree(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
     }
 
     private Path asadminScript() {

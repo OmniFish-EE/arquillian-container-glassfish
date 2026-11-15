@@ -27,9 +27,15 @@ import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_ADMIN_BASE;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_ENABLE_ASSERTIONS;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_FAIL_ON_COMMAND_ERROR;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_MAX_HEAP_SIZE;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_POOL_DIR;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_PORT_STRIDE;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_POST_BOOT_COMMANDS;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_POST_START_COMMANDS;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SOURCE;
+import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SYSTEM_PROPERTIES;
 
 /**
  * Provision and start every slot. Default phase {@code pre-integration-test}
@@ -38,22 +44,30 @@ import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SOU
  * <p>Skips when {@code -DskipTests} or {@code -Dmaven.test.skip} is set: if
  * the build isn't running tests, there's no reason to pay for a pool.
  *
- * <p>After the pool is up, publishes its layout ({@link #PUBLISHED_PROPERTIES})
- * as project properties so failsafe can forward it to the test JVMs as
- * {@code ${gf.pool.dir}}-style references, which Maven resolves when failsafe
- * runs, after this goal. {@link PoolLifecycleParticipant} adds those references
- * to failsafe's {@code systemPropertyVariables} when the plugin is declared
- * with {@code <extensions>true</extensions>}.
+ * <p>After the pool is up, publishes its layout and slot setup
+ * ({@link #PUBLISHED_PROPERTIES}) as project properties so failsafe can
+ * forward them to the test JVMs as {@code ${gf.pool.dir}}-style references,
+ * which Maven resolves when failsafe runs, after this goal. The test JVMs
+ * create slots of their own when the pool grows or a slot dies, and set them
+ * up the same way. {@link PoolLifecycleParticipant} adds those references to
+ * failsafe's {@code systemPropertyVariables} when the plugin is declared with
+ * {@code <extensions>true</extensions>}.
  */
 @Mojo(name = "up", defaultPhase = LifecyclePhase.PRE_INTEGRATION_TEST, threadSafe = true)
 public class UpMojo extends AbstractStagingPoolMojo {
 
-    /** Pool layout the test JVMs read, published as project properties after {@code up}. */
+    /** Pool layout and slot setup the test JVMs read, published as project properties after {@code up}. */
     static final List<String> PUBLISHED_PROPERTIES = List.of(
             SYS_POOL_DIR,
             SYS_SOURCE,
             SYS_ADMIN_BASE,
-            SYS_PORT_STRIDE);
+            SYS_PORT_STRIDE,
+            SYS_SYSTEM_PROPERTIES,
+            SYS_MAX_HEAP_SIZE,
+            SYS_ENABLE_ASSERTIONS,
+            SYS_POST_BOOT_COMMANDS,
+            SYS_POST_START_COMMANDS,
+            SYS_FAIL_ON_COMMAND_ERROR);
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
@@ -126,6 +140,7 @@ public class UpMojo extends AbstractStagingPoolMojo {
         }
         properties.put(SYS_ADMIN_BASE, String.valueOf(config.adminPortBase()));
         properties.put(SYS_PORT_STRIDE, String.valueOf(config.portStride()));
+        properties.putAll(config.setup().toSystemProperties());
 
         return properties;
     }

@@ -78,4 +78,5 @@ The following configuration options are available for all GlassFish Arquillian c
 ----
 
 - Properties like `postBootCommands` and `systemProperties` support multiline values.
+- The pool container runs `postBootCommands` on every lease of a slot. For commands that run once per slot, or after every slot start, use the pool plugin's `<postBootCommands>` and `<postStartCommands>`; server settings for pool slots, such as `systemProperties`, also go on the plugin.
 - When `authorisation` is enabled, both `adminUser` and `adminPassword` must be provided.

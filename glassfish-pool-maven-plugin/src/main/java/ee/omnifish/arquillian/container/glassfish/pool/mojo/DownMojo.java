@@ -10,6 +10,7 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 
@@ -17,17 +18,22 @@ import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 
 /**
  * Stop every slot's domain. Default phase {@code post-integration-test} so
- * it pairs with {@link UpMojo}.
+ * it pairs with {@link UpMojo}. Fails when a slot keeps running, because the
+ * next {@code up} would reuse it as it is.
  */
 @Mojo(name = "down", defaultPhase = LifecyclePhase.POST_INTEGRATION_TEST, threadSafe = true)
 public class DownMojo extends AbstractPoolMojo {
 
     @Override
-    public void execute() {
+    public void execute() throws MojoExecutionException {
         if (skip) {
             getLog().info("glassfish-pool:down skipped (gf.pool.skip=true)");
             return;
         }
-        PoolBootstrap.down(poolConfig());
+        try {
+            PoolBootstrap.down(poolConfig());
+        } catch (IllegalStateException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
     }
 }

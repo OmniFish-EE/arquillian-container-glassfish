@@ -41,8 +41,8 @@ final class ForeignJvm {
         return process.exitValue() == 0;
     }
 
-    /** Hold {@code file}'s lock in another JVM until the returned handle is closed. */
-    static AutoCloseable hold(Path file) throws Exception {
+    /** Hold {@code file}'s lock in another JVM until the returned holder is closed or killed. */
+    static Holder hold(Path file) throws Exception {
         Process process = start("hold", file);
         BufferedReader out = new BufferedReader(
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
@@ -54,13 +54,32 @@ final class ForeignJvm {
             process.destroyForcibly();
             throw new IllegalStateException("Another JVM could not lock " + file);
         }
-        return () -> {
-            // The holder exits, releasing the lock, once its stdin closes.
+        return new Holder(process);
+    }
+
+    /** A lock held by another JVM. */
+    static final class Holder implements AutoCloseable {
+
+        private final Process process;
+
+        private Holder(Process process) {
+            this.process = process;
+        }
+
+        /** Release the lock: the holder exits once its stdin closes. */
+        @Override
+        public void close() throws Exception {
             process.getOutputStream().close();
             if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
             }
-        };
+        }
+
+        /** Kill the holder, as a crash or failsafe's fork timeout would. The OS releases its lock. */
+        void kill() throws InterruptedException {
+            process.destroyForcibly();
+            process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
     }
 
     private static Process start(String mode, Path file) throws Exception {

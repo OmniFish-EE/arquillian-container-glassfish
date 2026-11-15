@@ -18,6 +18,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.logging.Logger;
 
+import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
+
 /**
  * Pure-Java port of the file-lock-based slot lease protocol from the Faces
  * TCK's {@code SlotLeaserAgent}. Used by the Arquillian extension at test-JVM
@@ -30,20 +32,22 @@ import java.util.logging.Logger;
  *       {@link PoolLocks}, which keeps one channel per lock file in a JVM.
  *       Linux/macOS use {@code fcntl} locks under the hood; on Windows the
  *       locking is mandatory.</li>
- *   <li>{@code slot-N/ports.properties} — appears once provisioning completes.
- *       A slot dir without it is mid-bootstrap and skipped by the scan.</li>
+ *   <li>{@code slot-N/ports.properties} — appears once the slot's setup
+ *       completes, and is removed while it restarts. A slot dir without it is
+ *       skipped by the scan.</li>
  * </ul>
  *
  * <p>If every existing slot is busy the leaser tries to grow the pool: it
  * acquires {@code grow.lock}, picks the next index (preferring to recycle a
- * dead slot) AND acquires its {@code lock} file, releases {@code grow.lock},
- * and runs the provisioner with the slot lock held throughout. The slot lock
- * is the claim, so concurrent test JVMs that race into {@code tryGrow} cannot
- * pick the same dead slot for recycling — without it, two threads would each
- * see the lock free, both call {@link PoolProvisioner#provisionClaimedSlot} on
- * the same index, and race on the {@code deleteRecursive}+clone of that slot's
- * GF install tree. If provisioning fails, the slot directory is removed, so
- * the next grow can use the index again.
+ * dead or abandoned slot) AND acquires its {@code lock} file, releases
+ * {@code grow.lock}, and runs the provisioner with the slot lock held
+ * throughout. The slot lock is the claim, so concurrent test JVMs that race
+ * into {@code tryGrow} cannot pick the same dead slot for recycling — without
+ * it, two threads would each see the lock free, both call
+ * {@link PoolProvisioner#provisionClaimedSlot} on the same index, and race on
+ * the {@code deleteRecursive}+clone of that slot's GF install tree. If
+ * provisioning fails, the claim is released and the slot left without
+ * {@code ports.properties}, so the next grow recycles it.
  */
 public final class SlotLeaser {
 
@@ -67,6 +71,9 @@ public final class SlotLeaser {
     /**
      * Lease a slot, growing the pool if necessary. Blocks up to the configured
      * timeout. Throws if no slot can be obtained in time.
+     *
+     * @throws CommandFailedException if a command failed on a slot this
+     *         leaser created, with {@code failOnCommandError} on
      */
     public SlotLease lease() throws IOException, InterruptedException {
         Path poolDir = config.poolDir();
@@ -174,6 +181,13 @@ public final class SlotLeaser {
      * <p>The slot lock — not the slot dir's existence — is the canonical claim:
      * the recycle path reuses an existing dir, so directory existence alone
      * cannot tell a second concurrent {@code tryGrow} caller to skip it.
+     *
+     * <p>A slot whose provisioning failed keeps its directory, without
+     * {@code ports.properties}, and its claim is released. That makes it
+     * recyclable, so the next grow re-creates it, once a server still running
+     * from it has stopped. Deleting the directory instead could pull the
+     * install out from under such a server, and the slot out of {@code down}'s
+     * reach.
      */
     private SlotLease tryGrow(Path poolDir) throws IOException {
         if (config.source() == null) {
@@ -190,30 +204,15 @@ public final class SlotLeaser {
             SlotPorts ports = new PoolProvisioner(config).provisionClaimedSlot(claim.slot);
             publishSlotProperty(claim.slot);
             return new SlotLease(claim.slot, ports, claim.lock);
+        } catch (CommandFailedException e) {
+            // failOnCommandError: the command would fail on every new slot,
+            // so fail the lease rather than retry until the lease timeout.
+            claim.release();
+            throw e;
         } catch (IOException | RuntimeException e) {
             LOG.warning(() -> "Slot " + claim.slot + " provisioning failed during grow: " + e.getMessage());
-            discard(poolDir, claim);
-            return null;
-        }
-    }
-
-    /**
-     * Give up a slot whose provisioning failed: release the claim and delete
-     * the slot directory, so the next grow can use the index again instead of
-     * skipping the half-made directory. Runs under {@code grow.lock}, which
-     * every claim takes, so no claim picks the index while it is being deleted.
-     */
-    private static void discard(Path poolDir, ClaimedSlot claim) {
-        try {
-            PoolLocks.withGrowLock(poolDir, () -> {
-                claim.release();
-                PoolProvisioner.deleteRecursive(PoolPaths.slotDir(poolDir, claim.slot));
-                return null;
-            });
-        } catch (IOException e) {
-            LOG.warning(() -> "Could not remove slot " + claim.slot + " after its failed grow: " + e.getMessage());
-        } finally {
             claim.release();
+            return null;
         }
     }
 
@@ -249,35 +248,25 @@ public final class SlotLeaser {
     }
 
     /**
-     * Lowest slot index whose GF JVM is dead (admin port closed) AND whose
-     * lock file we can acquire. The acquired lock is RETAINED in the returned
-     * {@link ClaimedSlot} — callers must release it (typically by passing it
-     * into the resulting {@link SlotLease}) so the claim survives the
-     * {@code grow.lock} release that follows.
+     * Lowest slot index that is recyclable (see {@link #isRecyclable}) AND
+     * whose lock file we can acquire. The acquired lock is RETAINED in the
+     * returned {@link ClaimedSlot} — callers must release it (typically by
+     * passing it into the resulting {@link SlotLease}) so the claim survives
+     * the {@code grow.lock} release that follows.
      */
     private ClaimedSlot claimRecyclableSlot(Path poolDir) throws IOException {
         List<Integer> indices = new ArrayList<>();
         try (var entries = Files.list(poolDir)) {
             for (Path entry : (Iterable<Path>) entries::iterator) {
                 Integer idx = PoolPaths.slotIndex(entry.getFileName().toString());
-                if (idx == null) {
-                    continue;
+                if (idx != null) {
+                    indices.add(idx);
                 }
-                if (!Files.exists(PoolPaths.portsFile(poolDir, idx))) {
-                    continue; // mid-bootstrap; not ours to recycle
-                }
-                indices.add(idx);
             }
         }
         indices.sort(Comparator.naturalOrder());
         for (int slot : indices) {
-            SlotPorts ports;
-            try {
-                ports = SlotPorts.readFrom(PoolPaths.portsFile(poolDir, slot));
-            } catch (IOException | RuntimeException e) {
-                continue;
-            }
-            if (PoolProvisioner.isPortHealthy(ports.adminPort())) {
+            if (!isRecyclable(poolDir, slot)) {
                 continue;
             }
             // Also null when this JVM already holds the slot, so a single-JVM
@@ -288,11 +277,37 @@ public final class SlotLeaser {
             } catch (IOException e) {
                 continue;
             }
-            if (lock != null) {
+            if (lock == null) {
+                continue;
+            }
+            // Checked again under the lock: whoever held it may have finished
+            // the slot's setup between the first check and tryLock.
+            if (isRecyclable(poolDir, slot)) {
                 return new ClaimedSlot(slot, lock);
             }
+            lock.close();
         }
         return null;
+    }
+
+    /**
+     * A slot whose GlassFish is dead (admin port closed), or that has no
+     * {@code ports.properties}. Whoever sets a slot up or restarts it holds
+     * its lock until {@code ports.properties} is written, so once the caller
+     * holds the lock, a slot without one was abandoned, for example by a JVM
+     * killed during its setup.
+     */
+    private static boolean isRecyclable(Path poolDir, int slot) {
+        Path portsFile = PoolPaths.portsFile(poolDir, slot);
+        if (!Files.exists(portsFile)) {
+            return true;
+        }
+
+        try {
+            return !PoolProvisioner.isPortHealthy(SlotPorts.readFrom(portsFile).adminPort());
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /**
