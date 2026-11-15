@@ -322,7 +322,8 @@ public class GlassFishClientService implements GlassFishClient {
     @Override
     public HTTPContext doDeploy(String name, FormDataMultiPart form) {
         // Deploy the application on the GlassFish server
-        Map<String, Object> deploymentResult = getClientUtil().POSTMultiPartRequest(name, APPLICATION, form);
+        Map<String, Object> deploymentResult = getClientUtil().POSTMultiPartRequest("deploying application " + name,
+                APPLICATION, form);
 
         @SuppressWarnings("unchecked")
         String deployedName = deploymentResult.containsKey("properties")
@@ -405,7 +406,8 @@ public class GlassFishClientService implements GlassFishClient {
     public Map<String, Object> doUndeploy(String name, FormDataMultiPart form) {
         String deploymentName = unregisterDeployedName(name);
         log.log(INFO, "Undeploying {0} as {1}", new Object[] { name, deploymentName });
-        return getClientUtil().POSTMultiPartRequest(deploymentName, APPLICATION_RESOURCE.replace("{name}", deploymentName), form);
+        return getClientUtil().POSTMultiPartRequest("undeploying application " + deploymentName,
+                APPLICATION_RESOURCE.replace("{name}", deploymentName), form);
     }
 
     /**
