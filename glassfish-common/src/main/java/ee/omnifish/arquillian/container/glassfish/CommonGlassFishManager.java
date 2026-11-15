@@ -83,6 +83,7 @@ import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientExc
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientService;
 
 import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN_TYPE;
+import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.INFO;
 
 /**
@@ -118,10 +119,14 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
     }
 
     public CommonGlassFishManager(C configuration) {
-        this.configuration = configuration;
-
         // Start up the GlassFishClient service layer
-        glassFishClient = new GlassFishClientService(configuration);
+        this(configuration, new GlassFishClientService(configuration));
+    }
+
+    /** With {@code glassFishClient} instead of a {@link GlassFishClientService}. Package-private for unit tests. */
+    CommonGlassFishManager(C configuration, GlassFishClient glassFishClient) {
+        this.configuration = configuration;
+        this.glassFishClient = glassFishClient;
     }
 
     public void start() throws LifecycleException {
@@ -160,6 +165,9 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             protocolMetaData.addContext(httpContext);
             return protocolMetaData;
         } catch (GlassFishClientException | IOException | ProcessingException e) {
+            // The deployment failed, so there's nothing for undeploy to remove. A failure after the
+            // application deployed comes as a DeploymentException, which keeps the archive.
+            forgetArchive(archive);
             throw new DeploymentException("Could not deploy " + archiveName + " as " + deploymentName, e);
         }
     }
@@ -170,6 +178,12 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         }
 
         String deploymentName = forgetArchive(archive);
+        if (deploymentName == null) {
+            // Its deployment failed, or never happened, so GlassFish would only answer 404.
+            LOG.log(DEBUG, "Not undeploying {0}, which isn't deployed", archive.getName());
+            return;
+        }
+
         LOG.log(INFO, "Undeploying {0}", deploymentName);
 
         try {

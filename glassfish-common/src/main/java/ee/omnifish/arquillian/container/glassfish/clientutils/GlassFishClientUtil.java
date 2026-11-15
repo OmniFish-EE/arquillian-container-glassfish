@@ -157,7 +157,7 @@ public class GlassFishClientUtil {
 
     public Map<String, Object> GETRequest(String additionalResourceUrl) {
         return doRestCall(
-            e -> getResponseMap("<non-application-specific>", e.get()),
+            e -> getResponseMap("getting " + adminBaseUrl + additionalResourceUrl, e.get()),
             additionalResourceUrl);
     }
 
@@ -211,9 +211,13 @@ public class GlassFishClientUtil {
         return (List<Map<String, Object>>) resultExtraProperties.get("instanceList");
     }
 
-    public Map<String, Object> POSTMultiPartRequest(String name, String additionalResourceUrl, FormDataMultiPart form) {
+    /**
+     * @param operation what the request does, for messages, such as
+     *        {@code undeploying application foo}
+     */
+    public Map<String, Object> POSTMultiPartRequest(String operation, String additionalResourceUrl, FormDataMultiPart form) {
         return doRestCall(
-                e -> getResponseMap(name, e.post(entity(form, form.getMediaType()))),
+                e -> getResponseMap(operation, e.post(entity(form, form.getMediaType()))),
                 additionalResourceUrl,
                 MultiPartFeature.class);
 
@@ -281,9 +285,9 @@ public class GlassFishClientUtil {
         }
     }
 
-    private Map<String, Object> getResponseMap(String name, Response response) {
+    private Map<String, Object> getResponseMap(String operation, Response response) {
         Map<String, Object> responseMap = new HashMap<>();
-        String message = String.format("While Deploying Application: %s --", name);
+        String message = String.format("While %s --", operation);
         final String xmlDoc = response.readEntity(String.class);
 
         // Marshalling the XML format response to a java Map
@@ -303,7 +307,7 @@ public class GlassFishClientUtil {
                 throw new GlassFishClientException(message);
             } else if (WARNING.equals(responseMap.get("exit_code"))) {
                 // Warning is not a failure - some warnings in GlassFish are inevitable (i.e. persistence-related: ARQ-606)
-                log.log(Level.WARNING, "Deployment resulted in a warning: {0}", message);
+                log.log(Level.WARNING, "GlassFish answered with a warning: {0}", message);
             } else if (!SUCCESS.equals(responseMap.get("exit_code"))) {
                 // Response is not a warning nor success - it's surely a failure.
                 throw new GlassFishClientException(message);
