@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.glassfish.admin;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -26,14 +26,14 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Thin wrapper around {@code glassfish/bin/asadmin}. Used by the provisioner
- * to start, restart and stop a per-slot install and to run commands on it.
- * Every call has a deadline.
+ * Thin wrapper around {@code glassfish/bin/asadmin}. Used by the pool to
+ * start, restart and stop a slot's install and to run commands on it. Every
+ * call has a deadline.
  *
- * <p>Acknowledged duplication with managed's {@code GlassFishServerControl};
- * a follow-up PR can promote this to {@code glassfish-common}.
+ * <p>Acknowledged duplication with managed's {@code GlassFishServerControl},
+ * which streams its output to the console instead.
  */
-final class AsAdmin {
+public final class AsAdmin {
 
     private static final Logger LOG = Logger.getLogger(AsAdmin.class.getName());
 
@@ -47,7 +47,7 @@ final class AsAdmin {
     private final Path glassFishHome;
     private final Integer adminPort;
 
-    AsAdmin(Path glassFishHome) {
+    public AsAdmin(Path glassFishHome) {
         this(glassFishHome, null);
     }
 
@@ -58,7 +58,7 @@ final class AsAdmin {
      *        directory. A {@code null} port omits {@code --port}, letting
      *        asadmin default to 4848 or resolve it from the domain operand.
      */
-    AsAdmin(Path glassFishHome, Integer adminPort) {
+    public AsAdmin(Path glassFishHome, Integer adminPort) {
         this.glassFishHome = glassFishHome;
         this.adminPort = adminPort;
     }
@@ -71,7 +71,7 @@ final class AsAdmin {
      * An interrupted call kills them the same way, and keeps the thread's
      * interrupt status.
      */
-    String run(Duration timeout, String command, String... args) throws AsAdminException {
+    public String run(Duration timeout, String command, String... args) throws AsAdminException {
         Path asadmin = asadminScript();
         List<String> cmd = new ArrayList<>();
         cmd.add(asadmin.toString());
@@ -166,7 +166,7 @@ final class AsAdmin {
         return JAVA.equals("java.exe") ? "asadmin.bat" : "asadmin";
     }
 
-    static final class AsAdminException extends RuntimeException {
+    public static final class AsAdminException extends RuntimeException {
         private static final long serialVersionUID = 1L;
 
         AsAdminException(String message) {

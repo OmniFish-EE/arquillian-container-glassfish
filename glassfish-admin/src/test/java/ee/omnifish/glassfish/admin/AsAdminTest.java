@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
  */
-package ee.omnifish.arquillian.container.glassfish.pool;
+package ee.omnifish.glassfish.admin;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -10,6 +10,7 @@ import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -27,7 +28,7 @@ class AsAdminTest {
 
     @Test
     void returnsTheOutput(@TempDir Path tmp) throws Exception {
-        Path home = FakeGlassFish.install(tmp, "echo true\n");
+        Path home = fakeInstall(tmp, "echo true\n");
 
         String output = new AsAdmin(home, 4848).run(Duration.ofSeconds(30), "_get-restart-required");
 
@@ -42,7 +43,7 @@ class AsAdminTest {
      */
     @Test
     void hungAsadminHitsItsDeadline(@TempDir Path tmp) throws Exception {
-        Path home = FakeGlassFish.install(tmp,
+        Path home = fakeInstall(tmp,
                 "echo starting\nsleep 60 &\necho $! > \"$(dirname \"$0\")/child.pid\"\nwait\n");
 
         long start = System.nanoTime();
@@ -63,7 +64,7 @@ class AsAdminTest {
      */
     @Test
     void interruptedCallKillsAsadminAndWhatItStarted(@TempDir Path tmp) throws Exception {
-        Path home = FakeGlassFish.install(tmp, "echo $$ > \"$(dirname \"$0\")/launcher.pid\"\n"
+        Path home = fakeInstall(tmp, "echo $$ > \"$(dirname \"$0\")/launcher.pid\"\n"
                 + "sleep 60 &\necho $! > \"$(dirname \"$0\")/child.pid\"\nwait\n");
         AtomicReference<Throwable> thrown = new AtomicReference<>();
         AtomicBoolean stillInterrupted = new AtomicBoolean();
@@ -87,6 +88,14 @@ class AsAdminTest {
         assertThat(stillInterrupted.get(), equalTo(true));
         assertThat(isAliveAfterAWhile(launcher), equalTo(false));
         assertThat(isAliveAfterAWhile(child), equalTo(false));
+    }
+
+    /** An install whose {@code asadmin} is a shell script running {@code script}. */
+    private static Path fakeInstall(Path dir, String script) throws IOException {
+        Path asadmin = Files.createDirectories(dir.resolve("glassfish/bin")).resolve("asadmin");
+        Files.writeString(asadmin, "#!/bin/sh\n" + script);
+        assertThat(asadmin.toFile().setExecutable(true), equalTo(true));
+        return dir;
     }
 
     /** The pid the fake asadmin writes to {@code file}, once it has, waiting up to 10 s. */

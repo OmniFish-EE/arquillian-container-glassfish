@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-dependencies</artifactId>
+        <version>2.2.2-SNAPSHOT</version>
+        <relativePath>../dependencies</relativePath>
+    </parent>
+
+    <!-- Not ee.omnifish.arquillian: the Maven plugins use it without Arquillian. -->
+    <groupId>ee.omnifish.glassfish</groupId>
+    <artifactId>glassfish-admin</artifactId>
+
+    <name>GlassFish Admin Helpers</name>
+    <description>
+        Runs asadmin commands and edits domain.xml, with nothing but the JDK.
+        Shared by the GlassFish Maven plugins and the Arquillian Containers.
+    </description>
+
+    <properties>
+        <!--
+            The parent pom defaults this to GlassFish's JUL extension, which
+            isn't on this module's test classpath; fall back to the JDK default.
+        -->
+        <test.logManager>java.util.logging.LogManager</test.logManager>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

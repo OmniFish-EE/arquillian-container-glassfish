@@ -29,9 +29,10 @@ import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
+import ee.omnifish.glassfish.admin.AsAdmin;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
+import ee.omnifish.glassfish.admin.PostBootCommands;
+import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
 
 /**
  * Test-JVM-side container: leases a pre-started slot at {@link #setup} time,

@@ -14,8 +14,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
+import ee.omnifish.glassfish.admin.PostBootCommands;
 
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_ENABLE_ASSERTIONS;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_FAIL_ON_COMMAND_ERROR;

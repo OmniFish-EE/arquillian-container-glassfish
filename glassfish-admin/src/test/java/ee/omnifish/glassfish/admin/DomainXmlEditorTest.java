@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
  */
-package ee.omnifish.arquillian.container.glassfish;
+package ee.omnifish.glassfish.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

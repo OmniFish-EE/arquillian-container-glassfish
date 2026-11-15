@@ -69,12 +69,12 @@ import java.util.logging.Logger;
 
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
 import ee.omnifish.arquillian.container.glassfish.process.CloseableProcess;
 import ee.omnifish.arquillian.container.glassfish.process.ConsoleReader;
 import ee.omnifish.arquillian.container.glassfish.process.OutputLoggingConsumer;
 import ee.omnifish.arquillian.container.glassfish.process.ProcessOutputConsumer;
 import ee.omnifish.arquillian.container.glassfish.process.SilentOutputConsumer;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
 
 import static java.lang.Runtime.getRuntime;
 import static java.util.Arrays.asList;

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
  */
-package ee.omnifish.arquillian.container.glassfish;
+package ee.omnifish.glassfish.admin;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -13,7 +13,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import ee.omnifish.arquillian.container.glassfish.PostBootCommands.CommandFailedException;
+import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
 
 class PostBootCommandsTest {
 

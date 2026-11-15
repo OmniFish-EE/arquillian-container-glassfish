@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.arquillian.container.glassfish;
+package ee.omnifish.glassfish.admin;
 
 import java.util.List;
 

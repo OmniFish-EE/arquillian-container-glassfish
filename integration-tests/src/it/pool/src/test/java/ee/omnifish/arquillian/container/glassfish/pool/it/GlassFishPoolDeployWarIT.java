@@ -43,11 +43,11 @@ import org.w3c.dom.NodeList;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 
-import ee.omnifish.arquillian.container.glassfish.DomainXmlEditor;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotLease;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotLeaser;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
 
 /**
  * End-to-end smoke test for the pool container: provisions a 1-slot pool
