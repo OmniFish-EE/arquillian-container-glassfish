@@ -80,6 +80,12 @@
                             <destFileName>overlay-probe.jar</destFileName>
                         </overlay>
                     </overlays>
+                    <trustedCerts>
+                        <trustedCert>
+                            <alias>provision-it</alias>
+                            <file>${project.basedir}/trusted.pem</file>
+                        </trustedCert>
+                    </trustedCerts>
                 </configuration>
             </plugin>
 

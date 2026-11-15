@@ -16,6 +16,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyStore;
 import java.util.stream.Collectors;
 
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -112,11 +113,14 @@ public class GlassFishPoolDeployWarIT {
     }
 
     private static void assertSetUp(Path poolDir, int slot) throws Exception {
-        Path domainXml = poolDir.resolve("slot-" + slot)
-                .resolve("glassfish/glassfish/domains/domain1/config/domain.xml");
+        Path config = poolDir.resolve("slot-" + slot).resolve("glassfish/glassfish/domains/domain1/config");
+        Path domainXml = config.resolve("domain.xml");
         assertThat(DomainXmlEditor.jvmOptions(domainXml), hasItems("-Dpool.it.sysprop=present", "-Xmx1g"));
         assertThat(systemProperty(domainXml, "pool.it.postboot"), equalTo("applied"));
         assertThat(systemProperty(domainXml, "pool.it.poststart"), equalTo("applied after start"));
+        // Imported into the staged install, which the slot was cloned from.
+        KeyStore trustStore = KeyStore.getInstance(config.resolve("cacerts.p12").toFile(), "changeit".toCharArray());
+        assertThat(trustStore.containsAlias("pool-it"), equalTo(true));
     }
 
     /** The value of a {@code create-system-properties} property in {@code domainXml}, or {@code null}. */

@@ -8,6 +8,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,9 +22,11 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 class StagerTest {
 
@@ -40,7 +43,7 @@ class StagerTest {
         File stageDir = tmp.resolve("dist").toFile();
 
         StageSpec spec = new Stager(coord -> zip, log)
-                .spec(distribution("9.0.0"), stageDir, false, null, null, null, false, HOME);
+                .spec(distribution("9.0.0"), stageDir, false, null, null, null, false, CertImport.NONE, HOME);
 
         assertEquals(stageDir.toPath().resolve("glassfish9"), spec.home());
         assertEquals(spec.home().resolve("glassfish/modules"), spec.overlayTargetDir());
@@ -52,7 +55,7 @@ class StagerTest {
 
         StageSpec spec = new Stager(coord -> {
             throw new AssertionError("resolved " + coord.toGav());
-        }, log).spec(distribution("9.0.0"), tmp.toFile(), false, home, null, null, false, HOME);
+        }, log).spec(distribution("9.0.0"), tmp.toFile(), false, home, null, null, false, CertImport.NONE, HOME);
 
         assertEquals(home.toPath(), spec.home());
     }
@@ -62,7 +65,7 @@ class StagerTest {
         Stager stager = new Stager(coord -> zip("glassfish9/x"), log);
 
         MojoExecutionException e = assertThrows(MojoExecutionException.class,
-                () -> stager.spec(new DistributionCoord(), tmp.toFile(), false, null, null, null, false, HOME));
+                () -> stager.spec(new DistributionCoord(), tmp.toFile(), false, null, null, null, false, CertImport.NONE, HOME));
 
         assertThat(e.getMessage(), containsString("requires a <version>"));
     }
@@ -72,7 +75,7 @@ class StagerTest {
         Path zip = zip("glassfish9/bin/asadmin", "extras/readme.txt");
 
         StageSpec spec = new Stager(coord -> zip, log)
-                .spec(distribution("9.0.0"), tmp.toFile(), false, null, null, null, false, HOME);
+                .spec(distribution("9.0.0"), tmp.toFile(), false, null, null, null, false, CertImport.NONE, HOME);
 
         assertNull(spec.home());
         assertThat(log.warnings.get(0), containsString("set <home>"));
@@ -84,9 +87,47 @@ class StagerTest {
         List<OverlayCoord> overlays = List.of(new OverlayCoord("g", "a", "1", "jar", null, "a.jar"));
 
         MojoExecutionException e = assertThrows(MojoExecutionException.class,
-                () -> stager.spec(null, tmp.toFile(), true, null, overlays, null, false, "<poolSource> (gf.pool.source)"));
+                () -> stager.spec(null, tmp.toFile(), true, null, overlays, null, false, CertImport.NONE, "<poolSource> (gf.pool.source)"));
 
         assertThat(e.getMessage(), containsString("<overlayTargetDir> or <poolSource> (gf.pool.source)"));
+    }
+
+    @Test
+    void certImportReachesTheSpec() throws Exception {
+        File home = tmp.resolve("opt/glassfish9").toFile();
+        CertImport certImport = new CertImport(List.of(new TrustedCert("idp", tmp.resolve("idp.pem").toFile())),
+                null, null, false);
+
+        StageSpec spec = new Stager(coord -> {
+            throw new AssertionError("resolved " + coord.toGav());
+        }, log).spec(null, tmp.toFile(), true, home, null, null, false, certImport, HOME);
+
+        assertEquals(certImport, spec.certImport());
+        assertTrue(spec.hasWork());
+    }
+
+    @Test
+    void trustedCertsWithoutTruststoreNameTheCallersHomeParameter() {
+        Stager stager = new Stager(coord -> zip("glassfish9/x"), log);
+        CertImport certImport = new CertImport(List.of(new TrustedCert("idp", tmp.resolve("idp.pem").toFile())),
+                null, null, false);
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class, () -> stager.spec(
+                null, tmp.toFile(), true, null, null, null, false, certImport, "<poolSource> (gf.pool.source)"));
+
+        assertThat(e.getMessage(), containsString("<trustStore> or <poolSource> (gf.pool.source)"));
+    }
+
+    @Test
+    void trustedCertNeedsAnAliasAndAFile() {
+        Stager stager = new Stager(coord -> zip("glassfish9/x"), log);
+        CertImport certImport = new CertImport(List.of(new TrustedCert(null, tmp.resolve("idp.pem").toFile())),
+                null, null, false);
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class,
+                () -> stager.spec(null, tmp.toFile(), true, tmp.toFile(), null, null, false, certImport, HOME));
+
+        assertThat(e.getMessage(), containsString("needs an <alias> and a <file>"));
     }
 
     private static DistributionCoord distribution(String version) {

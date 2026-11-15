@@ -10,13 +10,24 @@
  */
 package ee.omnifish.glassfish.maven.staging;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateFactory;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,9 +39,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Resolve and unpack a GlassFish distribution zip, then copy overlay
- * artifacts into the staged install. Shared by {@code glassfish:provision}
- * and the pool plugin's {@code up}/{@code provision} goals.
+ * Resolve and unpack a GlassFish distribution zip, copy overlay artifacts into
+ * the staged install, and import trusted certificates into its truststore.
+ * Shared by {@code glassfish:provision} and the pool plugin's
+ * {@code up}/{@code provision} goals.
  *
  * <p>Artifact lookup is delegated to a caller-supplied {@link ArtifactResolver},
  * which keeps this class free of Maven types; the mojos wire Aether in. It
@@ -47,6 +59,12 @@ public final class GlassFishStaging {
 
     private static final String MARKER_FILE = ".staging-glassfish.properties";
     private static final String MARKER_KEY_DIST = "distribution";
+
+    /** Where a domain's truststore lives, relative to the install root. */
+    private static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
+
+    /** The domain truststores to look for: current versions ship the first, older ones (6, 7.0.0) the second. */
+    private static final List<String> DOMAIN_TRUST_STORES = List.of("cacerts.p12", "cacerts.jks");
 
     private static final ConcurrentMap<Path, Object> STAGE_DIR_LOCKS = new ConcurrentHashMap<>();
 
@@ -66,7 +84,9 @@ public final class GlassFishStaging {
      * wipes + re-unpacks when the GAV differs or the zip is newer than the
      * marker (a rebuilt or re-downloaded SNAPSHOT keeps its GAV). Overlays
      * are always re-copied (cheap; lets {@code -Dmojarra.version=…} take
-     * effect without a wipe).
+     * effect without a wipe). Certificates are imported after them, on every
+     * run too, into the domain's truststore unless the spec names another;
+     * see {@link #importCerts}.
      */
     public static void stage(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path lockKey = spec.stageDir().toAbsolutePath().normalize();
@@ -76,6 +96,9 @@ public final class GlassFishStaging {
             }
             if (!spec.overlaySkip() && !spec.overlays().isEmpty()) {
                 copyOverlays(spec, resolver);
+            }
+            if (spec.certImport().hasWork()) {
+                importCerts(spec.certImport(), spec.home());
             }
         }
     }
@@ -159,6 +182,94 @@ public final class GlassFishStaging {
             Path dest = target.resolve(fileName);
             Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING);
             LOG.info("Overlaid " + overlay.toGav() + " → " + dest);
+        }
+    }
+
+    /**
+     * Import the certificates into the truststore: the one {@code certImport}
+     * names, else the domain's own under {@code home}, {@code cacerts.p12} or,
+     * in older versions, {@code cacerts.jks}. The JDK probes the store type
+     * from the file.
+     *
+     * <p>A certificate the truststore already holds under its alias is left
+     * alone, and an unchanged truststore isn't written, so staging again
+     * leaves it as it is. A changed one is written to a sibling file and moved
+     * into place, so whoever clones the install meanwhile gets the old
+     * truststore or the new one, and an interrupted build can't leave half of
+     * it behind.
+     */
+    private static void importCerts(CertImport certImport, Path home) throws IOException {
+        Path trustStore = (certImport.trustStore() != null) ? certImport.trustStore() : domainTrustStore(home);
+        char[] password = certImport.password().toCharArray();
+        KeyStore store = loadTrustStore(trustStore, password);
+        boolean changed = false;
+        for (TrustedCert trusted : certImport.certs()) {
+            Certificate cert = readCertificate(trusted.getFile());
+            try {
+                if (cert.equals(store.getCertificate(trusted.getAlias()))) {
+                    LOG.debug("Already trusted: " + trusted.getAlias() + " in " + trustStore);
+                    continue;
+                }
+                store.setCertificateEntry(trusted.getAlias(), cert);
+            } catch (KeyStoreException e) {
+                throw new IOException("Could not import " + trusted.getFile() + " as '" + trusted.getAlias()
+                        + "' into " + trustStore + ": " + e.getMessage(), e);
+            }
+            LOG.info("Trusting " + trusted.getFile() + " as '" + trusted.getAlias() + "' in " + trustStore);
+            changed = true;
+        }
+        if (changed) {
+            storeAtomically(store, trustStore, password);
+        }
+    }
+
+    private static Path domainTrustStore(Path home) throws IOException {
+        if (home == null) {
+            throw new IOException("No install to find the truststore in; set the truststore");
+        }
+        Path config = home.resolve(DOMAIN_CONFIG);
+        for (String name : DOMAIN_TRUST_STORES) {
+            Path trustStore = config.resolve(name);
+            if (Files.isRegularFile(trustStore)) {
+                return trustStore;
+            }
+        }
+        throw new IOException("Found no " + String.join(" or ", DOMAIN_TRUST_STORES) + " in " + config
+                + "; set the truststore");
+    }
+
+    private static KeyStore loadTrustStore(Path trustStore, char[] password) throws IOException {
+        if (!Files.isRegularFile(trustStore)) {
+            throw new IOException("Truststore " + trustStore + " doesn't exist");
+        }
+        try {
+            return KeyStore.getInstance(trustStore.toFile(), password);
+        } catch (IOException | GeneralSecurityException e) {
+            throw new IOException("Could not load truststore " + trustStore + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** The first certificate in a PEM or DER file. */
+    private static Certificate readCertificate(File file) throws IOException {
+        try (InputStream in = Files.newInputStream(file.toPath())) {
+            return CertificateFactory.getInstance("X.509").generateCertificate(in);
+        } catch (CertificateException e) {
+            throw new IOException("Could not read a certificate from " + file + ": " + e.getMessage(), e);
+        }
+    }
+
+    private static void storeAtomically(KeyStore store, Path trustStore, char[] password) throws IOException {
+        Path tmp = trustStore.resolveSibling(trustStore.getFileName() + ".tmp");
+        try (OutputStream out = Files.newOutputStream(tmp)) {
+            store.store(out, password);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Could not write truststore " + trustStore + ": " + e.getMessage(), e);
+        }
+        try {
+            Files.move(tmp, trustStore, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            // Still replaces the file rather than rewriting it in place, just not crash-safe.
+            Files.move(tmp, trustStore, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

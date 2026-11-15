@@ -10,6 +10,7 @@ import static org.hamcrest.Matchers.notNullValue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyStore;
 
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +40,15 @@ public class ProvisionedInstallTest {
     @Test
     public void overlayLandsInModules() {
         assertThat(Files.isRegularFile(home().resolve("glassfish/modules/overlay-probe.jar")), is(true));
+    }
+
+    @Test
+    public void trustedCertLandsInTheDomainTruststore() throws Exception {
+        Path trustStore = home().resolve("glassfish/domains/domain1/config/cacerts.p12");
+
+        KeyStore store = KeyStore.getInstance(trustStore.toFile(), "changeit".toCharArray());
+
+        assertThat(store.containsAlias("provision-it"), is(true));
     }
 
     private static Path home() {

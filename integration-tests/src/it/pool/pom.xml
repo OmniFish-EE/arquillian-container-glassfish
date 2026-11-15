@@ -98,6 +98,13 @@
                     <distribution>
                         <version>${glassfish.version}</version>
                     </distribution>
+                    <!-- Imported into the staged install, so every slot cloned from it trusts it. -->
+                    <trustedCerts>
+                        <trustedCert>
+                            <alias>pool-it</alias>
+                            <file>${project.basedir}/trusted.pem</file>
+                        </trustedCert>
+                    </trustedCerts>
                     <!--
                         The slot setup: every slot gets it, including the one
                         the test grows. The quotes keep the value's spaces.

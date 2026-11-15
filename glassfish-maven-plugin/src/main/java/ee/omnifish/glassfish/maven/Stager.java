@@ -26,11 +26,13 @@ import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 
 import ee.omnifish.glassfish.maven.staging.ArtifactCoord;
+import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.ArtifactResolver;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
+import ee.omnifish.glassfish.maven.staging.TrustedCert;
 
 /**
  * The Maven side of staging, shared by {@code glassfish:provision} and the
@@ -68,12 +70,14 @@ public final class Stager {
      * the unpack runs: the pool unpacks later, inside its lock, after building
      * a config that already needs the path. Overlays land in
      * {@code overlayTargetDir}, else in the install's {@code glassfish/modules}.
+     * Certificates go into the truststore {@code certImport} names, else into
+     * the install's domain truststore, which staging finds once it exists.
      *
      * @param homeParameter how the goal spells its explicit install root, for messages
      */
     public StageSpec spec(DistributionCoord distribution, File stageDir, boolean unpackSkip, File home,
                           List<OverlayCoord> overlays, File overlayTargetDir, boolean overlaySkip,
-                          String homeParameter) throws MojoExecutionException {
+                          CertImport certImport, String homeParameter) throws MojoExecutionException {
         boolean willUnpack = !unpackSkip && distribution != null;
         if (willUnpack) {
             requireVersion(distribution);
@@ -86,7 +90,9 @@ public final class Stager {
         }
         List<OverlayCoord> ov = (overlays == null) ? List.of() : overlays;
         Path overlayDir = overlayDir(overlayTargetDir, installRoot, ov, overlaySkip, homeParameter);
-        return new StageSpec(stageDir.toPath(), distribution, unpackSkip, installRoot, overlayDir, ov, overlaySkip);
+        checkCertImport(certImport, installRoot, homeParameter);
+        return new StageSpec(stageDir.toPath(), distribution, unpackSkip, installRoot, overlayDir, ov, overlaySkip,
+                certImport);
     }
 
     /** Run {@code spec}; see {@link GlassFishStaging#stage}. */
@@ -132,6 +138,23 @@ public final class Stager {
             throw new MojoExecutionException("<overlays> need a target: set <overlayTargetDir> or " + homeParameter);
         }
         return null;
+    }
+
+    /** Every certificate has an alias and a file, and the truststore is known, or found under {@code home}. */
+    private static void checkCertImport(CertImport certImport, Path home, String homeParameter)
+            throws MojoExecutionException {
+        if (!certImport.hasWork()) {
+            return;
+        }
+
+        for (TrustedCert cert : certImport.certs()) {
+            if (cert.getAlias() == null || cert.getAlias().isBlank() || cert.getFile() == null) {
+                throw new MojoExecutionException("<trustedCert> needs an <alias> and a <file> (got " + cert + ")");
+            }
+        }
+        if (certImport.trustStore() == null && home == null) {
+            throw new MojoExecutionException("<trustedCerts> need a truststore: set <trustStore> or " + homeParameter);
+        }
     }
 
     private static Path resolve(RepositorySystem repoSystem, RepositorySystemSession repoSession,
