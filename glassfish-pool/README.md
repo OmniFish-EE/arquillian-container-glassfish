@@ -143,9 +143,10 @@ Failsafe needs no pool settings. With `<extensions>true</extensions>`,
 
 The plugin resolves `<distribution>` through your usual Maven repositories
 and unpacks the zip under `${project.build.directory}/dist` before
-provisioning runs. Staging is idempotent: re-runs fast-exit when the
-marker file written after a successful unpack is still present and the
-zip isn't newer than it (a rebuilt SNAPSHOT is unpacked again).
+provisioning runs. Staging is idempotent: re-runs leave the staged install
+alone until the distribution, its overlays or its trusted certificates
+change, and then stage it afresh (see the plugin's
+[Staging behaviour](../glassfish-maven-plugin/README.md#staging-behaviour)).
 
 Everything else is defaulted: `groupId`/`artifactId`/`type` resolve to the
 Eclipse GlassFish zip (`org.glassfish.main.distributions:glassfish:zip`),

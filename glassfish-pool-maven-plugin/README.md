@@ -169,10 +169,17 @@ What every slot gets besides its ports. See [Slot setup](#slot-setup).
 The plugin uses Aether to resolve `<distribution>` through your usual
 repositories and unpacks it under `<stageDir>`
 (default `${project.build.directory}/dist`) before provisioning runs.
-Staging runs once per pool — re-runs fast-exit when the marker file
-written after a successful unpack is still present and the zip isn't
-newer than it (a rebuilt SNAPSHOT is unpacked again). Set
-`<unpackSkip>true</unpackSkip>` to short-circuit the check entirely.
+Overlays are copied and trusted certificates imported after the unpack. A
+marker file records a fingerprint of all of that, so re-runs leave the
+staged install alone until something changes: another distribution or
+`poolSource`, a zip or overlay rebuilt with `mvn install`, or an overlay or
+certificate added, changed or removed. Then `stageDir` is wiped and staged
+afresh. A non-empty `stageDir` without the marker fails the build and is
+left alone. With `<unpackSkip>true</unpackSkip>`, the plugin doesn't own the
+install: it copies the overlays and imports the certificates into it on
+every run. If `stageDir` holds an install the plugin staged, such a run
+drops its fingerprint, so the next run without `unpackSkip` stages it
+afresh.
 
 This is the same staging as `glassfish:provision` in the
 [GlassFish Maven Plugin](../glassfish-maven-plugin/), with the same
@@ -278,12 +285,13 @@ connection, so a certificate added to a running slot isn't picked up. Slots
 still running from an earlier build keep their truststore, as `up` reuses
 them as they are.
 
-The import only adds and replaces. Removing a `<trustedCert>` leaves the
-certificate in the staged install, and in the slots cloned from it, until
-GlassFish is staged afresh, for example after `mvn clean`. And `trustStore`
-only changes where the certificates go: for the slots to use them, it must
-be the truststore GlassFish reads, inside the staged install, as the
-default is.
+A change to the certificates stages the install afresh, so slots cloned
+from it from then on have exactly the configured ones. With `unpackSkip`,
+the import only adds and replaces entries: a removed `<trustedCert>` stays
+in the install, and in the slots cloned from it. And `trustStore` only
+changes where the certificates go: for the slots to use them, it must be
+the truststore GlassFish reads, inside the staged install, as the default
+is.
 
 This is the same import as `glassfish:provision`'s; see
 [Trusted certificates](../glassfish-maven-plugin/README.md#trusted-certificates)

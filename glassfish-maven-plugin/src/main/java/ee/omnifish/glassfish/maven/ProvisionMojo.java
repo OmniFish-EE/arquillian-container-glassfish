@@ -114,8 +114,8 @@ public class ProvisionMojo extends AbstractMojo {
      * provider's server certificate for OpenID, or a client certificate for
      * {@code CLIENT-CERT}. Each {@code <trustedCert>} is an {@code <alias>}
      * and a PEM or DER {@code <file>}.
-     * The import only adds and replaces entries: a certificate removed from
-     * this list stays in the truststore until GlassFish is staged afresh.
+     * Changing the list stages the install afresh. With {@code unpackSkip},
+     * the import only adds and replaces entries.
      */
     @Parameter
     private List<TrustedCert> trustedCerts;

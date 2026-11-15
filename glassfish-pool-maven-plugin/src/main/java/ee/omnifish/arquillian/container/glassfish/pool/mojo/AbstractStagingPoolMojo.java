@@ -86,8 +86,8 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
      * {@code CLIENT-CERT}. Each {@code <trustedCert>} is an {@code <alias>}
      * and a PEM or DER {@code <file>}.
      * Slots inherit them, since they are cloned from the staged install.
-     * The import only adds and replaces entries: a certificate removed from
-     * this list stays in the truststore until GlassFish is staged afresh.
+     * Changing the list stages the install afresh. With {@code unpackSkip},
+     * the import only adds and replaces entries.
      */
     @Parameter
     protected List<TrustedCert> trustedCerts;
