@@ -92,7 +92,9 @@ public interface GlassFishClient {
      *
      * @param name - name of the application form - a form of MediaType.MULTIPART_FORM_DATA_TYPE
      * @param form - form containing data to be deployed
-     * @throws DeploymentException if something goes wrong with the deployment
+     * @throws DeploymentException if the application was deployed, but reading what it contains
+     *         failed: it stays deployed, so the caller still undeploys it. A failed deployment throws
+     *         a {@link GlassFishClientException} or a {@code ProcessingException} instead.
      * @return subComponents - a map of SubComponents of the application
      */
     public HTTPContext doDeploy(String name, FormDataMultiPart form) throws DeploymentException;

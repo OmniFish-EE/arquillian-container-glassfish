@@ -43,6 +43,20 @@ class CommonGlassFishManagerTest {
         assertEquals(List.of("deploy broken"), client.calls);
     }
 
+    /** The application deployed before the failure, so it's undeployed like any other. */
+    @Test
+    void anArchiveThatFailedAfterDeployingIsUndeployed() throws Exception {
+        RecordingClient client = new RecordingClient(
+                new DeploymentException("deployed was deployed, but reading what it contains failed"));
+        CommonGlassFishManager<?> manager = new CommonGlassFishManager<>(new CommonGlassFishConfiguration(), client);
+        WebArchive archive = archive("deployed.war");
+        assertThrows(DeploymentException.class, () -> manager.deploy(archive));
+
+        manager.undeploy(archive);
+
+        assertEquals(List.of("deploy deployed", "undeploy deployed"), client.calls);
+    }
+
     @Test
     void aDeployedArchiveIsUndeployed() throws Exception {
         RecordingClient client = new RecordingClient(null);
@@ -64,9 +78,9 @@ class CommonGlassFishManagerTest {
     private static final class RecordingClient implements GlassFishClient {
 
         final List<String> calls = new ArrayList<>();
-        private final RuntimeException deployFailure;
+        private final Exception deployFailure;
 
-        RecordingClient(RuntimeException deployFailure) {
+        RecordingClient(Exception deployFailure) {
             this.deployFailure = deployFailure;
         }
 
@@ -75,10 +89,13 @@ class CommonGlassFishManagerTest {
         }
 
         @Override
-        public HTTPContext doDeploy(String name, FormDataMultiPart form) {
+        public HTTPContext doDeploy(String name, FormDataMultiPart form) throws DeploymentException {
             calls.add("deploy " + name);
+            if (deployFailure instanceof DeploymentException) {
+                throw (DeploymentException) deployFailure;
+            }
             if (deployFailure != null) {
-                throw deployFailure;
+                throw (RuntimeException) deployFailure;
             }
 
             return new HTTPContext("localhost", 8080);

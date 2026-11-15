@@ -73,6 +73,7 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
+import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.Servlet;
 
@@ -320,7 +321,7 @@ public class GlassFishClientService implements GlassFishClient {
      * @return subComponents - a map of SubComponents of the application
      */
     @Override
-    public HTTPContext doDeploy(String name, FormDataMultiPart form) {
+    public HTTPContext doDeploy(String name, FormDataMultiPart form) throws DeploymentException {
         // Deploy the application on the GlassFish server
         Map<String, Object> deploymentResult = getClientUtil().POSTMultiPartRequest("deploying application " + name,
                 APPLICATION, form);
@@ -330,8 +331,17 @@ public class GlassFishClientService implements GlassFishClient {
             ? ((Map<String,String>)deploymentResult.get("properties")).get("name")
             : null;
 
-        name = registerDeployedName(name, deployedName);
+        String registeredName = registerDeployedName(name, deployedName);
+        try {
+            return httpContext(registeredName);
+        } catch (GlassFishClientException | ProcessingException e) {
+            // GlassFish accepted the deployment, so the application stays deployed until it's undeployed.
+            throw new DeploymentException(name + " was deployed, but reading what it contains failed", e);
+        }
+    }
 
+    /** The HTTPContext of the deployed application {@code name}, with its servlets, read with further requests. */
+    private HTTPContext httpContext(String name) {
         // Fetch the list of SubComponents of the application
         Map<String, Object> subComponentsResponse = getClientUtil().GETRequest(APPLICATION_COMPONENTS.replace("{application}", name));
 
@@ -792,7 +802,8 @@ public class GlassFishClientService implements GlassFishClient {
         return target;
     }
 
-    private GlassFishClientUtil getClientUtil() {
+    /** Package-private for unit tests, which make the requests fail. */
+    GlassFishClientUtil getClientUtil() {
         return clientUtil;
     }
 

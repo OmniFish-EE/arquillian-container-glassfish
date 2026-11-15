@@ -165,7 +165,8 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
             protocolMetaData.addContext(httpContext);
             return protocolMetaData;
         } catch (GlassFishClientException | IOException | ProcessingException e) {
-            // Nothing got deployed, so there's nothing for undeploy to remove.
+            // The deployment failed, so there's nothing for undeploy to remove. A failure after the
+            // application deployed comes as a DeploymentException, which keeps the archive.
             forgetArchive(archive);
             throw new DeploymentException("Could not deploy " + archiveName + " as " + deploymentName, e);
         }
