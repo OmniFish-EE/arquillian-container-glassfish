@@ -192,8 +192,12 @@ public final class PoolBootstrap {
      *         them as they are
      */
     public static void down(PoolConfig config) {
-        // Stopped now, or reported as still running, so the shutdown hook leaves it alone.
+        stopSlots(config);
+        // Only now: if Maven exits while the stop runs, or after it failed, the shutdown hook stops the pool.
         STARTED_POOLS.remove(poolKey(config));
+    }
+
+    private static void stopSlots(PoolConfig config) {
         Path poolDir = config.poolDir();
         if (!isDirectory(poolDir)) {
             return;
