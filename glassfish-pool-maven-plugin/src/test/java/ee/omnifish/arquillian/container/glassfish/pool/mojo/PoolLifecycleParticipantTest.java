@@ -97,42 +97,73 @@ class PoolLifecycleParticipantTest {
         return configuration.getChild("systemPropertyVariables");
     }
 
+    /** One pool for the build, which the participant stops after the build instead. */
     @Test
-    void bindsUpAndDown() {
+    void bindsOnlyUpByDefault() {
         Plugin plugin = new Plugin();
+
+        PoolLifecycleParticipant.bindGoals(plugin, new Properties());
+
+        assertEquals(List.of("pool-up"), executionIds(plugin));
+    }
+
+    @Test
+    void withMultiModuleBindsOnlyUp() {
+        Plugin plugin = withMultiModule("true");
+
+        PoolLifecycleParticipant.bindGoals(plugin, new Properties());
+
+        assertEquals(List.of("pool-up"), executionIds(plugin));
+    }
+
+    @Test
+    void withMultiModuleOffBindsUpAndDown() {
+        Plugin plugin = withMultiModule("false");
 
         PoolLifecycleParticipant.bindGoals(plugin, new Properties());
 
         assertEquals(List.of("pool-up", "pool-down"), executionIds(plugin));
     }
 
-    /** All modules share the pool, which the participant stops after the build instead. */
     @Test
-    void withMultiModuleBindsOnlyUp() {
+    void withMultiModuleOffFromTheCommandLineBindsUpAndDown() {
         Plugin plugin = new Plugin();
-        Xpp3Dom configuration = new Xpp3Dom("configuration");
-        Xpp3Dom multiModule = new Xpp3Dom("multiModule");
-        multiModule.setValue("true");
-        configuration.addChild(multiModule);
-        plugin.setConfiguration(configuration);
+        Properties userProperties = new Properties();
+        userProperties.setProperty("gf.pool.multiModule", "false");
+
+        PoolLifecycleParticipant.bindGoals(plugin, userProperties);
+
+        assertEquals(List.of("pool-up", "pool-down"), executionIds(plugin));
+    }
+
+    /** The mojos then fall back to their default, so the participant does too. */
+    @Test
+    void aPropertyThatIsNotDefinedLeavesTheDefault() {
+        Plugin plugin = withMultiModule("${shared.pool}");
 
         PoolLifecycleParticipant.bindGoals(plugin, new Properties());
 
         assertEquals(List.of("pool-up"), executionIds(plugin));
     }
 
+    /**
+     * The participant leaves executions the pom configures alone, so a
+     * module's own {@code down} still runs where it's bound.
+     */
     @Test
-    void withMultiModuleFromTheCommandLineBindsOnlyUp() {
+    void aDownThatAModuleBindsItselfIsKept() {
         Plugin plugin = new Plugin();
-        Properties userProperties = new Properties();
-        userProperties.setProperty("gf.pool.multiModule", "true");
+        PluginExecution down = new PluginExecution();
+        down.setId("own-down");
+        down.addGoal("down");
+        plugin.addExecution(down);
 
-        PoolLifecycleParticipant.bindGoals(plugin, userProperties);
+        PoolLifecycleParticipant.bindGoals(plugin, new Properties());
 
-        assertEquals(List.of("pool-up"), executionIds(plugin));
+        assertEquals(List.of("own-down", "pool-up"), executionIds(plugin));
     }
 
-    /** As the mojos do: otherwise they share the pool, and each module's down stops it. */
+    /** As the mojos do: otherwise each module's pool runs until Maven exits. */
     @Test
     void aPomPropertySetsMultiModuleToo() {
         Plugin plugin = new Plugin();
@@ -140,16 +171,20 @@ class PoolLifecycleParticipantTest {
         plugin.setArtifactId(PoolLifecycleParticipant.ARTIFACT_ID);
         MavenProject project = new MavenProject();
         project.getBuild().addPlugin(plugin);
-        project.getProperties().setProperty("gf.pool.multiModule", "true");
+        project.getProperties().setProperty("gf.pool.multiModule", "false");
         MavenSession session = new MavenSession(null, null, new DefaultMavenExecutionRequest(),
                 new DefaultMavenExecutionResult());
         session.setProjects(List.of(project));
 
         new PoolLifecycleParticipant().afterProjectsRead(session);
 
-        assertEquals(List.of("pool-up"), executionIds(plugin));
+        assertEquals(List.of("pool-up", "pool-down"), executionIds(plugin));
     }
 
+    /**
+     * Nothing answers on the slot's admin port, as after a {@code down} the
+     * module binds itself, so stopping the pool again doesn't fail.
+     */
     @Test
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
     void afterTheBuildASharedPoolIsStopped(@TempDir Path tmp) throws Exception {
@@ -191,6 +226,17 @@ class PoolLifecycleParticipantTest {
         }
 
         return new PoolConfig(tmp.resolve("pool"), null, 1, adminPort, 100);
+    }
+
+    private static Plugin withMultiModule(String value) {
+        Plugin plugin = new Plugin();
+        Xpp3Dom configuration = new Xpp3Dom("configuration");
+        Xpp3Dom multiModule = new Xpp3Dom("multiModule");
+        multiModule.setValue(value);
+        configuration.addChild(multiModule);
+        plugin.setConfiguration(configuration);
+
+        return plugin;
     }
 
     private static List<String> executionIds(Plugin plugin) {

@@ -18,8 +18,10 @@ import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 
 /**
  * Stop every slot's domain. Default phase {@code post-integration-test} so
- * it pairs with {@link UpMojo}. Fails when a slot keeps running, because the
- * next {@code up} would reuse it as it is.
+ * it pairs with {@link UpMojo}. The extension binds it only with
+ * {@code multiModule} off, and otherwise stops the pool after the build.
+ * Fails when a slot keeps running, because the next {@code up} would reuse
+ * it as it is.
  */
 @Mojo(name = "down", defaultPhase = LifecyclePhase.POST_INTEGRATION_TEST, threadSafe = true)
 public class DownMojo extends AbstractPoolMojo {

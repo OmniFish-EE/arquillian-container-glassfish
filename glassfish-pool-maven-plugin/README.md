@@ -2,9 +2,9 @@
 
 Maven plugin that drives the lifecycle of an
 [`arquillian-glassfish-server-pool`](../glassfish-pool/) pool. Declared
-with `<extensions>true</extensions>`, it binds itself to
-`pre-integration-test` / `post-integration-test`, so a consumer pom only
-has to add two plugin blocks (this one with a `<distribution>` element,
+with `<extensions>true</extensions>`, it starts the pool in
+`pre-integration-test` and stops it once the build is done, so a consumer
+pom only has to add two plugin blocks (this one with a `<distribution>` element,
 and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 
 | Coordinates  | Value                              |
@@ -19,7 +19,7 @@ and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 | Goal        | Default phase            | Purpose                                             |
 | ----------- | ------------------------ | --------------------------------------------------- |
 | `up`        | `pre-integration-test`   | Stage GlassFish (optional), provision and start every slot in parallel. Idempotent — re-running fast-exits if all slots are healthy. |
-| `down`      | `post-integration-test`  | Stop every slot's domain. Fails if a slot keeps running, since the next `up` would reuse it. |
+| `down`      | `post-integration-test`  | Stop every slot's domain. Fails if a slot keeps running, since the next `up` would reuse it. The extension binds it only with `multiModule` off. |
 | `provision` | (none)                   | Provision a single extra slot at `-Dgf.pool.slot=N`. Mostly debugging — `SlotLeaser` grows the pool itself when test JVMs need it. |
 | `status`    | (none)                   | Print one row per slot: index, admin port, alive, leased. Live-refreshes on a TTY (like `top`); one-shot when piped or under `-B`. |
 | `nuke`      | (none)                   | Stop every slot AND remove the pool directory. Forceful reset before a clean `up`. |
@@ -57,20 +57,20 @@ For parallel forks and the optional `arquillian.xml`, see
 ### Lifecycle binding
 
 With `<extensions>true</extensions>`, Maven loads the plugin as a build
-extension, and the plugin adds two executions to every project that
+extension, and the plugin adds an execution to every project that
 declares it (directly or inherited from a parent's `<plugins>`):
 
 | Execution id | Goal   | Phase                   |
 | ------------ | ------ | ----------------------- |
 | `pool-up`    | `up`   | `pre-integration-test`  |
-| `pool-down`  | `down` | `post-integration-test` |
+| `pool-down`  | `down` | `post-integration-test`, only with `multiModule` off |
 
 They pick up the plugin-level `<configuration>`, and they work with any
 packaging (`jar`, `war`, `pom`, …). A goal you already bind yourself is
 left alone, so existing poms that keep an `<executions>` block don't run
 `up` or `down` twice. A plugin declared only in `<pluginManagement>` binds
-nothing. With `multiModule`, it doesn't bind `down`, and stops the pool once,
-after the whole build (see *Sharing one pool across modules*).
+nothing. Instead of binding `down`, the extension stops the pool once,
+after the whole build (see *One pool per build*).
 
 The extension also forwards the pool layout and the
 [slot setup](#slot-setup) to the test JVMs. After the pool is up, `up` sets
@@ -98,6 +98,13 @@ goals yourself. The phases come from the goals' defaults. Then also add the
 </executions>
 ```
 
+That suits a single-module build. In a multi-module build, all modules
+share one pool, and each module's `down` would stop it while later modules
+still need it. There, turn `multiModule` off, so each module has its own
+pool, or bind `down` once, in a module that depends on every module that
+uses the pool. The last module in the list won't do: under `-T`, it isn't
+necessarily the last to finish.
+
 ### Defaults
 
 The snippet above relies on these defaults. Override one only when its
@@ -105,10 +112,10 @@ note applies:
 
 | Parameter | Default | Override when… |
 | --------- | ------- | -------------- |
-| `poolDir` | `pool` in the project's build directory, or with `multiModule` in that of the project where Maven runs | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
+| `poolDir` | `pool` in the build directory of the project where Maven runs, or with `multiModule` off in the project's own | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
-| `stageDir` | `dist` in the project's build directory, or with `multiModule` in that of the project where Maven runs | the unpacked dist should live elsewhere. |
+| `stageDir` | `dist` in the build directory of the project where Maven runs, or with `multiModule` off in the project's own | the unpacked dist should live elsewhere. |
 | `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`, or set that to `${gf.pool.size}`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
@@ -127,7 +134,7 @@ the *Staging* and *Slot setup* blocks.
 | Parameter       | Property             | Default                         | Notes                                                  |
 | --------------- | -------------------- | ------------------------------- | ------------------------------------------------------ |
 | `poolDir`       | `gf.pool.dir`        | `target/pool`, see *Defaults*   | Pool root. Created if missing.                         |
-| `multiModule`   | `gf.pool.multiModule` | `false`                        | All modules of the build share one pool. See *Sharing one pool across modules*. |
+| `multiModule`   | `gf.pool.multiModule` | `true`                         | One pool for the build, which all modules share, and which stops after the build. Turn it off only when a later step needs GlassFish stopped, when long-running modules follow the one that uses the pool, or when modules need different servers. See *One pool per build*. |
 | `poolSource`    | `gf.pool.source`     | derived from `<distribution>`   | Source GlassFish install. Required for `up`/`provision`; defaults to `stageDir/<zip root>` when a `<distribution>` is unpacked. |
 | `poolSize`      | `gf.pool.size`       | `1`                             | Number of slots `up` provisions.                       |
 | `adminPortBase` | `gf.pool.adminBase`  | `14848`                         | Admin port for slot 1.                                 |
@@ -381,17 +388,19 @@ With the managed Arquillian Container, these settings live in failsafe's
 ### Slots from an earlier build
 
 `up` reuses slots still running from an earlier build as they are, without
-applying a changed setup. Normally there are none: `down` stops every slot
-in `post-integration-test`, or after the build with `multiModule`, and a
-shutdown hook stops them when the build is interrupted. If `stop-domain` fails, `down` retries with
+applying a changed setup. Normally there are none: the extension stops
+every slot after the build, or `down` does in `post-integration-test` with
+`multiModule` off, and a shutdown hook stops them when the build is
+interrupted. If `stop-domain` fails, `down` retries with
 `stop-domain --kill`, and fails if a slot still answers after that. If a
 pool outlives its build anyway, for example because Maven was killed, stop
 it with `glassfish-pool:down` before changing its configuration.
 
-## Sharing one pool across modules
+## One pool per build
 
-When all modules of a build test against one pool, as in a TCK with a
-module per area, set `multiModule` in the parent:
+A build has one pool, whether it has one module or many (`multiModule`, on
+by default). In a multi-module build, such as a TCK with a module per area,
+all modules share it, so configure the plugin in the parent:
 
 ```xml
 <plugin>
@@ -399,7 +408,6 @@ module per area, set `multiModule` in the parent:
     <artifactId>glassfish-pool-maven-plugin</artifactId>
     <extensions>true</extensions>
     <configuration>
-        <multiModule>true</multiModule>
         <distribution>9.0.0</distribution>
     </configuration>
 </plugin>
@@ -410,15 +418,21 @@ module per area, set `multiModule` in the parent:
   and `target/dist` there, instead of in each module. Explicit values win.
   `up` publishes `gf.pool.dir` as always, so the test JVMs get the shared
   directory. Run Maven in a module, and the pool is in that module's
-  `target`.
+  `target`, as in a single-module build.
 - The first `up` in the build starts the pool. The others find it running
   and return straight away. If it starts only partly, the slots that did
   start are stopped after the build all the same.
 - The extension doesn't bind `down` after each module, which would stop the
   pool while later modules still need it. It stops the pool once, after the
-  whole build. A slot that keeps running then fails the build, as with
-  `down`; Maven reports that after its build summary. A shutdown hook still
-  stops the pool when the build is interrupted.
+  whole build, also when the build failed. A slot that keeps running then
+  fails the build, as with `down`; Maven reports that after its build
+  summary. A shutdown hook still stops the pool when the build is
+  interrupted.
+- A `down` you bind yourself still runs where you bind it. In a
+  multi-module build, that stops the pool while later modules still need
+  it, so remove it, or turn `multiModule` off. In a single-module build, it
+  works as before, and the stop after the build finds the pool already
+  stopped.
 - All modules share one pool and one slot setup, so configure the plugin
   in the parent. A module's own settings don't reach slots that already
   run.
@@ -430,7 +444,34 @@ module per area, set `multiModule` in the parent:
   `<configuration>`, or else from the `gf.pool.multiModule` property, set
   with `-D` or in the pom's `<properties>`; not from an `<execution>`.
 - Without `<extensions>true</extensions>`, `multiModule` only changes the
-  defaults, and binding `down` is up to you.
+  defaults, and binding `down` is up to you; see *Lifecycle binding*.
+
+### When to turn `multiModule` off
+
+Rarely. Having a single module is no reason: the pool then only stops a
+little later, at the end of the build instead of in
+`post-integration-test`. Turn it off, in a multi-module build in the
+parent's configuration, when:
+
+- a later step needs GlassFish stopped, such as a `verify` step that
+  collects the server logs after shutdown, or changes the install offline;
+- long-running modules follow the one that uses the pool. With
+  `multiModule` on, GlassFish keeps running until the whole build is done;
+- modules need different servers, such as another `<distribution>` or
+  other commands. A shared pool has one setup: the first `up` starts the
+  slots with its configuration, and the other modules reuse them as they
+  are.
+
+```xml
+<configuration>
+    <multiModule>false</multiModule>
+</configuration>
+```
+
+Each module then has its own pool in its own `target`, and the extension
+binds `down` to stop it in `post-integration-test`. Pools that run at the
+same time, as under `-T`, need their own `adminPortBase`, since every pool
+starts at 14848.
 
 ## Recipes
 
@@ -468,7 +509,7 @@ In a single-module build, such as a TCK runner, both can follow Maven's
   since the pom sets `<poolSize>`.
 - Keep this to single-module builds. In a multi-module build, `-T` already
   runs the modules side by side, so leave `forkCount` at its default of 1
-  there; see *Sharing one pool across modules*.
+  there; see *One pool per build*.
 
 ### Run from the command line, no project binding
 

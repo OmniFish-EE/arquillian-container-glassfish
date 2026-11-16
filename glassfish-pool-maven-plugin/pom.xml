@@ -27,9 +27,9 @@
     <name>Arquillian Container GlassFish Pool — Maven Plugin</name>
     <description>
         Lifecycle goals (up/down/provision/status/nuke) wrapping
-        ee.omnifish.arquillian:arquillian-glassfish-server-pool. Lets a
-        consumer pom bind pool-up to pre-integration-test and pool-down to
-        post-integration-test.
+        ee.omnifish.arquillian:arquillian-glassfish-server-pool. As a build
+        extension, it starts the pool in pre-integration-test, and stops it
+        after the build.
     </description>
 
     <prerequisites>

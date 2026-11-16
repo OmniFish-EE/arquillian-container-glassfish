@@ -80,10 +80,10 @@
     <build>
         <plugins>
             <!--
-                Provision/start the pool before failsafe, stop it after.
-                <extensions>true</extensions> binds, with no <executions>:
-                pre-integration-test  -> glassfish-pool:up   (pool-up)
-                post-integration-test -> glassfish-pool:down (pool-down)
+                Provision/start the pool before failsafe, stop it after the
+                build. <extensions>true</extensions> binds, with no
+                <executions>, pre-integration-test -> glassfish-pool:up
+                (pool-up), and stops the pool once the build is done.
                 up stages <distribution> under target/dist first (the same
                 staging as glassfish:provision) and clones the slot from it.
             -->

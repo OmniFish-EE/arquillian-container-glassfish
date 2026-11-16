@@ -114,7 +114,7 @@ Failsafe needs no pool settings. With `<extensions>true</extensions>`,
             <groupId>ee.omnifish.arquillian</groupId>
             <artifactId>glassfish-pool-maven-plugin</artifactId>
             <version>2.2.2</version>
-            <!-- Binds up/down to pre-/post-integration-test; no <executions> needed. -->
+            <!-- Binds up to pre-integration-test and stops the pool after the build; no <executions> needed. -->
             <extensions>true</extensions>
             <configuration>
                 <poolSize>${pool.size}</poolSize>

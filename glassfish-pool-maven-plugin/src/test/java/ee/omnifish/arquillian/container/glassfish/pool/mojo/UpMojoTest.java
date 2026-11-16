@@ -40,7 +40,7 @@ class UpMojoTest {
     private static final File MODULE_TARGET = new File("/build/module/target");
 
     @Test
-    void eachModuleHasItsOwnPoolByDefault() {
+    void withMultiModuleOffEachModuleHasItsOwnPool() {
         UpMojo up = upInModule(false);
 
         assertEquals(new File(MODULE_TARGET, "pool"), up.poolDir());

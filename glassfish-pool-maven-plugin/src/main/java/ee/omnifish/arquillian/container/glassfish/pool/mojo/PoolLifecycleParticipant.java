@@ -33,13 +33,14 @@ import static ee.omnifish.glassfish.maven.LifecycleSupport.bind;
 import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
 
 /**
- * Binds {@code up} and {@code down} for every project that declares this
- * plugin with {@code <extensions>true</extensions>}, so the consumer pom needs
- * no {@code <executions>} block.
+ * Binds {@code up} for every project that declares this plugin with
+ * {@code <extensions>true</extensions>}, so the consumer pom needs no
+ * {@code <executions>} block, and stops the pool once the build is done.
+ * With {@code multiModule} off, it binds {@code down} instead.
  *
  * <p>A {@code lifecycle-mappings}/{@code LifecycleMapping} component could only
  * contribute bindings for a custom packaging type, which would force users off
- * {@code jar}/{@code war}. A lifecycle participant instead adds the two
+ * {@code jar}/{@code war}. A lifecycle participant instead adds the
  * executions to the already-built project model, before Maven computes the
  * build plan. They carry no phase, so each goal lands on its mojo's
  * {@code defaultPhase} ({@code pre-}/{@code post-integration-test}).
@@ -58,10 +59,11 @@ import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
  * {@code -Dgf.pool.skip}) resolves to an empty string, which the test-JVM side
  * treats as unset. Entries the user already configures are left alone.
  *
- * <p>With {@code multiModule}, all modules share one pool, so it doesn't bind
- * {@code down}, which would stop the pool after the first module's tests.
- * Instead it stops the pools {@code up} started once the whole build is done,
- * in {@link #afterSessionEnd}.
+ * <p>With {@code multiModule}, the default, all modules share one pool, so it
+ * doesn't bind {@code down}, which would stop the pool after the first
+ * module's tests. Instead it stops the pools {@code up} started once the
+ * whole build is done, in {@link #afterSessionEnd}, also in a single-module
+ * build.
  *
  * <p>Binding and forwarding are shared with {@code glassfish-maven-plugin};
  * see {@link ee.omnifish.glassfish.maven.LifecycleSupport}.
@@ -122,7 +124,7 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         // All modules share one pool, so in practice this loops once.
         IllegalStateException stillRunning = null;
         for (PoolConfig pool : pools) {
-            LOG.info("Stopping the shared pool at {}", pool.poolDir());
+            LOG.info("Stopping the pool at {}", pool.poolDir());
             try {
                 PoolBootstrap.down(pool);
             } catch (IllegalStateException e) {
@@ -165,7 +167,9 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
      * Whether the plugin-level configuration sets {@code multiModule}, or
      * else the {@code gf.pool.multiModule} property does, as for the mojos.
      * The project model is interpolated by now, so a property reference in
-     * the configuration works too.
+     * the configuration works too. Unset, it's {@code true}, the mojos'
+     * default, and so is a reference to a property that isn't defined, which
+     * the mojos replace with their default.
      */
     private static boolean isMultiModule(Plugin plugin, Properties properties) {
         Xpp3Dom configuration = (Xpp3Dom) plugin.getConfiguration();
@@ -173,6 +177,9 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         String value = (multiModule != null)
                 ? multiModule.getValue()
                 : properties.getProperty(AbstractPoolMojo.MULTI_MODULE_PROPERTY);
+        if (value == null || value.isBlank() || value.contains("${")) {
+            return true;
+        }
 
         return Boolean.parseBoolean(value);
     }

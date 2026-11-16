@@ -33,21 +33,28 @@ abstract class AbstractPoolMojo extends AbstractMojo {
 
     /**
      * Where the pool of slots is laid out. Created if missing. Defaults to
-     * {@code pool} in the project's build directory, or with
-     * {@link #multiModule} in that of the project where Maven runs.
+     * {@code pool} in the build directory of the project where Maven runs,
+     * or with {@link #multiModule} off in the project's own.
      */
     @Parameter(property = "gf.pool.dir")
     protected File poolDir;
 
     /**
-     * Whether all modules of the build share one pool. {@code poolDir} and
-     * {@code stageDir} then default to the build directory of the project
-     * where Maven runs. With {@code <extensions>true</extensions>}, the pool stops
-     * once, after the whole build, instead of after each module's integration
-     * tests. Set it in the parent's plugin configuration, with the rest of
-     * the pool's settings, which all modules share.
+     * Whether the build has one pool, which all its modules share. On by
+     * default, which suits a single-module build too. {@code poolDir} and
+     * {@code stageDir} default to the build directory of the project where
+     * Maven runs, and with {@code <extensions>true</extensions>}, the pool
+     * stops once, after the whole build.
+     *
+     * <p>Turn it off, in a multi-module build in the parent's configuration,
+     * only when a later step needs GlassFish stopped, when long-running
+     * modules follow the one that uses the pool, or when modules need
+     * different servers. Each module then has its own pool, which
+     * {@code down} stops in {@code post-integration-test}. Pools that run at
+     * the same time, as under {@code -T}, also need their own
+     * {@code adminPortBase}.
      */
-    @Parameter(property = MULTI_MODULE_PROPERTY, defaultValue = "false")
+    @Parameter(property = MULTI_MODULE_PROPERTY, defaultValue = "true")
     protected boolean multiModule;
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -165,8 +172,8 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     }
 
     /**
-     * {@code name} in the project's build directory, or with
-     * {@link #multiModule} in that of the project where Maven runs. Maven's
+     * {@code name} in the build directory of the project where Maven runs,
+     * or with {@link #multiModule} off in the project's own. Maven's
      * stand-in project for a run without a pom leaves its build directory
      * unresolved, so then it's {@code target} where Maven runs.
      */

@@ -55,9 +55,9 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     protected DistributionCoord distribution;
 
     /**
-     * Where the dist zip is unpacked. Defaults to {@code dist} in the
-     * project's build directory, or with {@code multiModule} in that of the
-     * project where Maven runs.
+     * Where the dist zip is unpacked. Defaults to {@code dist} in the build
+     * directory of the project where Maven runs, or with {@code multiModule}
+     * off in the project's own.
      */
     @Parameter(property = "gf.pool.stageDir")
     protected File stageDir;
