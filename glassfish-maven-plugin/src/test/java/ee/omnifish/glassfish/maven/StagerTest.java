@@ -93,6 +93,21 @@ class StagerTest {
         assertThat(e.getMessage(), containsString("<overlayTargetDir> or <poolSource> (gf.pool.source)"));
     }
 
+    /** Even when they agree, and also with overlaySkip, since the pom is wrong either way. */
+    @Test
+    void anOverlaySetsSkipOrApplyNotBoth() {
+        Stager stager = new Stager(coord -> zip("glassfish9/x"), log);
+        OverlayCoord overlay = new OverlayCoord("org.glassfish.soteria", "soteria", "1", "jar", null, "soteria.jar");
+        overlay.setSkip(false);
+        overlay.setApply(true);
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class,
+                () -> stager.spec(null, tmp.toFile(), true, null, List.of(overlay), null, true, CertImport.NONE, HOME));
+
+        assertThat(e.getMessage(), containsString("Overlay org.glassfish.soteria:soteria"));
+        assertThat(e.getMessage(), containsString("sets both <skip> and <apply>; set one of them"));
+    }
+
     @Test
     void certImportReachesTheSpec() throws Exception {
         File home = tmp.resolve("opt/glassfish9").toFile();

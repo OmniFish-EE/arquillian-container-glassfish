@@ -98,6 +98,8 @@ public class ProvisionMojo extends AbstractMojo {
     /**
      * Optional artifacts copied into the install's modules directory after
      * unpack. Each {@code <overlay>} is a GAV plus a {@code destFileName}.
+     * {@code <skip>true</skip>}, or its reverse {@code <apply>false</apply>},
+     * leaves one out; an overlay sets one of them, not both.
      */
     @Parameter
     private List<OverlayCoord> overlays;

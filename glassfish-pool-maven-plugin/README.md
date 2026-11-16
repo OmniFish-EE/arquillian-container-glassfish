@@ -262,10 +262,15 @@ plus a `<destFileName>`:
 | --------------- | ------- | -------------------------------- | ------------------------------------------------------- |
 | `groupId` / `artifactId` / `version` / `type` / `classifier` | String  | (GAV)                            | Maven coordinate to resolve.                            |
 | `destFileName`  | String  | source artifact's file name      | File name to copy under `overlayTargetDir`.             |
-| `skip`          | boolean | `false`                          | Skip just this overlay. Property-driven for per-profile toggling, e.g. `<skip>${soteria.noupdate}</skip>`. |
+| `skip`          | boolean | `false`                          | Leave just this overlay out.                            |
+| `apply`         | boolean | `true`                           | The reverse of `skip`: `false` leaves the overlay out. Property-driven for per-profile toggling, e.g. `<apply>${soteria.update}</apply>`. |
+
+An overlay sets `<skip>` or `<apply>`, not both: the goal fails when one
+sets both, even if they agree. A property that isn't defined leaves its
+element unset.
 
 `overlaySkip` is the master kill-switch (skip *all* overlays); per-overlay
-`<skip>` lets you hold back a subset (e.g. keep the API jar pinned but
+`<skip>` or `<apply>` lets you hold back a subset (e.g. keep the API jar pinned but
 opt out of the impl overlay against a SNAPSHOT it doesn't yet match).
 
 Skip everything in CI without editing the pom: `mvn verify -Dgf.pool.overlay.skip=true`.

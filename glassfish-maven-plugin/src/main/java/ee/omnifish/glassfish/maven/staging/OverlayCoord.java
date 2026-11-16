@@ -15,11 +15,14 @@ package ee.omnifish.glassfish.maven.staging;
  * should land under in the staged install's {@code modules/} directory.
  *
  * <p>JavaBean for Plexus injection (nested {@code <overlay>} blocks).
+ * {@code skip} and {@code apply} stay {@code null} when the pom doesn't set
+ * them, so staging can tell that a pom sets both.
  */
 public class OverlayCoord extends ArtifactCoord {
 
     private String destFileName;
-    private boolean skip;
+    private Boolean skip;
+    private Boolean apply;
 
     public OverlayCoord() {
     }
@@ -38,11 +41,26 @@ public class OverlayCoord extends ArtifactCoord {
         this.destFileName = destFileName;
     }
 
-    public boolean isSkip() {
+    /** {@code <skip>}, or {@code null} when the pom doesn't set it. */
+    public Boolean getSkip() {
         return skip;
     }
 
-    public void setSkip(boolean skip) {
+    public void setSkip(Boolean skip) {
         this.skip = skip;
+    }
+
+    /** {@code <apply>}, the reverse of {@code <skip>}, or {@code null} when the pom doesn't set it. */
+    public Boolean getApply() {
+        return apply;
+    }
+
+    public void setApply(Boolean apply) {
+        this.apply = apply;
+    }
+
+    /** Whether staging leaves this overlay out: with {@code <skip>true</skip>}, or {@code <apply>false</apply>}. */
+    public boolean isSkipped() {
+        return Boolean.TRUE.equals(skip) || Boolean.FALSE.equals(apply);
     }
 }

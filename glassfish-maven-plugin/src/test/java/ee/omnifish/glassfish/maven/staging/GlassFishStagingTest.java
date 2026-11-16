@@ -71,6 +71,25 @@ class GlassFishStagingTest {
     }
 
     @Test
+    void perOverlayApplyIsHonoured(@TempDir Path tmp) throws IOException {
+        Path modules = tmp.resolve("modules");
+        Path appliedJar = Files.writeString(Files.createDirectories(tmp.resolve("repo")).resolve("applied.jar"),
+                "applied");
+        OverlayCoord applied = new OverlayCoord("g", "applied", "1", "jar", null, "applied.jar");
+        applied.setApply(true);
+        OverlayCoord leftOut = new OverlayCoord("g", "left-out", "1", "jar", null, "left-out.jar");
+        leftOut.setApply(false);
+        StageSpec spec = new StageSpec(tmp.resolve("stage"), null, true, null, modules, List.of(applied, leftOut),
+                false);
+
+        GlassFishStaging.stage(spec,
+                coord -> "applied".equals(coord.getArtifactId()) ? appliedJar : NO_ARTIFACTS.resolve(coord));
+
+        assertThat(Files.readString(modules.resolve("applied.jar")), equalTo("applied"));
+        assertThat(Files.exists(modules.resolve("left-out.jar")), is(false));
+    }
+
+    @Test
     void singleRootDirectoryWithDirectoryEntries(@TempDir Path tmp) throws IOException {
         Path zip = zip(tmp, "glassfish9/", "glassfish9/bin/", "glassfish9/bin/asadmin", "glassfish9/glassfish/");
 
@@ -196,6 +215,21 @@ class GlassFishStagingTest {
         GlassFishStaging.stage(ownedSpec(tmp.resolve("stage"), List.of(faces()), CertImport.NONE), facesOr(jar, zip));
 
         GlassFishStaging.stage(ownedSpec(tmp.resolve("stage"), List.of(), CertImport.NONE), facesOr(jar, zip));
+
+        assertThat(Files.exists(tmp.resolve("stage/glassfish9/glassfish/modules/faces.jar")), is(false));
+        assertThat(Files.exists(tmp.resolve("stage/glassfish9/glassfish/modules/shipped.jar")), is(true));
+    }
+
+    @Test
+    void anOverlaySwitchedOffWithApplyIsGoneAfterStagingAfresh(@TempDir Path tmp) throws Exception {
+        Path zip = zip(tmp, "glassfish9/glassfish/modules/shipped.jar");
+        Path jar = Files.writeString(Files.createDirectories(tmp.resolve("repo")).resolve("faces.jar"), "build 1");
+        GlassFishStaging.stage(ownedSpec(tmp.resolve("stage"), List.of(faces()), CertImport.NONE), facesOr(jar, zip));
+        OverlayCoord switchedOff = faces();
+        switchedOff.setApply(false);
+
+        GlassFishStaging.stage(ownedSpec(tmp.resolve("stage"), List.of(switchedOff), CertImport.NONE),
+                facesOr(jar, zip));
 
         assertThat(Files.exists(tmp.resolve("stage/glassfish9/glassfish/modules/faces.jar")), is(false));
         assertThat(Files.exists(tmp.resolve("stage/glassfish9/glassfish/modules/shipped.jar")), is(true));
