@@ -19,8 +19,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -67,6 +69,9 @@ public final class PoolBootstrap {
     private static final int MAX_PROVISION_PARALLELISM = 16;
 
     private static final AtomicBoolean shutdownHookInstalled = new AtomicBoolean(false);
+
+    /** The pools {@link #up} started in this JVM and {@link #down} didn't stop yet, by directory. */
+    private static final Map<Path, PoolConfig> STARTED_POOLS = new ConcurrentHashMap<>();
 
     /**
      * Serialises concurrent {@link #up} calls within a single JVM so two
@@ -187,6 +192,12 @@ public final class PoolBootstrap {
      *         them as they are
      */
     public static void down(PoolConfig config) {
+        stopSlots(config);
+        // Only now: if Maven exits while the stop runs, or after it failed, the shutdown hook stops the pool.
+        STARTED_POOLS.remove(poolKey(config));
+    }
+
+    private static void stopSlots(PoolConfig config) {
         Path poolDir = config.poolDir();
         if (!isDirectory(poolDir)) {
             return;
@@ -448,18 +459,32 @@ public final class PoolBootstrap {
      * failure — still releases GlassFish processes. No-op when called outside
      * a Maven JVM (e.g. inside a forked failsafe JVM, where the test JVM
      * doesn't own the pool).
+     *
+     * <p>The one hook stops every pool {@code up} started in this JVM that
+     * {@code down} didn't stop: one per module, or, under mvnd, whose JVM
+     * outlives the build, one per build.
      */
     private static void installShutdownHook(PoolConfig config) {
+        STARTED_POOLS.put(poolKey(config), config);
         if (!shutdownHookInstalled.compareAndSet(false, true)) {
             return;
         }
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        Runtime.getRuntime().addShutdownHook(new Thread(PoolBootstrap::stopStartedPools, "glassfish-pool-shutdown"));
+    }
+
+    /** What the shutdown hook runs. Package-private for unit tests. */
+    static void stopStartedPools() {
+        for (PoolConfig started : STARTED_POOLS.values()) {
             try {
-                down(config);
+                down(started);
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "Pool shutdown hook failed", e);
             }
-        }, "glassfish-pool-shutdown"));
+        }
+    }
+
+    private static Path poolKey(PoolConfig config) {
+        return config.poolDir().toAbsolutePath().normalize();
     }
 
     private static List<Integer> listSlotIndices(Path poolDir) {

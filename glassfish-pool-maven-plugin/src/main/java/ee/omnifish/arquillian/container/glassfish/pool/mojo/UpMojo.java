@@ -21,7 +21,6 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.project.MavenProject;
 
 import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
@@ -78,9 +77,6 @@ public class UpMojo extends AbstractStagingPoolMojo {
             SYS_POST_START_COMMANDS,
             SYS_FAIL_ON_COMMAND_ERROR);
 
-    @Parameter(defaultValue = "${project}", readonly = true, required = true)
-    private MavenProject project;
-
     @Parameter(property = "skipTests", defaultValue = "false")
     protected boolean skipTests;
 
@@ -105,13 +101,22 @@ public class UpMojo extends AbstractStagingPoolMojo {
         // Before poolConfig(): may derive poolSource from <distribution>.
         Runnable preStage = buildPreStage();
         PoolConfig poolConfig = poolConfig();
+        if (multiModule) {
+            // Before the start, so the slots of a pool that starts only partly are stopped too.
+            PoolLifecycleParticipant.stopAfterBuild(poolConfig);
+        }
         try {
-            PoolBootstrap.up(poolConfig, preStage);
+            startPool(poolConfig, preStage);
         } catch (IOException e) {
             throw new MojoExecutionException("Pool up failed: " + e.getMessage(), e);
         }
 
         publish(project.getProperties(), poolConfig, getLog());
+    }
+
+    /** Package-private for unit tests, which make it fail. */
+    void startPool(PoolConfig poolConfig, Runnable preStage) throws IOException {
+        PoolBootstrap.up(poolConfig, preStage);
     }
 
     /**

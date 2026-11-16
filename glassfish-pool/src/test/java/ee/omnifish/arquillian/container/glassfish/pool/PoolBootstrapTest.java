@@ -195,6 +195,60 @@ class PoolBootstrapTest {
                 hasItems("--terse stop-domain domain1", "--terse stop-domain --kill domain1"));
     }
 
+    /**
+     * One JVM can start several pools: one per module, or one per build
+     * under mvnd, whose JVM outlives the build. The shutdown hook stops each
+     * one {@code down} didn't stop, not just the first.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theShutdownHookStopsEveryPoolDownDidNotStop(@TempDir Path tmp) throws Exception {
+        PoolConfig stopped = fakePool(tmp.resolve("stopped"), "exit 0\n", SlotSetup.NONE);
+        PoolConfig stillUp = fakePool(tmp.resolve("still-up"), "exit 0\n", SlotSetup.NONE);
+        PoolBootstrap.up(stopped);
+        PoolBootstrap.up(stillUp);
+        PoolBootstrap.down(stopped);
+
+        PoolBootstrap.stopStartedPools();
+
+        assertThat(FakeGlassFish.calls(slotInstall(stopped)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+        assertThat(FakeGlassFish.calls(slotInstall(stillUp)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+    }
+
+    /**
+     * Maven can exit while {@code down} still waits for {@code stop-domain}.
+     * The shutdown hook then has to stop the pool too, so {@code down} only
+     * lets go of a pool once it stopped it.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theShutdownHookStopsAPoolDownIsStillStopping(@TempDir Path tmp) throws Exception {
+        Path release = tmp.resolve("release");
+        // Only the first stop-domain gets through mkdir, and waits for the release.
+        PoolConfig config = fakePool(tmp, "case \"$*\" in *stop-domain*)\n"
+                + "  if mkdir '" + tmp.resolve("first-stop") + "' 2>/dev/null; then\n"
+                + "    while [ ! -f '" + release + "' ]; do sleep 0.1; done\n"
+                + "  fi ;;\n"
+                + "esac\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+        CompletableFuture<Void> stopping = CompletableFuture.runAsync(() -> PoolBootstrap.down(config));
+        try {
+            for (int i = 0; i < 200 && FakeGlassFish.calls(slotInstall(config)).size() < 2; i++) {
+                Thread.sleep(50);
+            }
+
+            PoolBootstrap.stopStartedPools();
+
+            assertThat(FakeGlassFish.calls(slotInstall(config)), contains("--terse start-domain domain1",
+                    "--terse stop-domain domain1", "--terse stop-domain domain1"));
+        } finally {
+            Files.createFile(release);
+            stopping.get(30, TimeUnit.SECONDS);
+        }
+    }
+
     @Test
     void statusOnEmptyPoolDirPrintsHint(@TempDir Path tmp) {
         Path missing = tmp.resolve("nope");

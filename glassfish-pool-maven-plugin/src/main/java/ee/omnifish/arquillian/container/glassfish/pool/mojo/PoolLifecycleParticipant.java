@@ -10,10 +10,24 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
 import org.apache.maven.AbstractMavenLifecycleParticipant;
+import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
+import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 
 import static ee.omnifish.glassfish.maven.LifecycleSupport.bind;
 import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
@@ -44,6 +58,11 @@ import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
  * {@code -Dgf.pool.skip}) resolves to an empty string, which the test-JVM side
  * treats as unset. Entries the user already configures are left alone.
  *
+ * <p>With {@code multiModule}, all modules share one pool, so it doesn't bind
+ * {@code down}, which would stop the pool after the first module's tests.
+ * Instead it stops the pools {@code up} started once the whole build is done,
+ * in {@link #afterSessionEnd}.
+ *
  * <p>Binding and forwarding are shared with {@code glassfish-maven-plugin};
  * see {@link ee.omnifish.glassfish.maven.LifecycleSupport}.
  */
@@ -53,19 +72,109 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
     static final String ARTIFACT_ID = "glassfish-pool-maven-plugin";
     static final String FAILSAFE_KEY = "org.apache.maven.plugins:maven-failsafe-plugin";
 
+    private static final Logger LOG = LoggerFactory.getLogger(PoolLifecycleParticipant.class);
+
+    /**
+     * The pools {@code up} started with {@code multiModule} in this JVM, by
+     * directory. All modules share one pool, so in practice it holds one.
+     */
+    private static final Map<Path, PoolConfig> SHARED_POOLS = new LinkedHashMap<>();
+
+    /**
+     * Stop the pool {@code config} describes once the build is done. Called
+     * by {@code up} with {@code multiModule}. Maven loads a plugin that is an
+     * extension, its mojos and this participant, from one class realm, so
+     * they share {@link #SHARED_POOLS}.
+     */
+    static void stopAfterBuild(PoolConfig config) {
+        synchronized (SHARED_POOLS) {
+            SHARED_POOLS.put(config.poolDir().toAbsolutePath().normalize(), config);
+        }
+    }
+
     @Override
     public void afterProjectsRead(MavenSession session) {
         for (MavenProject project : session.getProjects()) {
             Plugin plugin = project.getPlugin(GROUP_ID + ":" + ARTIFACT_ID);
             if (plugin != null) {
-                bind(plugin, "pool-up", "up");
-                bind(plugin, "pool-down", "down");
+                bindGoals(plugin, properties(project, session));
                 Plugin failsafe = project.getPlugin(FAILSAFE_KEY);
                 if (failsafe != null) {
                     forwardPoolProperties(failsafe);
                 }
             }
         }
+    }
+
+    /**
+     * Stop the pools {@code up} started with {@code multiModule}, now that
+     * all modules are done with them. A slot that keeps running fails the
+     * build, as it does in {@code down}.
+     */
+    @Override
+    public void afterSessionEnd(MavenSession session) throws MavenExecutionException {
+        List<PoolConfig> pools;
+        synchronized (SHARED_POOLS) {
+            pools = new ArrayList<>(SHARED_POOLS.values());
+            SHARED_POOLS.clear();
+        }
+
+        // All modules share one pool, so in practice this loops once.
+        IllegalStateException stillRunning = null;
+        for (PoolConfig pool : pools) {
+            LOG.info("Stopping the shared pool at {}", pool.poolDir());
+            try {
+                PoolBootstrap.down(pool);
+            } catch (IllegalStateException e) {
+                LOG.error(e.getMessage());
+                stillRunning = e;
+            }
+        }
+        if (stillRunning != null) {
+            throw new MavenExecutionException(stillRunning.getMessage(), stillRunning);
+        }
+    }
+
+    /**
+     * Bind {@code up}, and {@code down} unless all modules share the pool.
+     * Package-private for unit tests.
+     *
+     * @param properties what a mojo's {@code property} resolves against
+     */
+    static void bindGoals(Plugin plugin, Properties properties) {
+        bind(plugin, "pool-up", "up");
+        if (!isMultiModule(plugin, properties)) {
+            bind(plugin, "pool-down", "down");
+        }
+    }
+
+    /**
+     * What a mojo's {@code property} resolves against, in Maven's order:
+     * {@code -D} values win over system properties, which win over the
+     * pom's {@code <properties>}.
+     */
+    private static Properties properties(MavenProject project, MavenSession session) {
+        Properties properties = new Properties();
+        properties.putAll(project.getProperties());
+        properties.putAll(session.getSystemProperties());
+        properties.putAll(session.getUserProperties());
+        return properties;
+    }
+
+    /**
+     * Whether the plugin-level configuration sets {@code multiModule}, or
+     * else the {@code gf.pool.multiModule} property does, as for the mojos.
+     * The project model is interpolated by now, so a property reference in
+     * the configuration works too.
+     */
+    private static boolean isMultiModule(Plugin plugin, Properties properties) {
+        Xpp3Dom configuration = (Xpp3Dom) plugin.getConfiguration();
+        Xpp3Dom multiModule = (configuration == null) ? null : configuration.getChild("multiModule");
+        String value = (multiModule != null)
+                ? multiModule.getValue()
+                : properties.getProperty(AbstractPoolMojo.MULTI_MODULE_PROPERTY);
+
+        return Boolean.parseBoolean(value);
     }
 
     /**

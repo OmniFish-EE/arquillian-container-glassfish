@@ -8,14 +8,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.condition.OS.WINDOWS;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
 
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.DefaultMavenExecutionResult;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.SystemStreamLog;
+import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.io.TempDir;
 
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
@@ -26,6 +36,73 @@ class UpMojoTest {
 
     private static final Path POOL = Path.of("target", "pool").toAbsolutePath();
     private static final Path SOURCE = Path.of("target", "dist", "glassfish9").toAbsolutePath();
+    private static final File ROOT_TARGET = new File("/build/target");
+    private static final File MODULE_TARGET = new File("/build/module/target");
+
+    @Test
+    void eachModuleHasItsOwnPoolByDefault() {
+        UpMojo up = upInModule(false);
+
+        assertEquals(new File(MODULE_TARGET, "pool"), up.poolDir());
+        assertEquals(new File(MODULE_TARGET, "dist"), up.stageDir());
+    }
+
+    @Test
+    void withMultiModuleTheModulesShareTheTopLevelProjectsPool() {
+        UpMojo up = upInModule(true);
+
+        assertEquals(new File(ROOT_TARGET, "pool"), up.poolDir());
+        assertEquals(new File(ROOT_TARGET, "dist"), up.stageDir());
+    }
+
+    /** There getTopLevelProject() is the first module of the build. */
+    @Test
+    void withMultiModuleThePoolIsWhereMavenRunsAlsoWhenPlLeavesThatProjectOut() {
+        UpMojo up = upInModule(true);
+        MavenProject root = up.session.getTopLevelProject();
+        MavenProject otherModule = new MavenProject();
+        otherModule.getBuild().setDirectory("/build/other/target");
+        up.session.setProjects(List.of(up.project, otherModule));
+        up.session.setAllProjects(List.of(root, up.project, otherModule));
+
+        assertEquals(new File(ROOT_TARGET, "pool"), up.poolDir());
+    }
+
+    /** Say slot 1 started, and slot 2 didn't: slot 1 mustn't outlive the build. */
+    @Test
+    @DisabledOnOs(value = WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void withMultiModuleAPoolThatFailsToStartIsStillStoppedAfterTheBuild(@TempDir Path tmp) throws Exception {
+        PoolConfig pool = PoolLifecycleParticipantTest.poolWithOneSlot(tmp);
+        UpMojo up = new UpMojo() {
+            @Override
+            void startPool(PoolConfig poolConfig, Runnable preStage) throws IOException {
+                throw new IOException("slot 2 didn't start");
+            }
+        };
+        UpMojo inModule = upInModule(true);
+        up.session = inModule.session;
+        up.project = inModule.project;
+        up.multiModule = true;
+        up.poolDir = pool.poolDir().toFile();
+        up.poolSize = 2;
+        up.adminPortBase = pool.adminPort(1);
+        up.portStride = 100;
+        assertThrows(MojoExecutionException.class, up::execute);
+
+        new PoolLifecycleParticipant().afterSessionEnd(null);
+
+        assertEquals(List.of("--terse stop-domain domain1"), Files.readAllLines(tmp.resolve("calls.log")));
+    }
+
+    @Test
+    void explicitDirectoriesWin() {
+        UpMojo up = upInModule(true);
+        up.poolDir = new File("/elsewhere/pool");
+        up.stageDir = new File("/elsewhere/dist");
+
+        assertEquals(new File("/elsewhere/pool"), up.poolDir());
+        assertEquals(new File("/elsewhere/dist"), up.stageDir());
+    }
 
     @Test
     void publishesPoolLayout() {
@@ -103,5 +180,23 @@ class UpMojoTest {
 
         assertTrue(withUnpackSkip.getMessage().contains("give that goal the commands as <postBootCommands>"),
                 withUnpackSkip.getMessage());
+    }
+
+    /** {@code up} running in a module of a build whose top-level project is the module's parent. */
+    private static UpMojo upInModule(boolean multiModule) {
+        MavenProject root = new MavenProject();
+        root.getBuild().setDirectory(ROOT_TARGET.getPath());
+        root.setExecutionRoot(true);
+        MavenProject module = new MavenProject();
+        module.getBuild().setDirectory(MODULE_TARGET.getPath());
+        MavenSession session = new MavenSession(null, null, new DefaultMavenExecutionRequest(),
+                new DefaultMavenExecutionResult());
+        session.setProjects(List.of(root, module));
+
+        UpMojo up = new UpMojo();
+        up.session = session;
+        up.project = module;
+        up.multiModule = multiModule;
+        return up;
     }
 }
