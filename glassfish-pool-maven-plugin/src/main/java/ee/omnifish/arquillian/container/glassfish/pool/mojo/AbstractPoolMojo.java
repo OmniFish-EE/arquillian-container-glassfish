@@ -12,6 +12,7 @@ package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -33,15 +34,15 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     /**
      * Where the pool of slots is laid out. Created if missing. Defaults to
      * {@code pool} in the project's build directory, or with
-     * {@link #multiModule} in the top-level project's.
+     * {@link #multiModule} in that of the project where Maven runs.
      */
     @Parameter(property = "gf.pool.dir")
     protected File poolDir;
 
     /**
      * Whether all modules of the build share one pool. {@code poolDir} and
-     * {@code stageDir} then default to the top-level project's build
-     * directory. With {@code <extensions>true</extensions>}, the pool stops
+     * {@code stageDir} then default to the build directory of the project
+     * where Maven runs. With {@code <extensions>true</extensions>}, the pool stops
      * once, after the whole build, instead of after each module's integration
      * tests. Set it in the parent's plugin configuration, with the rest of
      * the pool's settings, which all modules share.
@@ -165,18 +166,36 @@ abstract class AbstractPoolMojo extends AbstractMojo {
 
     /**
      * {@code name} in the project's build directory, or with
-     * {@link #multiModule} in the top-level project's. Maven's stand-in
-     * project for a run without a pom leaves its build directory unresolved,
-     * so then it's {@code target} where Maven runs.
+     * {@link #multiModule} in that of the project where Maven runs. Maven's
+     * stand-in project for a run without a pom leaves its build directory
+     * unresolved, so then it's {@code target} where Maven runs.
      */
     protected File inBuildDirectory(String name) {
-        MavenProject buildProject = multiModule ? session.getTopLevelProject() : project;
+        MavenProject buildProject = multiModule ? executionRoot() : project;
         String buildDirectory = buildProject.getBuild().getDirectory();
         if (buildDirectory == null || buildDirectory.contains("${")) {
             return new File(new File(session.getExecutionRootDirectory(), "target"), name);
         }
 
         return new File(buildDirectory, name);
+    }
+
+    /**
+     * The project where Maven runs, also when {@code -pl} leaves it out of
+     * the build. {@code getTopLevelProject()} then falls back to the first
+     * module of the build.
+     */
+    private MavenProject executionRoot() {
+        List<MavenProject> allProjects = session.getAllProjects();
+        if (allProjects != null) {
+            for (MavenProject candidate : allProjects) {
+                if (candidate.isExecutionRoot()) {
+                    return candidate;
+                }
+            }
+        }
+
+        return session.getTopLevelProject();
     }
 
     protected PoolConfig poolConfig() {

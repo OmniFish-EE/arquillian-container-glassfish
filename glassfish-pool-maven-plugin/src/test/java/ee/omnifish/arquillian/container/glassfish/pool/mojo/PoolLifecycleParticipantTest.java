@@ -18,8 +18,12 @@ import java.util.Properties;
 import java.util.stream.Collectors;
 
 import org.apache.maven.MavenExecutionException;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.DefaultMavenExecutionResult;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
+import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -128,6 +132,24 @@ class PoolLifecycleParticipantTest {
         assertEquals(List.of("pool-up"), executionIds(plugin));
     }
 
+    /** As the mojos do: otherwise they share the pool, and each module's down stops it. */
+    @Test
+    void aPomPropertySetsMultiModuleToo() {
+        Plugin plugin = new Plugin();
+        plugin.setGroupId(PoolLifecycleParticipant.GROUP_ID);
+        plugin.setArtifactId(PoolLifecycleParticipant.ARTIFACT_ID);
+        MavenProject project = new MavenProject();
+        project.getBuild().addPlugin(plugin);
+        project.getProperties().setProperty("gf.pool.multiModule", "true");
+        MavenSession session = new MavenSession(null, null, new DefaultMavenExecutionRequest(),
+                new DefaultMavenExecutionResult());
+        session.setProjects(List.of(project));
+
+        new PoolLifecycleParticipant().afterProjectsRead(session);
+
+        assertEquals(List.of("pool-up"), executionIds(plugin));
+    }
+
     @Test
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
     void afterTheBuildASharedPoolIsStopped(@TempDir Path tmp) throws Exception {
@@ -159,7 +181,7 @@ class PoolLifecycleParticipantTest {
      * A pool in {@code tmp/pool} with one slot, whose {@code asadmin} logs its
      * arguments to {@code tmp/calls.log}. Its admin port is free.
      */
-    private static PoolConfig poolWithOneSlot(Path tmp) throws IOException {
+    static PoolConfig poolWithOneSlot(Path tmp) throws IOException {
         Path asadmin = Files.createDirectories(tmp.resolve("pool/slot-1/glassfish/glassfish/bin")).resolve("asadmin");
         Files.writeString(asadmin, "#!/bin/sh\necho \"$@\" >> '" + tmp.resolve("calls.log") + "'\n");
         assertTrue(asadmin.toFile().setExecutable(true));

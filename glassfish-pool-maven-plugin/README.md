@@ -105,10 +105,10 @@ note applies:
 
 | Parameter | Default | Override when… |
 | --------- | ------- | -------------- |
-| `poolDir` | `pool` in the project's build directory, or the top-level project's with `multiModule` | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
+| `poolDir` | `pool` in the project's build directory, or with `multiModule` in that of the project where Maven runs | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
-| `stageDir` | `dist` in the project's build directory, or the top-level project's with `multiModule` | the unpacked dist should live elsewhere. |
+| `stageDir` | `dist` in the project's build directory, or with `multiModule` in that of the project where Maven runs | the unpacked dist should live elsewhere. |
 | `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`, or set that to `${gf.pool.size}`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
@@ -405,13 +405,15 @@ module per area, set `multiModule` in the parent:
 </plugin>
 ```
 
-- `poolDir` and `stageDir` default to the top-level project's build
-  directory, so `target/pool` and `target/dist` where Maven runs, instead of
-  each module's. Explicit values win. `up` publishes `gf.pool.dir` as
-  always, so the test JVMs get the shared directory. Run Maven in a module,
-  and that module is the top-level project.
+- `poolDir` and `stageDir` default to the build directory of the project
+  where Maven runs, also when `-pl` leaves that project out: `target/pool`
+  and `target/dist` there, instead of in each module. Explicit values win.
+  `up` publishes `gf.pool.dir` as always, so the test JVMs get the shared
+  directory. Run Maven in a module, and the pool is in that module's
+  `target`.
 - The first `up` in the build starts the pool. The others find it running
-  and return straight away.
+  and return straight away. If it starts only partly, the slots that did
+  start are stopped after the build all the same.
 - The extension doesn't bind `down` after each module, which would stop the
   pool while later modules still need it. It stops the pool once, after the
   whole build. A slot that keeps running then fails the build, as with
@@ -421,7 +423,8 @@ module per area, set `multiModule` in the parent:
   in the parent. A module's own settings don't reach slots that already
   run.
 - The extension reads `multiModule` from the plugin-level
-  `<configuration>`, or `-Dgf.pool.multiModule`, not from an `<execution>`.
+  `<configuration>`, or else from the `gf.pool.multiModule` property, set
+  with `-D` or in the pom's `<properties>`; not from an `<execution>`.
 - Without `<extensions>true</extensions>`, `multiModule` only changes the
   defaults, and binding `down` is up to you.
 

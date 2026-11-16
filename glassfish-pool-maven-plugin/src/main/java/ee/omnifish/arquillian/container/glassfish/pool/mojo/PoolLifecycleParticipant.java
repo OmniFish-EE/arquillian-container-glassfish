@@ -94,7 +94,7 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         for (MavenProject project : session.getProjects()) {
             Plugin plugin = project.getPlugin(GROUP_ID + ":" + ARTIFACT_ID);
             if (plugin != null) {
-                bindGoals(plugin, session.getUserProperties());
+                bindGoals(plugin, properties(project, session));
                 Plugin failsafe = project.getPlugin(FAILSAFE_KEY);
                 if (failsafe != null) {
                     forwardPoolProperties(failsafe);
@@ -134,26 +134,41 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
     /**
      * Bind {@code up}, and {@code down} unless all modules share the pool.
      * Package-private for unit tests.
+     *
+     * @param properties what a mojo's {@code property} resolves against
      */
-    static void bindGoals(Plugin plugin, Properties userProperties) {
+    static void bindGoals(Plugin plugin, Properties properties) {
         bind(plugin, "pool-up", "up");
-        if (!isMultiModule(plugin, userProperties)) {
+        if (!isMultiModule(plugin, properties)) {
             bind(plugin, "pool-down", "down");
         }
     }
 
     /**
-     * Whether the plugin-level configuration sets {@code multiModule}, or
-     * else {@code -Dgf.pool.multiModule} does. The project model is
-     * interpolated by now, so a property reference in the configuration
-     * works too.
+     * What a mojo's {@code property} resolves against, in Maven's order:
+     * {@code -D} values win over system properties, which win over the
+     * pom's {@code <properties>}.
      */
-    private static boolean isMultiModule(Plugin plugin, Properties userProperties) {
+    private static Properties properties(MavenProject project, MavenSession session) {
+        Properties properties = new Properties();
+        properties.putAll(project.getProperties());
+        properties.putAll(session.getSystemProperties());
+        properties.putAll(session.getUserProperties());
+        return properties;
+    }
+
+    /**
+     * Whether the plugin-level configuration sets {@code multiModule}, or
+     * else the {@code gf.pool.multiModule} property does, as for the mojos.
+     * The project model is interpolated by now, so a property reference in
+     * the configuration works too.
+     */
+    private static boolean isMultiModule(Plugin plugin, Properties properties) {
         Xpp3Dom configuration = (Xpp3Dom) plugin.getConfiguration();
         Xpp3Dom multiModule = (configuration == null) ? null : configuration.getChild("multiModule");
         String value = (multiModule != null)
                 ? multiModule.getValue()
-                : userProperties.getProperty(AbstractPoolMojo.MULTI_MODULE_PROPERTY);
+                : properties.getProperty(AbstractPoolMojo.MULTI_MODULE_PROPERTY);
 
         return Boolean.parseBoolean(value);
     }

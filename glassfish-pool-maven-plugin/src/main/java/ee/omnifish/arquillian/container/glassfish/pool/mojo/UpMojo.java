@@ -101,16 +101,22 @@ public class UpMojo extends AbstractStagingPoolMojo {
         // Before poolConfig(): may derive poolSource from <distribution>.
         Runnable preStage = buildPreStage();
         PoolConfig poolConfig = poolConfig();
+        if (multiModule) {
+            // Before the start, so the slots of a pool that starts only partly are stopped too.
+            PoolLifecycleParticipant.stopAfterBuild(poolConfig);
+        }
         try {
-            PoolBootstrap.up(poolConfig, preStage);
+            startPool(poolConfig, preStage);
         } catch (IOException e) {
             throw new MojoExecutionException("Pool up failed: " + e.getMessage(), e);
         }
-        if (multiModule) {
-            PoolLifecycleParticipant.stopAfterBuild(poolConfig);
-        }
 
         publish(project.getProperties(), poolConfig, getLog());
+    }
+
+    /** Package-private for unit tests, which make it fail. */
+    void startPool(PoolConfig poolConfig, Runnable preStage) throws IOException {
+        PoolBootstrap.up(poolConfig, preStage);
     }
 
     /**
