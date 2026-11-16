@@ -188,7 +188,7 @@ public final class GlassFishStaging {
             inputs.add("overlays into " + spec.overlayTargetDir());
             for (OverlayCoord overlay : spec.overlays()) {
                 inputs.add("overlay " + overlay.toGav() + " as " + overlay.getDestFileName()
-                        + (overlay.isSkip() ? " skipped" : " " + identity(resolver.resolve(overlay))));
+                        + (overlay.isSkipped() ? " skipped" : " " + identity(resolver.resolve(overlay))));
             }
         }
         CertImport certImport = spec.certImport();
@@ -265,8 +265,9 @@ public final class GlassFishStaging {
         Path target = spec.overlayTargetDir();
         Files.createDirectories(target);
         for (OverlayCoord overlay : spec.overlays()) {
-            if (overlay.isSkip()) {
-                LOG.info("Skipping overlay " + overlay.toGav() + " (skip=true)");
+            if (overlay.isSkipped()) {
+                LOG.info("Skipping overlay " + overlay.toGav()
+                        + (Boolean.FALSE.equals(overlay.getApply()) ? " (apply=false)" : " (skip=true)"));
                 continue;
             }
             Path source = resolver.resolve(overlay);

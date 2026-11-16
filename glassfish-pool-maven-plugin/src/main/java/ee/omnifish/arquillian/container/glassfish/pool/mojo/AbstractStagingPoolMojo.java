@@ -69,6 +69,8 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     /**
      * Optional artifacts copied into the staged install's modules directory
      * after unpack. Each {@code <overlay>} is a GAV plus a {@code destFileName}.
+     * {@code <skip>true</skip>}, or its reverse {@code <apply>false</apply>},
+     * leaves one out; an overlay sets one of them, not both.
      */
     @Parameter
     protected List<OverlayCoord> overlays;

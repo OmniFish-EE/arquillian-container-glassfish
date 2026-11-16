@@ -106,6 +106,7 @@ public final class Stager {
             installRoot = deriveHome(distribution, stageDir.toPath(), homeParameter);
         }
         List<OverlayCoord> ov = (overlays == null) ? List.of() : overlays;
+        checkOverlays(ov);
         Path overlayDir = overlayDir(overlayTargetDir, installRoot, ov, overlaySkip, homeParameter);
         checkCertImport(certImport, installRoot, homeParameter);
         checkCommands(commands, installRoot, homeParameter);
@@ -156,6 +157,19 @@ public final class Stager {
             throw new MojoExecutionException("<overlays> need a target: set <overlayTargetDir> or " + homeParameter);
         }
         return null;
+    }
+
+    /**
+     * No overlay sets both {@code <skip>} and {@code <apply>}. Also with
+     * {@code overlaySkip}, since the pom is wrong either way.
+     */
+    private static void checkOverlays(List<OverlayCoord> overlays) throws MojoExecutionException {
+        for (OverlayCoord overlay : overlays) {
+            if (overlay.getSkip() != null && overlay.getApply() != null) {
+                throw new MojoExecutionException("Overlay " + overlay.toGav()
+                        + " sets both <skip> and <apply>; set one of them");
+            }
+        }
     }
 
     /** Every certificate has an alias and a file, and the truststore is known, or found under {@code home}. */

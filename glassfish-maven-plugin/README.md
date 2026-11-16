@@ -195,7 +195,12 @@ Drop additional jars (or replace shipped ones) into the install's
 | --------------- | ------- | --------------------------- | ----- |
 | `groupId` / `artifactId` / `version` / `type` / `classifier` | String | (GAV) | Maven coordinate to resolve. |
 | `destFileName`  | String  | source artifact's file name | File name under `overlayTargetDir`. |
-| `skip`          | boolean | `false`                     | Skip just this overlay, e.g. `<skip>${soteria.noupdate}</skip>`. |
+| `skip`          | boolean | `false`                     | Leave just this overlay out. |
+| `apply`         | boolean | `true`                      | The reverse of `skip`: `false` leaves the overlay out, e.g. `<apply>${soteria.update}</apply>`. |
+
+An overlay sets `<skip>` or `<apply>`, not both: the goal fails when one
+sets both, even if they agree. A property that isn't defined leaves its
+element unset.
 
 `overlaySkip` skips them all: `mvn verify -Dglassfish.overlay.skip=true`.
 
