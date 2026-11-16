@@ -30,7 +30,7 @@
         <plugins>
             <!--
                 Marks the end of this module's build, after the phase where
-                the extension binds down without multiModule. The second
+                the extension binds down with multiModule off. The second
                 module's test waits for it.
             -->
             <plugin>
