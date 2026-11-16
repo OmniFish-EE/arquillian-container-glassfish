@@ -74,7 +74,10 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
 
     private static final Logger LOG = LoggerFactory.getLogger(PoolLifecycleParticipant.class);
 
-    /** The pools {@code up} started with {@code multiModule} in this JVM, by directory. */
+    /**
+     * The pools {@code up} started with {@code multiModule} in this JVM, by
+     * directory. All modules share one pool, so in practice it holds one.
+     */
     private static final Map<Path, PoolConfig> SHARED_POOLS = new LinkedHashMap<>();
 
     /**
@@ -116,6 +119,7 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
             SHARED_POOLS.clear();
         }
 
+        // All modules share one pool, so in practice this loops once.
         IllegalStateException stillRunning = null;
         for (PoolConfig pool : pools) {
             LOG.info("Stopping the shared pool at {}", pool.poolDir());

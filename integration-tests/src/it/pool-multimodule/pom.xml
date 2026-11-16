@@ -29,10 +29,10 @@
 
     <name>Integration Test: GlassFish Server Pool, shared by modules</name>
     <description>
-        Two modules share one pool with multiModule: it lives in this
-        project's target, both modules' tests run on the same server, and it
-        stops once, after the build. Run via integration-tests' maven-invoker
-        harness.
+        Two modules, built at the same time, share one pool with multiModule:
+        it lives in this project's target, both modules' tests run on the
+        same server, and it stops once, after the build. Run via
+        integration-tests' maven-invoker harness.
     </description>
 
     <modules>

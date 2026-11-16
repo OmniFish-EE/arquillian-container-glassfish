@@ -195,6 +195,28 @@ class PoolBootstrapTest {
                 hasItems("--terse stop-domain domain1", "--terse stop-domain --kill domain1"));
     }
 
+    /**
+     * One JVM can start several pools: one per module, or one per build
+     * under mvnd, whose JVM outlives the build. The shutdown hook stops each
+     * one {@code down} didn't stop, not just the first.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theShutdownHookStopsEveryPoolDownDidNotStop(@TempDir Path tmp) throws Exception {
+        PoolConfig stopped = fakePool(tmp.resolve("stopped"), "exit 0\n", SlotSetup.NONE);
+        PoolConfig stillUp = fakePool(tmp.resolve("still-up"), "exit 0\n", SlotSetup.NONE);
+        PoolBootstrap.up(stopped);
+        PoolBootstrap.up(stillUp);
+        PoolBootstrap.down(stopped);
+
+        PoolBootstrap.stopStartedPools();
+
+        assertThat(FakeGlassFish.calls(slotInstall(stopped)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+        assertThat(FakeGlassFish.calls(slotInstall(stillUp)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+    }
+
     @Test
     void statusOnEmptyPoolDirPrintsHint(@TempDir Path tmp) {
         Path missing = tmp.resolve("nope");

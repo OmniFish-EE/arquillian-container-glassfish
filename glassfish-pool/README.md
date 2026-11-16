@@ -578,7 +578,8 @@ PoolBootstrap.down(config);                        // stop every slot
 
 `up()` is idempotent: repeated calls fast-exit if every slot already has a
 healthy admin port. A JVM shutdown hook calls `down()` when the JVM exits
-normally or via Ctrl+C.
+normally or via Ctrl+C, for every pool `up()` started and `down()` didn't
+stop yet.
 
 For ad-hoc lease use:
 

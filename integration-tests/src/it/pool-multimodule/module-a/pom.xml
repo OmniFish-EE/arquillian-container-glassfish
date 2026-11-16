@@ -25,4 +25,31 @@
     <artifactId>pool-multimodule-a</artifactId>
 
     <name>Integration Test: GlassFish Server Pool, shared by modules (a)</name>
+
+    <build>
+        <plugins>
+            <!--
+                Marks the end of this module's build, after the phase where
+                the extension binds down without multiModule. The second
+                module's test waits for it.
+            -->
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>mark-finished</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <touch file="${project.build.directory}/finished"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

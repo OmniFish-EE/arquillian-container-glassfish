@@ -422,6 +422,10 @@ module per area, set `multiModule` in the parent:
 - All modules share one pool and one slot setup, so configure the plugin
   in the parent. A module's own settings don't reach slots that already
   run.
+- Under `-T`, modules run their tests at the same time, each in one test
+  JVM with failsafe's default `forkCount` of 1. Each test JVM leases a
+  slot, and adds one to the pool when every slot is busy. At `-T5`, the
+  pool needs at most 5 slots.
 - The extension reads `multiModule` from the plugin-level
   `<configuration>`, or else from the `gf.pool.multiModule` property, set
   with `-D` or in the pom's `<properties>`; not from an `<execution>`.
@@ -462,8 +466,9 @@ In a single-module build, such as a TCK runner, both can follow Maven's
   which failsafe resolves when it runs, after `up`.
 - Size both with `-T` then. `-Dgf.pool.size` would only change `forkCount`,
   since the pom sets `<poolSize>`.
-- Keep this to single-module builds. With several modules, `-T` builds them
-  in parallel, and each module's pool would start that many slots.
+- Keep this to single-module builds. In a multi-module build, `-T` already
+  runs the modules side by side, so leave `forkCount` at its default of 1
+  there; see *Sharing one pool across modules*.
 
 ### Run from the command line, no project binding
 
@@ -522,7 +527,8 @@ the first on cloning. Run parallel `mvn` invocations against distinct
 `poolDir`s (or distinct `adminPortBase` values).
 
 A JVM shutdown hook installed by `up` calls `down` if the Maven process is
-killed (Ctrl+C, hard build failure), so slots don't get orphaned.
+killed (Ctrl+C, hard build failure), so slots don't get orphaned. It stops
+every pool `up` started in that JVM and `down` didn't stop yet.
 
 ## Troubleshooting
 

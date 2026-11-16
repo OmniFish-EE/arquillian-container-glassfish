@@ -4,6 +4,8 @@
 
 // The modules' ups started the pool once, and the extension stopped it once, after the build.
 def log = new File(basedir, 'build.log').text
+// -T2 took effect, so the modules built at the same time.
+assert log.contains('thread count of 2')
 assert log.count('Cloning source install for slot 1') == 1
 assert log.count('Stopping the shared pool at') == 1
 
