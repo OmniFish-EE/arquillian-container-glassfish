@@ -181,6 +181,15 @@
                             <distribution>${glassfish.version}</distribution>
                         </configuration>
                     </plugin>
+                    <plugin>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <!-- The managed server's log goes to the build output. -->
+                                <glassfish.serverLogToConsole>true</glassfish.serverLogToConsole>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
                 </plugins>
             </build>
         </profile>

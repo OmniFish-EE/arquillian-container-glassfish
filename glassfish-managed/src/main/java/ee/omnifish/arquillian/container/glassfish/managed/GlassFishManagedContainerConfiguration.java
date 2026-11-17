@@ -87,6 +87,8 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
     private String glassFishHome = System.getProperty(GLASSFISH_HOME_PROPERTY);
 
     private boolean outputToConsole = Boolean.valueOf(System.getProperty("glassfish.outputToConsole", "true"));
+    private boolean serverLogToConsole = Boolean.valueOf(System.getProperty("glassfish.serverLogToConsole", "false"));
+    private boolean serverLogColor = Boolean.valueOf(System.getProperty("glassfish.serverLogColor", "false"));
     private boolean allowConnectingToRunningServer = Boolean.valueOf(System.getProperty("glassfish.allowConnectingToRunningServer", "false"));
     private boolean keepServerRunning = Boolean.valueOf(System.getProperty("glassfish.keepServerRunning", "false"));
     private boolean keepDeployment = Boolean.valueOf(System.getProperty("glassfish.keepDeployment", "false"));
@@ -132,6 +134,30 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
      */
     public void setOutputToConsole(boolean outputToConsole) {
         this.outputToConsole = outputToConsole;
+    }
+
+    public boolean isServerLogToConsole() {
+        return serverLogToConsole;
+    }
+
+    /**
+     * @param serverLogToConsole Show what the server writes to its {@code server.log} on the console, as it
+     *        writes it. By default disabled
+     */
+    public void setServerLogToConsole(boolean serverLogToConsole) {
+        this.serverLogToConsole = serverLogToConsole;
+    }
+
+    public boolean isServerLogColor() {
+        return serverLogColor;
+    }
+
+    /**
+     * @param serverLogColor Colour the label of the server log lines on the console. The GlassFish Maven
+     *        Plugin's extension sets it when Maven's console shows colour. By default disabled
+     */
+    public void setServerLogColor(boolean serverLogColor) {
+        this.serverLogColor = serverLogColor;
     }
 
     public boolean isAllowConnectingToRunningServer() {
@@ -274,6 +300,10 @@ public class GlassFishManagedContainerConfiguration extends CommonGlassFishConfi
 
     public String getDomainXmlPath() {
         return getGlassFishHome() + "/glassfish/domains/" + (getDomain() == null? "domain1" : getDomain()) + "/config/domain.xml";
+    }
+
+    public String getServerLogPath() {
+        return getGlassFishHome() + "/glassfish/domains/" + (getDomain() == null? "domain1" : getDomain()) + "/logs/server.log";
     }
 
     @Override

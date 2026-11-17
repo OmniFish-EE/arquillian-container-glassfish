@@ -5,6 +5,7 @@ package ee.omnifish.arquillian.container.glassfish.pool.it;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.logging.Logger;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -19,6 +20,8 @@ public class GreeterServlet extends HttpServlet {
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
+        // Only the server says this, so the build output has it from the server log.
+        Logger.getLogger(GreeterServlet.class.getName()).info("pool-it greeter called on the server");
         try (PrintWriter writer = resp.getWriter()) {
             writer.print("Hello from pool slot");
         }

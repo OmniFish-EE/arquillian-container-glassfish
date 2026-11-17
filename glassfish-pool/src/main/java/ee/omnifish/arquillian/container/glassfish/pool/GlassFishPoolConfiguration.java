@@ -70,6 +70,8 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
     static final String SYS_SLOT_GROUP = "gf.pool.slotGroup";
 
     private boolean restartOnRelease = Boolean.getBoolean("gf.pool.restartOnRelease");
+    private boolean serverLogToConsole = Boolean.getBoolean("glassfish.serverLogToConsole");
+    private boolean serverLogColor = Boolean.getBoolean("glassfish.serverLogColor");
     private String slotGroup = System.getProperty(SYS_SLOT_GROUP, "");
 
     private int httpPort = Integer.parseInt(System.getProperty("glassfish.httpPort", "8080"));
@@ -98,6 +100,30 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
 
     public void setRestartOnRelease(boolean restartOnRelease) {
         this.restartOnRelease = restartOnRelease;
+    }
+
+    public boolean isServerLogToConsole() {
+        return serverLogToConsole;
+    }
+
+    /**
+     * @param serverLogToConsole Show what the leased slot's server writes to its {@code server.log} on the
+     *        console, while the slot is leased. By default disabled
+     */
+    public void setServerLogToConsole(boolean serverLogToConsole) {
+        this.serverLogToConsole = serverLogToConsole;
+    }
+
+    public boolean isServerLogColor() {
+        return serverLogColor;
+    }
+
+    /**
+     * @param serverLogColor Colour the slot labels of the server log lines on the console, one colour per
+     *        slot. The pool plugin's extension sets it when Maven's console shows colour. By default disabled
+     */
+    public void setServerLogColor(boolean serverLogColor) {
+        this.serverLogColor = serverLogColor;
     }
 
     public String getSlotGroup() {

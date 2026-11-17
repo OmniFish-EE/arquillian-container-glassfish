@@ -58,6 +58,8 @@
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.managed;
 
+import java.nio.file.Paths;
+
 import org.jboss.arquillian.container.spi.client.container.DeployableContainer;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
@@ -65,6 +67,7 @@ import org.jboss.arquillian.container.spi.client.protocol.ProtocolDescription;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.ProtocolMetaData;
 import org.jboss.shrinkwrap.api.Archive;
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
+import ee.omnifish.glassfish.admin.ServerLogTailer;
 
 /**
  * GlassFish managed container using REST deployments
@@ -79,6 +82,7 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
     private GlassFishServerControl glassFishServerControl;
     private CommonGlassFishManager<GlassFishManagedContainerConfiguration> glassFishManager;
     private boolean connectedToRunningServer;
+    private ServerLogTailer serverLog;
 
     @Override
     public Class<GlassFishManagedContainerConfiguration> getConfigurationClass() {
@@ -105,6 +109,7 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
     public void start() throws LifecycleException {
         if (!glassFishManager.isDASRunning()) {
             // We don't start GlassFish when starting, but on demand when deploying
+            followServerLog();
             return;
         }
 
@@ -112,6 +117,7 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
             // If we are allowed to connect to a running server, then do not issue the 'asadmin start-domain' command
             // and do not issue the 'asadmin stop-domain' command.
             connectedToRunningServer = true;
+            followServerLog();
         } else {
             throw new LifecycleException(
                 "The server is already running! " +
@@ -146,9 +152,32 @@ public class GlassFishManagedDeployableContainer implements DeployableContainer<
 
     @Override
     public void stop() throws LifecycleException {
-        if (!connectedToRunningServer && glassFishManager.isDASRunning() && !configuration.isKeepServerRunning()) {
-            glassFishServerControl.stop();
+        try {
+            if (!connectedToRunningServer && glassFishManager.isDASRunning() && !configuration.isKeepServerRunning()) {
+                glassFishServerControl.stop();
+            }
+        } finally {
+            // Also when this container leaves the server running: it only stops reading its log.
+            if (serverLog != null) {
+                serverLog.close();
+                serverLog = null;
+            }
         }
+    }
+
+    /**
+     * With {@code serverLogToConsole}, show what the server writes to its log
+     * from now on, including its startup when {@link #deploy} starts it.
+     */
+    private void followServerLog() {
+        if (!configuration.isServerLogToConsole() || serverLog != null) {
+            return;
+        }
+
+        String domain = (configuration.getDomain() == null) ? "domain1" : configuration.getDomain();
+        String prefix = ServerLogTailer.prefix("glassfish:" + domain, 0, configuration.isServerLogColor());
+        serverLog = ServerLogTailer.follow(Paths.get(configuration.getServerLogPath()),
+                line -> System.out.println(prefix + line));
     }
 
 }

@@ -43,6 +43,8 @@ The following configuration options are available for all GlassFish Arquillian c
 | `suspend` | `glassfish.suspend` | boolean | `false` | Managed | Suspend until debugger connects
 | `addDeployName` | `glassfish.addDeployName` | boolean | `false` | All | Add deploy name to archive
 | `outputToConsole` | `glassfish.outputToConsole` | boolean | `true` | Managed | Show the output of the admin commands on the console
+| `serverLogToConsole` | `glassfish.serverLogToConsole` | boolean | `false` | Managed | Show what the server writes to its `server.log` on the console, prefixed with `[glassfish:<domain>]`. The pool container has the same switch; see its README
+| `serverLogColor` | `glassfish.serverLogColor` | boolean | `false` | Managed | Colour the `[glassfish:<domain>]` label. The GlassFish Maven Plugin's extension sets it when Maven's console shows colour
 | `allowConnectingToRunningServer` | `glassfish.allowConnectingToRunningServer` | boolean | `false` | Managed | Allow Arquillian to use an already running GlassFish instance
 | `keepServerRunning` | `glassfish.keepServerRunning` | boolean | `false` | Managed | Starts the server if needed, but keeps it running after tests
 | `keepDeployment` | `glassfish.keepDeployment` | boolean | `false` | Managed | Keep deployment after tests
@@ -79,6 +81,8 @@ The following configuration options are available for all GlassFish Arquillian c
 ----
 
 - Properties like `postBootCommands` and `systemProperties` support multiline values.
+- `serverLogToConsole` mirrors the domain's `logs/server.log` into the test output from the container's start to its stop, also when the container leaves the server running. It starts at the log's end, so earlier output isn't repeated, and follows the log when GlassFish rotates it. The file on disk stays as it is. With `-Dglassfish.serverLogToConsole=true`, failsafe passes it on to its forks.
+- `serverLogColor` colours only the label, in ANSI colour. A test JVM writes to a pipe, so it can't tell whether Maven's console shows colour; the extensions of the GlassFish Maven Plugin and the pool plugin tell it, through `glassfish.serverLogColor`. Maven's console has no colour with `-B` or `-Dstyle.color=never`, or when its output isn't a terminal, and then the test reports get no colour codes either.
 - In a command, `--passwordfile <file>` may come after the subcommand, as in `create-file-user --groups staff j2ee --passwordfile /path/j2ee.pass`. It's moved in front of the subcommand, where `asadmin` needs it.
 - The managed container runs `postStartCommands`, and `postBootCommands` under its old name, after every start. For setup that should run once, use the GlassFish Maven Plugin's `<postBootCommands>`: `glassfish:provision` runs them on a brief start of the staged install, so they are in place before the tests start it.
 - The pool container runs `postBootCommands` on every lease of a slot, and doesn't run `postStartCommands`, since a lease isn't a start. For commands that run once per slot, or after every slot start, use the pool plugin's `<postBootCommands>` and `<postStartCommands>`; server settings for pool slots, such as `systemProperties`, also go on the plugin.

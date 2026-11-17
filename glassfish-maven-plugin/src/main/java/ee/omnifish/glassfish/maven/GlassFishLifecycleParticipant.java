@@ -67,6 +67,7 @@ public class GlassFishLifecycleParticipant extends AbstractMavenLifecyclePartici
             Plugin testPlugin = project.getPlugin(key);
             if (testPlugin != null) {
                 LifecycleSupport.forwardProperties(testPlugin, homeProperties);
+                LifecycleSupport.forwardServerLogColor(project, testPlugin);
             }
         }
     }
