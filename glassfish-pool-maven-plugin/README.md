@@ -351,6 +351,10 @@ layout.
   `--description "two words"`. Backslashes are passed on as they are,
   because `asadmin` reads `\:` and `\=` itself. Blank lines and lines
   starting with `#` are skipped.
+- `--passwordfile <file>`, or `--passwordfile=<file>`, may come anywhere on
+  the line, as in `create-file-user --groups staff j2ee --passwordfile
+  ${project.build.testOutputDirectory}/j2ee.pass`. It's moved in front of
+  the subcommand, where `asadmin` needs it. A line with two of them fails.
 - With `failOnCommandError`, on by default, a failed command fails `up`, or
   the lease of the test JVM that created the slot. After a
   `restartOnRelease` restart, the test class has already finished, so a

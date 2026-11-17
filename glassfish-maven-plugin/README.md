@@ -259,7 +259,7 @@ resources and `set` calls:
 <configuration>
     <distribution>9.0.0</distribution>
     <postBootCommands>
-        --passwordfile ${project.build.testOutputDirectory}/j2ee.pass create-file-user --groups staff j2ee
+        create-file-user --groups staff j2ee --passwordfile ${project.build.testOutputDirectory}/j2ee.pass
         set configs.config.server-config.cdi-service.enable-implicit-cdi=true
     </postBootCommands>
 </configuration>
@@ -268,7 +268,9 @@ resources and `set` calls:
 - One command per line. Quotes group words, and backslashes are passed on
   as they are, since `asadmin` reads `\:` and `\=` itself. Blank lines and
   lines starting with `#` are skipped. A line may start with `asadmin`
-  options, such as `--passwordfile`.
+  options. `--passwordfile <file>`, or `--passwordfile=<file>`, may also
+  come later on the line; it's moved in front of the subcommand, where
+  `asadmin` needs it. A line with two of them fails.
 - The domain runs on three free ports, so it doesn't clash with a server
   that's already running. Afterwards it gets its own ports back, except for
   a port a command set.
