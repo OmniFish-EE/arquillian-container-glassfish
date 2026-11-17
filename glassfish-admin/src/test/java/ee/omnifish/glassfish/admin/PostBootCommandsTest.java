@@ -130,6 +130,57 @@ class PostBootCommandsTest {
         assertEquals(List.of("first", "boom", "third"), run);
     }
 
+    // --- --passwordfile, which asadmin wants before the subcommand ---
+
+    @Test
+    void runMovesAPasswordFileAfterTheSubcommandInFront() {
+        List<String[]> captured = new ArrayList<>();
+        PostBootCommands.run(List.of("create-file-user --groups student student --passwordfile /tmp/password.txt"),
+                (command, args) -> captured.add(prepend(command, args)), true);
+
+        assertArrayEquals(new String[] { "--passwordfile", "/tmp/password.txt", "create-file-user", "--groups",
+                "student", "student" }, captured.get(0));
+    }
+
+    @Test
+    void executeMovesAPasswordFileInFrontToo() {
+        List<String[]> captured = new ArrayList<>();
+        PostBootCommands.execute(List.of("create-file-user --passwordfile=/tmp/password.txt --groups printer printer"),
+                (command, args) -> captured.add(prepend(command, args)));
+
+        assertArrayEquals(new String[] { "--passwordfile=/tmp/password.txt", "create-file-user", "--groups",
+                "printer", "printer" }, captured.get(0));
+    }
+
+    @Test
+    void aPasswordFileInFrontStaysThere() {
+        List<String> words = List.of("--passwordfile", "/tmp/password.txt", "create-file-user", "alarm");
+
+        assertEquals(words, PostBootCommands.passwordFileFirst(words));
+    }
+
+    /** For asadmin to report. */
+    @Test
+    void aPasswordFileWithoutAValueStaysWhereItIs() {
+        List<String> words = List.of("create-file-user", "alarm", "--passwordfile");
+
+        assertEquals(words, PostBootCommands.passwordFileFirst(words));
+    }
+
+    /** Rather than one of them quietly winning; it fails like any command. */
+    @Test
+    void twoPasswordFilesFailTheCommand() {
+        CommandFailedException e = assertThrows(CommandFailedException.class,
+                () -> PostBootCommands.run(List.of("--passwordfile /a create-file-user --passwordfile=/b joe"),
+                        (command, args) -> {
+                            throw new AssertionError("ran " + command);
+                        }, true));
+
+        assertTrue(e.getMessage().contains("--passwordfile /a create-file-user --passwordfile=/b joe"),
+                e.getMessage());
+        assertTrue(e.getMessage().contains("More than one --passwordfile"), e.getMessage());
+    }
+
     private static String[] prepend(String command, List<String> args) {
         List<String> all = new ArrayList<>();
         all.add(command);

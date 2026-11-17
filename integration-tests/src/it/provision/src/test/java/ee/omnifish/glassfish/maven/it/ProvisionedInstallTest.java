@@ -60,6 +60,14 @@ public class ProvisionedInstallTest {
         assertThat(domainXml("//system-property[@name='provision.it.postboot']/@value"), equalTo("applied"));
     }
 
+    /** Its line puts {@code --passwordfile} after the subcommand. */
+    @Test
+    public void aCommandWithItsPasswordFileLastRan() throws Exception {
+        Path keyfile = home().resolve("glassfish/domains/domain1/config/keyfile");
+
+        assertThat(Files.readAllLines(keyfile).stream().anyMatch(line -> line.startsWith("provision-it;")), is(true));
+    }
+
     @Test
     public void theBriefStartGaveTheDomainItsPortsBack() throws Exception {
         String port = "//config[@name='server-config']//network-listener[@name='%s']/@port";

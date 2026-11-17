@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static java.lang.System.Logger.Level.WARNING;
-import static java.util.Arrays.copyOfRange;
 
 /**
  * Runs the {@code glassfish.postBootCommands} list against a started GlassFish
@@ -23,13 +22,16 @@ import static java.util.Arrays.copyOfRange;
  * and the warn-and-continue policy so each container module only provides the
  * "how to run one command" half.
  *
- * <p>The plugins' command lists go through {@link #run} instead, which
- * splits lines with the quote-aware {@link #words} and can stop at the first
- * failure.
+ * <p>The plugins' command lists go through {@link #run} instead, which can
+ * stop at the first failure. Both split lines with the quote-aware
+ * {@link #words}, and move a {@code --passwordfile} after the subcommand in
+ * front of it; see {@link #passwordFileFirst}.
  */
 public final class PostBootCommands {
 
     private static final Logger LOG = System.getLogger(PostBootCommands.class.getName());
+
+    private static final String PASSWORD_FILE = "--passwordfile";
 
     private PostBootCommands() {
     }
@@ -43,13 +45,11 @@ public final class PostBootCommands {
      */
     public static void execute(List<String> commandLines, AdminCommandExecutor executor) {
         for (String commandLine : commandLines) {
-            String[] parts = commandLine.trim().split("\\s+");
-            String command = parts[0];
-            List<String> arguments = parts.length > 1
-                    ? List.of(copyOfRange(parts, 1, parts.length))
-                    : List.of();
             try {
-                executor.run(command, arguments);
+                List<String> words = passwordFileFirst(words(commandLine));
+                if (!words.isEmpty()) {
+                    executor.run(words.get(0), words.subList(1, words.size()));
+                }
             } catch (Exception e) {
                 LOG.log(WARNING, "Post boot command failed: " + commandLine, e);
             }
@@ -70,7 +70,8 @@ public final class PostBootCommands {
             }
 
             try {
-                executor.run(words.get(0), words.subList(1, words.size()));
+                List<String> ordered = passwordFileFirst(words);
+                executor.run(ordered.get(0), ordered.subList(1, ordered.size()));
             } catch (Exception e) {
                 if (failOnError) {
                     throw new CommandFailedException(commandLine, e);
@@ -122,6 +123,46 @@ public final class PostBootCommands {
         }
 
         return words;
+    }
+
+    /**
+     * {@code words} with a {@code --passwordfile <file>} or
+     * {@code --passwordfile=<file>} moved in front, the other words keeping
+     * their order. It's an {@code asadmin} utility option, which has to come
+     * before the subcommand, so a line may still put it after the subcommand.
+     * A {@code --passwordfile} without a value stays where it is, for
+     * {@code asadmin} to report.
+     *
+     * @throws IllegalArgumentException if the line has more than one
+     */
+    public static List<String> passwordFileFirst(List<String> words) {
+        List<String> passwordFile = null;
+        List<String> rest = new ArrayList<>();
+        for (int i = 0; i < words.size(); i++) {
+            String word = words.get(i);
+            List<String> option = null;
+            if (word.startsWith(PASSWORD_FILE + "=")) {
+                option = List.of(word);
+            } else if (word.equals(PASSWORD_FILE) && i + 1 < words.size()) {
+                option = List.of(word, words.get(++i));
+            }
+            if (option == null) {
+                rest.add(word);
+                continue;
+            }
+            if (passwordFile != null) {
+                throw new IllegalArgumentException("More than one " + PASSWORD_FILE + " in command: "
+                        + String.join(" ", words));
+            }
+            passwordFile = option;
+        }
+        if (passwordFile == null) {
+            return words;
+        }
+
+        List<String> ordered = new ArrayList<>(passwordFile);
+        ordered.addAll(rest);
+        return ordered;
     }
 
     /** A command failed while {@link #run} was told to stop at the first failure. */

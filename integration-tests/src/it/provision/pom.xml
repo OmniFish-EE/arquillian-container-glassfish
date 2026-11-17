@@ -89,11 +89,14 @@
                     <!--
                         Run once, on a brief start during staging. The second
                         command sets a port, which keeps its new value when the
-                        brief start gives the domain its own ports back.
+                        brief start gives the domain its own ports back. The
+                        third puts asadmin's own option last on the line, and
+                        the plugin moves it in front of the subcommand.
                     -->
                     <postBootCommands>
                         create-system-properties provision.it.postboot=applied
                         set configs.config.server-config.network-config.network-listeners.network-listener.http-listener-2.port=18181
+                        create-file-user --groups staff provision-it --passwordfile ${project.basedir}/password.txt
                     </postBootCommands>
                 </configuration>
             </plugin>
