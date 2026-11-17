@@ -142,6 +142,8 @@
                     <forkCount>${gf.pool.size}</forkCount>
                     <systemPropertyVariables>
                         <pool.it.size>${gf.pool.size}</pool.it.size>
+                        <!-- The leased slot's server log goes to the build output. -->
+                        <glassfish.serverLogToConsole>true</glassfish.serverLogToConsole>
                     </systemPropertyVariables>
                 </configuration>
                 <executions>

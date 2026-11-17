@@ -31,6 +31,7 @@ import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 
 import static ee.omnifish.glassfish.maven.LifecycleSupport.bind;
 import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
+import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardServerLogColor;
 
 /**
  * Binds {@code up} for every project that declares this plugin with
@@ -103,6 +104,7 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
                 Plugin failsafe = project.getPlugin(FAILSAFE_KEY);
                 if (failsafe != null) {
                     forwardPoolProperties(failsafe);
+                    forwardServerLogColor(project, failsafe);
                 }
             }
         }

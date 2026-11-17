@@ -40,6 +40,8 @@
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.bomdemo;
 
+import java.util.logging.Logger;
+
 import jakarta.inject.Singleton;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -53,6 +55,8 @@ public class HelloController {
 
     @GET
     public String sayHello() {
+        // Only the server says this, so the build output has it from the server log.
+        Logger.getLogger(HelloController.class.getName()).info("microprofile-it hello said on the server");
         return "Hello World";
     }
 }

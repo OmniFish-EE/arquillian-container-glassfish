@@ -11,11 +11,16 @@
 package ee.omnifish.glassfish.maven;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
+import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.fusesource.jansi.Ansi;
+import org.fusesource.jansi.AnsiConsole;
+import org.fusesource.jansi.AnsiMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +30,9 @@ import org.slf4j.LoggerFactory;
  * project properties a goal publishes to the forked test JVMs.
  */
 public final class LifecycleSupport {
+
+    /** Tells the test JVMs to colour the labels of the server log lines they pass on. */
+    public static final String SERVER_LOG_COLOR = "glassfish.serverLogColor";
 
     private static final String SYSTEM_PROPERTY_VARIABLES = "systemPropertyVariables";
 
@@ -74,6 +82,33 @@ public final class LifecycleSupport {
         testPlugin.setConfiguration(withProperties((Xpp3Dom) testPlugin.getConfiguration(), keys));
         for (PluginExecution execution : testPlugin.getExecutions()) {
             execution.setConfiguration(withProperties((Xpp3Dom) execution.getConfiguration(), keys));
+        }
+    }
+
+    /**
+     * Publish {@link #SERVER_LOG_COLOR} as a project property, unless the pom
+     * sets it, and forward it to {@code testPlugin}. A test JVM writes to a
+     * pipe, so it can't tell whether Maven's console shows colour, and colour
+     * codes it prints end up in the test reports even where Maven's console
+     * strips them.
+     */
+    public static void forwardServerLogColor(MavenProject project, Plugin testPlugin) {
+        project.getProperties().putIfAbsent(SERVER_LOG_COLOR, String.valueOf(isConsoleColored()));
+        forwardProperties(testPlugin, List.of(SERVER_LOG_COLOR));
+    }
+
+    /**
+     * Whether Maven's console shows colour: not with {@code -B} or
+     * {@code -Dstyle.color=never}, nor when its output isn't a terminal, where
+     * Maven strips colour codes. Maven exports Jansi, which holds that state,
+     * to plugins.
+     */
+    static boolean isConsoleColored() {
+        try {
+            return Ansi.isEnabled() && AnsiConsole.out().getMode() != AnsiMode.Strip;
+        } catch (LinkageError e) {
+            // A Maven without Jansi.
+            return false;
         }
     }
 

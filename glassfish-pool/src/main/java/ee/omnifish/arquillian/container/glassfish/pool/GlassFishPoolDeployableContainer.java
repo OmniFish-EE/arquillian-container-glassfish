@@ -33,6 +33,7 @@ import ee.omnifish.glassfish.admin.AsAdmin;
 import ee.omnifish.glassfish.admin.DomainXmlEditor;
 import ee.omnifish.glassfish.admin.PostBootCommands;
 import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
+import ee.omnifish.glassfish.admin.ServerLogTailer;
 
 /**
  * Test-JVM-side container: leases a pre-started slot at {@link #setup} time,
@@ -116,8 +117,9 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             // Shared: sibling containers in this JVM (same group + poolDir) reuse
             // one slot — one GlassFish, many container views. See SharedSlotRegistry.
             handle = shared
-                    ? SharedSlotRegistry.acquire(new SharedSlotRegistry.Key(slotGroup, poolDir), leaser::lease)
-                    : new LeaseHandle.Direct(leaser.lease());
+                    ? SharedSlotRegistry.acquire(new SharedSlotRegistry.Key(slotGroup, poolDir),
+                            () -> followServerLog(leaser.lease()))
+                    : new LeaseHandle.Direct(followServerLog(leaser.lease()));
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -151,6 +153,21 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             releaseHandle();
             throw e;
         }
+    }
+
+    /**
+     * With {@code serverLogToConsole}, show what the slot's server writes to
+     * its log while {@code lease} holds it. Only the lease that leases the
+     * slot does this, so containers that share it see each line once.
+     */
+    private SlotLease followServerLog(SlotLease lease) {
+        if (configuration.isServerLogToConsole()) {
+            String prefix = ServerLogTailer.prefix("glassfish:slot-" + lease.slotIndex(), lease.slotIndex() - 1,
+                    configuration.isServerLogColor());
+            lease.followServerLog(line -> System.out.println(prefix + line));
+        }
+
+        return lease;
     }
 
     /** Release the held lease and close the slot iff this was its last holder. */

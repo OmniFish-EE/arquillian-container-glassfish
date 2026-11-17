@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
+import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.Test;
 
@@ -112,6 +113,23 @@ class LifecycleSupportTest {
         assertEquals("kept", forwarded.getChild("unrelated").getValue());
         assertEquals("${gf9.home}", forwarded.getChild("gf9.home").getValue());
         assertEquals(3, forwarded.getChildCount()); // idempotent: no duplicates
+    }
+
+    /** Here Maven's console doesn't run, so no colour; a value the pom sets wins. */
+    @Test
+    void publishesAndForwardsWhetherTheConsoleShowsColour() {
+        MavenProject project = new MavenProject();
+        MavenProject colouredByThePom = new MavenProject();
+        colouredByThePom.getProperties().setProperty(LifecycleSupport.SERVER_LOG_COLOR, "true");
+        Plugin failsafe = new Plugin();
+
+        LifecycleSupport.forwardServerLogColor(project, failsafe);
+        LifecycleSupport.forwardServerLogColor(colouredByThePom, new Plugin());
+
+        assertEquals("false", project.getProperties().getProperty("glassfish.serverLogColor"));
+        assertEquals("true", colouredByThePom.getProperties().getProperty("glassfish.serverLogColor"));
+        assertEquals("${glassfish.serverLogColor}",
+                variables((Xpp3Dom) failsafe.getConfiguration()).getChild("glassfish.serverLogColor").getValue());
     }
 
     private static void bindBoth(Plugin plugin) {
