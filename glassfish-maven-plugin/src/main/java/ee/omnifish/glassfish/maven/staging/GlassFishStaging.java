@@ -138,9 +138,16 @@ public final class GlassFishStaging {
                 return;
             }
 
-            LOG.info("Re-staging " + stageDir + ": its inputs changed, or its last staging didn't finish");
             if (stagedFingerprint == null) {
+                LOG.info("Re-staging " + stageDir + ": its last staging didn't finish");
                 BriefStart.stopLeftover(spec.home());
+            } else if (spec.home() != null && new GlassFishDomain(spec.home()).isRunning()) {
+                // Started by glassfish:start: it's not staging's to stop, and wiping it would pull the install out
+                // from under it.
+                throw new IOException("The inputs of " + stageDir + " changed, but " + GlassFishDomain.DOMAIN
+                        + " runs from it. Stop it with glassfish:stop, then build again.");
+            } else {
+                LOG.info("Re-staging " + stageDir + ": its inputs changed");
             }
         } else if (!isEmpty(stageDir)) {
             throw new IOException(stageDir + " isn't empty, and this plugin didn't stage it. Empty it, or point "

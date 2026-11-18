@@ -235,6 +235,42 @@ class GlassFishStagingTest {
         assertThat(Files.exists(tmp.resolve("stage/glassfish9/glassfish/modules/shipped.jar")), is(true));
     }
 
+    /** A domain glassfish:start left running is the user's, so staging doesn't wipe the install under it. */
+    @Test
+    void anInstallItsDomainRunsFromIsNotStagedAfresh(@TempDir Path tmp) throws Exception {
+        Path zip = zip(tmp, "glassfish9/glassfish/modules/shipped.jar");
+        Path jar = Files.writeString(Files.createDirectories(tmp.resolve("repo")).resolve("faces.jar"), "build 1");
+        StageSpec spec = ownedSpec(tmp.resolve("stage"), List.of(faces()), CertImport.NONE);
+        GlassFishStaging.stage(spec, facesOr(jar, zip));
+        Path leftover = Files.createFile(tmp.resolve("stage/glassfish9/leftover.txt"));
+        runsFrom(tmp.resolve("stage/glassfish9"), ProcessHandle.current().pid());
+
+        Files.writeString(jar, "build 2");
+        Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+        IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(spec, facesOr(jar, zip)));
+
+        assertThat(e.getMessage(), containsString("glassfish:stop"));
+        assertThat(Files.exists(leftover), is(true));
+    }
+
+    /** As after a server was killed, which leaves its pid file behind. */
+    @Test
+    void aStalePidFileDoesNotKeepTheInstallFromBeingStagedAfresh(@TempDir Path tmp) throws Exception {
+        Path zip = zip(tmp, "glassfish9/glassfish/modules/shipped.jar");
+        Path jar = Files.writeString(Files.createDirectories(tmp.resolve("repo")).resolve("faces.jar"), "build 1");
+        StageSpec spec = ownedSpec(tmp.resolve("stage"), List.of(faces()), CertImport.NONE);
+        GlassFishStaging.stage(spec, facesOr(jar, zip));
+        Process ended = new ProcessBuilder("true").start();
+        ended.waitFor();
+        runsFrom(tmp.resolve("stage/glassfish9"), ended.pid());
+
+        Files.writeString(jar, "build 2");
+        Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+        GlassFishStaging.stage(spec, facesOr(jar, zip));
+
+        assertThat(Files.readString(tmp.resolve("stage/glassfish9/glassfish/modules/faces.jar")), equalTo("build 2"));
+    }
+
     @Test
     void aCertificateReplacedAtTheSamePathStagesAfresh(@TempDir Path tmp) throws Exception {
         Path zip = zipWithTrustStore(tmp);
@@ -577,6 +613,12 @@ class GlassFishStagingTest {
     }
 
     /** A staging run that unpacks GlassFish 9.0.0 into {@code stage}, which staging then owns. */
+    /** Write the pid file GlassFish keeps while {@code domain1} of {@code home} runs. */
+    private static void runsFrom(Path home, long pid) throws IOException {
+        Path config = Files.createDirectories(home.resolve(DOMAIN_CONFIG));
+        Files.writeString(config.resolve("pid"), String.valueOf(pid));
+    }
+
     private static StageSpec ownedSpec(Path stage, List<OverlayCoord> overlays, CertImport certImport) {
         Path home = stage.resolve("glassfish9");
         return new StageSpec(stage, distribution("9.0.0"), false, home, home.resolve("glassfish/modules"), overlays,

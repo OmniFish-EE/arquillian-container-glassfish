@@ -1,0 +1,71 @@
+/*
+ * Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+ */
+package ee.omnifish.glassfish.maven.staging;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * An install whose {@code asadmin} is a shell script that appends its
+ * arguments to {@code calls.log}, then runs the given shell lines, with a
+ * {@code domain.xml} that has the given admin port. {@link #START} and
+ * {@link #STOP} make {@code start-domain} start a stand-in server process,
+ * whose pid goes where GlassFish keeps it, and {@code stop-domain} end it.
+ */
+public final class FakeDomain {
+
+    /** {@code start-domain} starts a stand-in server, which outlives the script, as GlassFish does. */
+    public static final String START = "  *start-domain*) sleep 120 >/dev/null 2>&1 & echo $! > \"$PID\" ;;\n";
+
+    /** {@code stop-domain}, with or without {@code --kill}, ends the stand-in server. */
+    public static final String STOP = "  *stop-domain*) kill $(cat \"$PID\") && rm -f \"$PID\" ;;\n";
+
+    private FakeDomain() {
+    }
+
+    /**
+     * An install at {@code home}, whose {@code asadmin} runs {@code cases},
+     * lines of a shell {@code case "$*" in}, with {@code $PID} the domain's
+     * pid file.
+     */
+    public static Path install(Path home, int adminPort, String cases) throws IOException {
+        Path config = Files.createDirectories(home.resolve(GlassFishStaging.DOMAIN_CONFIG));
+        Files.writeString(config.resolve("domain.xml"), "<domain><configs><config name=\"server-config\">"
+                + "<java-config debug-options=\"-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=9009\"/>"
+                + "<network-config><network-listeners>"
+                + "<network-listener name=\"admin-listener\" port=\"" + adminPort + "\"/>"
+                + "<network-listener name=\"http-listener-1\" port=\"8080\"/>"
+                + "<network-listener name=\"http-listener-2\" port=\"8181\"/>"
+                + "</network-listeners></network-config></config></configs></domain>");
+        Path asadmin = Files.createDirectories(home.resolve("glassfish/bin")).resolve("asadmin");
+        Files.writeString(asadmin, "#!/bin/sh\n"
+                + "PID='" + config.resolve("pid") + "'\n"
+                + "echo \"$@\" >> \"$(dirname \"$0\")/calls.log\"\n"
+                + "case \"$*\" in\n" + cases + "esac\n");
+        if (!asadmin.toFile().setExecutable(true)) {
+            throw new IOException("Can't make " + asadmin + " executable");
+        }
+
+        return home;
+    }
+
+    /** The asadmin calls made on the install, oldest first. */
+    public static List<String> calls(Path home) throws IOException {
+        Path log = home.resolve("glassfish/bin/calls.log");
+        return Files.exists(log) ? Files.readAllLines(log) : List.of();
+    }
+
+    /** The stand-in server process, if it runs. */
+    public static Optional<ProcessHandle> server(Path home) {
+        return new GlassFishDomain(home).process();
+    }
+
+    /** End the stand-in server a test left running. */
+    public static void killServer(Path home) {
+        server(home).ifPresent(ProcessHandle::destroyForcibly);
+    }
+}
