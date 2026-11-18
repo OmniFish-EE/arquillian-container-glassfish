@@ -24,8 +24,8 @@ The following configuration options are available for all GlassFish Arquillian c
 | `adminHost` | `glassfish.adminHost` | String | `localhost` | Managed, Remote | Admin server host address
 | `adminPort` | `glassfish.adminPort` | int | `4848` | Managed, Remote | Admin console port
 | `adminHttps` | `glassfish.adminHttps` | boolean | `false` | Managed, Remote | Use HTTPS for admin URL
-| `httpPort` | `glassfish.httpPort` | int | `8080` | Managed, Remote | HTTP port
-| `httpsPort` | `glassfish.httpsPort` | int | `8181` | Managed, Remote | HTTPS port
+| `httpPort` | `glassfish.httpPort` | int | Managed: `8080`; Remote: the reported port | Managed, Remote | HTTP port. Managed: the port GlassFish listens on. Remote: the port the tests reach GlassFish on, such as one Docker maps
+| `httpsPort` | `glassfish.httpsPort` | int | Managed: `8181`; Remote: the reported port | Managed, Remote | HTTPS port. Managed: the port GlassFish listens on. Remote: the port the tests reach GlassFish on, such as one Docker maps
 | `authorisation` | `glassfish.authorisation` | boolean | `false` | Managed, Remote | Enable login with admin credentials
 | `ignoreCertificates` | `glassfish.ignoreCertificates` | boolean | `false` | All | If SSL certificates are ignored
 | `adminUser` | `glassfish.adminUser` | String | _none_ | Managed, Remote | Admin username (required if `authorisation=true`)
@@ -81,6 +81,7 @@ The following configuration options are available for all GlassFish Arquillian c
 ----
 
 - Properties like `postBootCommands` and `systemProperties` support multiline values.
+- `httpPort` and `httpsPort` mean different things per container. The managed container configures the ports GlassFish listens on. The remote container doesn't change GlassFish: it uses them instead of the ports GlassFish reports, to reach the deployed application, as when GlassFish runs in Docker and its port 8080 is mapped to another one on the host. Unset, the remote container uses the ports GlassFish reports. The pool container sets them from the leased slot.
 - `serverLogToConsole` mirrors the domain's `logs/server.log` into the test output from the container's start to its stop, also when the container leaves the server running. It starts at the log's end, so earlier output isn't repeated, and follows the log when GlassFish rotates it. The file on disk stays as it is. With `-Dglassfish.serverLogToConsole=true`, failsafe passes it on to its forks.
 - `serverLogColor` colours only the label, in ANSI colour. A test JVM writes to a pipe, so it can't tell whether Maven's console shows colour; the extensions of the GlassFish Maven Plugin and the pool plugin tell it, through `glassfish.serverLogColor`. Maven's console has no colour with `-B` or `-Dstyle.color=never`, or when its output isn't a terminal, and then the test reports get no colour codes either.
 - In a command, `--passwordfile <file>` may come after the subcommand, as in `create-file-user --groups staff j2ee --passwordfile /path/j2ee.pass`. It's moved in front of the subcommand, where `asadmin` needs it.
