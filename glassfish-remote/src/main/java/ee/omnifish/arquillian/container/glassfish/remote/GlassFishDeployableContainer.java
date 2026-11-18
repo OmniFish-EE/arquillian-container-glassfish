@@ -64,28 +64,30 @@ import org.jboss.arquillian.container.spi.client.protocol.ProtocolDescription;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.ProtocolMetaData;
 import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
-import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
+import ee.omnifish.arquillian.container.glassfish.HttpContextPorts;
 
 /**
  * GlassFish remote container using REST deployment.
  *
  * @author <a href="http://community.jboss.org/people/LightGuard">Jason Porter</a>
  */
-public class GlassFishDeployableContainer implements DeployableContainer<CommonGlassFishConfiguration> {
+public class GlassFishDeployableContainer implements DeployableContainer<GlassFishRemoteContainerConfiguration> {
 
-    private CommonGlassFishManager<CommonGlassFishConfiguration> glassFishManager;
+    private GlassFishRemoteContainerConfiguration configuration;
+    private CommonGlassFishManager<GlassFishRemoteContainerConfiguration> glassFishManager;
 
     @Override
-    public Class<CommonGlassFishConfiguration> getConfigurationClass() {
-        return CommonGlassFishConfiguration.class;
+    public Class<GlassFishRemoteContainerConfiguration> getConfigurationClass() {
+        return GlassFishRemoteContainerConfiguration.class;
     }
 
     @Override
-    public void setup(CommonGlassFishConfiguration configuration) {
+    public void setup(GlassFishRemoteContainerConfiguration configuration) {
         if (configuration == null) {
             throw new IllegalArgumentException("configuration must not be null");
         }
+        this.configuration = configuration;
         glassFishManager = new CommonGlassFishManager<>(configuration);
     }
 
@@ -105,7 +107,9 @@ public class GlassFishDeployableContainer implements DeployableContainer<CommonG
 
     @Override
     public ProtocolMetaData deploy(Archive<?> archive) throws DeploymentException {
-        return glassFishManager.deploy(archive);
+        // The tests may reach GlassFish on other ports than it reports, such as ports Docker maps.
+        return HttpContextPorts.override(glassFishManager.deploy(archive), configuration.getHttpPort(),
+                configuration.getHttpsPort());
     }
 
     @Override

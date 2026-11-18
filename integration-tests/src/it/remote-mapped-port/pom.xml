@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
+    </parent>
+
+    <groupId>ee.omnifish.arquillian.test</groupId>
+    <artifactId>remote-mapped-port-test</artifactId>
+
+    <name>Integration Test: GlassFish Remote, on an overridden HTTP port</name>
+    <description>
+        The remote container reaches GlassFish on another HTTP port than the
+        one GlassFish reports, as with a port Docker maps: a second listener
+        stands in for it. A test runs inside the server through it. Run via
+        integration-tests' maven-invoker harness.
+    </description>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <container.version>@project.version@</container.version>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+        <!-- No GlassFish JUL extension on this classpath; use the JDK's LogManager. -->
+        <test.logManager>java.util.logging.LogManager</test.logManager>
+        <!-- The "mapped" port: GlassFish reports 8080, the tests use this one. -->
+        <mapped.http.port>28480</mapped.http.port>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>ee.omnifish.arquillian</groupId>
+            <artifactId>arquillian-glassfish-server-remote</artifactId>
+            <version>${container.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.shrinkwrap</groupId>
+            <artifactId>shrinkwrap-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Stages GlassFish, with a second HTTP listener on the mapped
+                port, for the same applications as http-listener-1.
+            -->
+            <plugin>
+                <groupId>ee.omnifish.glassfish</groupId>
+                <artifactId>glassfish-maven-plugin</artifactId>
+                <version>${container.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <distribution>${glassfish.version}</distribution>
+                    <postBootCommands>
+                        create-http-listener --listenerport ${mapped.http.port} --listeneraddress 0.0.0.0 --defaultvs server mapped-listener
+                    </postBootCommands>
+                </configuration>
+            </plugin>
+
+            <!-- The remote container connects to a running server: start it before the tests, stop it after. -->
+            <plugin>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>start-domain</id>
+                        <phase>pre-integration-test</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="${glassfish.home}/bin/asadmin" osfamily="unix" failonerror="true">
+                                    <arg value="start-domain"/>
+                                </exec>
+                                <exec executable="${glassfish.home}/bin/asadmin.bat" osfamily="windows" failonerror="true">
+                                    <arg value="start-domain"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>stop-domain</id>
+                        <phase>post-integration-test</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="${glassfish.home}/bin/asadmin" osfamily="unix">
+                                    <arg value="stop-domain"/>
+                                </exec>
+                                <exec executable="${glassfish.home}/bin/asadmin.bat" osfamily="windows">
+                                    <arg value="stop-domain"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <glassfish.httpPort>${mapped.http.port}</glassfish.httpPort>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
