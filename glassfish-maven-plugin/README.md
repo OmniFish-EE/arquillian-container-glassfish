@@ -373,7 +373,8 @@ the same, also from a clean checkout.
 - **After `mvn clean`**, which deletes the install while the domain runs from
   it, `stop` finds the server by the domain directory on its command line,
   since `config/pid` and `asadmin` are gone, and ends it directly: asked
-  first, then killed. On Windows, Java doesn't read other processes' command
+  first, then killed. On Windows, `clean` can't delete the files a running
+  GlassFish keeps open, and Java doesn't read other processes' command
   lines, so there, stop the domain before `clean`, as in
   `mvn glassfish:stop clean`.
 - `start` and `stop` skip with `-DskipTests` or `-Dmaven.test.skip`, like

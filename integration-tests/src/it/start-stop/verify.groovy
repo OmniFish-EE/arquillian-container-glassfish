@@ -3,16 +3,19 @@
  */
 
 // The first invocation started GlassFish, and the second tested it. The third stopped it, although clean had
-// deleted its install, and with it the pid file and asadmin. The fourth and fifth started and stopped it again.
+// deleted its install, and with it the pid file and asadmin; on Windows, as a plain stop. The fourth and fifth
+// started and stopped it again.
 def log = new File(basedir, 'build.log').text
 assert log.contains('GlassFish runs from')
 assert log.contains('Tests run: 1, Failures: 0, Errors: 0, Skipped: 0')
 assert log.findAll(/GlassFish at .* stopped/).size() == 2
 assert !log.contains("doesn't run")
 
-// start ran the post-boot commands on its own start, once for each install it staged.
+// start ran the post-boot commands on its own start, once for each install it staged. On Windows, the pom
+// skips clean, so the fourth invocation started the install the first one staged.
+def windows = System.getProperty('os.name').startsWith('Windows')
 assert !log.contains('briefly')
-assert log.count('Running the post-boot commands of') == 2
+assert log.count('Running the post-boot commands of') == (windows ? 1 : 2)
 def install = new File(basedir, 'target/dist').listFiles().find { it.name.startsWith('glassfish') }
 assert new File(install, 'glassfish/domains/domain1/config/domain.xml').text.contains('name="start.stop.it"')
 

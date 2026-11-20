@@ -93,4 +93,23 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            Windows doesn't delete files a running GlassFish keeps open, so
+            clean can't run before glassfish:stop there. Skipped, it leaves
+            the third invocation a plain stop.
+        -->
+        <profile>
+            <id>skip-clean-on-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <maven.clean.skip>true</maven.clean.skip>
+            </properties>
+        </profile>
+    </profiles>
 </project>
