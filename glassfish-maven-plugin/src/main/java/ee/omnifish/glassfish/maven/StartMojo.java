@@ -202,7 +202,8 @@ public class StartMojo extends AbstractStagingMojo {
 
         log.info(why);
         try {
-            domain.stop();
+            // Where it answers: a post-boot command may have moved the admin port in domain.xml.
+            domain.stop(adminPort);
         } catch (IOException e) {
             throw new MojoExecutionException("Can't restart GlassFish: " + e.getMessage(), e);
         }
@@ -257,15 +258,15 @@ public class StartMojo extends AbstractStagingMojo {
                     commands.failOnError());
         } catch (CommandFailedException e) {
             // Otherwise a failure in pre-integration-test leaves the server running: Maven never gets to stop.
-            stopAfterFailure(domain, log);
+            stopAfterFailure(domain, adminPort, log);
             throw new MojoExecutionException("A " + kind + " command failed, so GlassFish was stopped again: "
                     + e.getMessage(), e);
         }
     }
 
-    private static void stopAfterFailure(GlassFishDomain domain, Log log) {
+    private static void stopAfterFailure(GlassFishDomain domain, int adminPort, Log log) {
         try {
-            domain.stop();
+            domain.stop(adminPort);
         } catch (IOException e) {
             log.warn(e.getMessage());
         }

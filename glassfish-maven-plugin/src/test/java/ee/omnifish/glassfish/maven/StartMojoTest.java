@@ -10,8 +10,10 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -87,13 +89,14 @@ class StartMojoTest {
                 "--terse --port " + adminPort + " _get-restart-required --why")));
     }
 
-    /** GlassFish applies an option such as -Xmx only on a restart, and says so. */
+    /** GlassFish applies an option such as -Xmx only on a restart, and says so, after any notice Java prints. */
     @Test
     void autoRestartsWhenGlassFishReportsThatItNeedsTo() throws Exception {
         int adminPort = freePort();
         String why = "Addition of: '-Xmx1g' cannot take effect without server restart";
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, adminPort, FakeDomain.START
-                + FakeDomain.STOP + "  *_get-restart-required*) echo true; echo \"" + why + "\" ;;\n"));
+                + FakeDomain.STOP + "  *_get-restart-required*) echo 'NOTE: Picked up JDK_JAVA_OPTIONS: -Dx=y';"
+                + " echo true; echo \"" + why + "\" ;;\n"));
 
         StartMojo.start(domain, new StagingCommands("create-jvm-options -Xmx1g", true), AUTO, false, false, TIMEOUT,
                 log);
@@ -102,7 +105,7 @@ class StartMojoTest {
         assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " create-jvm-options -Xmx1g",
                 "--terse --port " + adminPort + " _get-restart-required --why",
-                "--terse stop-domain domain1",
+                "--terse --port " + adminPort + " stop-domain domain1",
                 "--terse start-domain --timeout 90 domain1")));
         assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: " + why));
     }
@@ -119,9 +122,37 @@ class StartMojoTest {
         StartMojo.start(domain, new StagingCommands(command, true), AUTO, false, false, TIMEOUT, log);
 
         assertThat(domain.isRunning(), is(true));
-        assertThat(FakeDomain.calls(home), hasItem("--terse stop-domain domain1"));
-        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: " + command
-                + " changes the admin listener"));
+        assertThat(FakeDomain.calls(home), hasItem("--terse --port " + adminPort + " stop-domain domain1"));
+        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: a set command changes the"
+                + " admin listener"));
+    }
+
+    /** A restart too many costs less than a configuration that isn't active. */
+    @Test
+    void autoRestartsWhenItCanNotReadGlassFishsAnswer() throws Exception {
+        int adminPort = freePort();
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, adminPort, FakeDomain.START
+                + FakeDomain.STOP + "  *_get-restart-required*) echo 'Something else' ;;\n"));
+
+        StartMojo.start(domain, new StagingCommands("set a=b", true), AUTO, false, false, TIMEOUT, log);
+
+        assertThat(FakeDomain.calls(home), hasItem("--terse --port " + adminPort + " stop-domain domain1"));
+        assertThat(log.warnings, hasItem(containsString("Can't tell whether GlassFish needs a restart")));
+    }
+
+    /** A -D option's value may be a secret, so the log leaves it out, also of what GlassFish reports. */
+    @Test
+    void theReasonForARestartLeavesOutOptionValues() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), FakeDomain.START
+                + FakeDomain.STOP + "  *_get-restart-required*) echo true; echo \"Addition of:"
+                + " '-Djavax.example.password=secret' cannot take effect without server restart\" ;;\n"));
+
+        StartMojo.start(domain, new StagingCommands("create-jvm-options -Djavax.example.password=secret", true),
+                AUTO, false, false, TIMEOUT, log);
+
+        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: Addition of:"
+                + " '-Djavax.example.password=***' cannot take effect without server restart"));
+        assertThat(log.infos, everyItem(not(containsString("secret"))));
     }
 
     @Test
@@ -135,7 +166,7 @@ class StartMojoTest {
         assertThat(domain.isRunning(), is(true));
         assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " set a=b",
-                "--terse stop-domain domain1",
+                "--terse --port " + adminPort + " stop-domain domain1",
                 "--terse start-domain --timeout 90 domain1")));
     }
 
@@ -165,7 +196,7 @@ class StartMojoTest {
         assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " set a=b",
                 "--terse --port " + adminPort + " _get-restart-required --why",
-                "--terse stop-domain domain1",
+                "--terse --port " + adminPort + " stop-domain domain1",
                 "--terse start-domain --timeout 90 --suspend domain1")));
         assertThat(log.infos, hasItem("Restarting GlassFish suspended, now that its post-boot commands have run"));
     }
@@ -229,7 +260,7 @@ class StartMojoTest {
 
         assertThat(e.getMessage(), containsString("A post-start command failed, so GlassFish was stopped again"));
         assertThat(domain.isRunning(), is(false));
-        assertThat(FakeDomain.calls(home), hasItem("--terse stop-domain domain1"));
+        assertThat(FakeDomain.calls(home), hasItem("--terse --port " + startedOn + " stop-domain domain1"));
     }
 
     /** Staging then fails, and the next build stages afresh, as after a failure on a brief start. */

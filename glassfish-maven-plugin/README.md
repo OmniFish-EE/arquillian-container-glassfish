@@ -359,17 +359,21 @@ the same, also from a clean checkout.
   GlassFish, so that what they configured is active when it returns:
   - `auto`, the default, restarts when GlassFish reports that a change
     needs a restart, as `asadmin _get-restart-required --why` shows, or
-    when a command makes a change GlassFish applies only on a restart
-    without reporting it: one to the admin listener, the JMX connector or
-    an IIOP listener, such as its port, or to a system property that
-    `domain.xml` refers to, as a JVM option `-Dderived=${NAME}` does. The
-    log says why.
+    when a `set`, `create-…` or `delete-…` command makes a change GlassFish
+    applies only on a restart without reporting it: one to the admin
+    listener, the JMX connector or an IIOP listener, such as its port, or
+    to a system property that `domain.xml` refers to, as a JVM option
+    `-Dderived=${NAME}` does, with `create-system-properties` or `set`. When
+    it can't read GlassFish's answer, it restarts. The log says why, without
+    the values of `-D` options or of the commands, which may be secrets.
   - `always` restarts, for a change GlassFish needs a restart for without
     reporting it.
   - `never` doesn't, and what needs a restart takes effect from the next
     start.
 
-  The restart happens only on the first start after staging. With
+  The restart happens only on the first start after staging. It stops the
+  domain through the admin port it started on, also when a command moved
+  it; GlassFish 7.0 goes by `domain.xml`, and then needs `--kill`. With
   `suspend`, the start before a restart isn't suspended, so the debugger
   attaches once, to the start that stays; with `auto`, `suspend` restarts
   it for that. A `-D` JVM option needs no restart: GlassFish sets it in the
@@ -398,10 +402,11 @@ the same, also from a clean checkout.
   it, with `config/pid`, `asadmin` and the staging marker, `stop` finds the
   server by its command line: the server of a domain in any install in
   `stageDir`, also when the pom names another distribution by then. It ends
-  it directly: asked first, then killed. On Windows, `clean` can't delete the files a running
-  GlassFish keeps open, and Java doesn't read other processes' command
-  lines, so there, stop the domain before `clean`, as in
-  `mvn glassfish:stop clean`.
+  it directly: asked first, then killed. Without `clean`, the `config/pid`
+  of that install finds it, also on Windows. On Windows, `clean` can't
+  delete the files a running GlassFish keeps open, and Java doesn't read
+  other processes' command lines, so there, stop the domain before
+  `clean`, as in `mvn glassfish:stop clean`.
 - `start` and `stop` skip with `-DskipTests` or `-Dmaven.test.skip`, like
   `provision`, or with `-Dglassfish.start.skip` and `-Dglassfish.stop.skip`.
 

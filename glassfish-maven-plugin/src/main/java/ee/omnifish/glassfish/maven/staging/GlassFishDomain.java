@@ -22,11 +22,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import ee.omnifish.glassfish.admin.AsAdmin;
 import ee.omnifish.glassfish.admin.AsAdmin.AsAdminException;
@@ -82,6 +84,16 @@ public final class GlassFishDomain {
 
     /** Between the properties {@code create-system-properties} sets: a colon, unless escaped. */
     private static final Pattern PROPERTY_SEPARATOR = Pattern.compile("(?<!\\\\):");
+
+    /** The dotted name {@code set} gives a system property's value, with dots in its name escaped. */
+    private static final Pattern SYSTEM_PROPERTY_VALUE = Pattern.compile("(?:^|\\.)system-property\\.(.+)\\.value$");
+
+    /** {@code asadmin} options that take a value, which a command line may start with. */
+    private static final Set<String> VALUE_OPTIONS = Set.of("--host", "-H", "--port", "-p", "--user", "-u",
+            "--passwordfile", "-W");
+
+    /** The value of a {@code -D} option in a reason GlassFish gives for a restart, which may be a secret. */
+    private static final Pattern OPTION_VALUE = Pattern.compile("(-D[^=\\s']+=)[^']*");
 
     private final Path home;
     private final Duration exitWait;
@@ -155,11 +167,17 @@ public final class GlassFishDomain {
 
     /**
      * {@code domain1} of an install directly under {@code stageDir}, if its
-     * server runs, found by its command line: whichever distribution was
-     * unpacked there, also after {@code mvn clean} deleted it. Where the
-     * system doesn't say what a process runs, none is found.
+     * server runs: whichever distribution was unpacked there. It's found by
+     * its {@code config/pid}, and otherwise by its command line, also after
+     * {@code mvn clean} deleted the install. Where the system doesn't say
+     * what a process runs, as on Windows, only {@code config/pid} finds it.
      */
     public static Optional<GlassFishDomain> runningIn(Path stageDir) {
+        Optional<GlassFishDomain> byPidFile = runningByPidFileIn(stageDir);
+        if (byPidFile.isPresent()) {
+            return byPidFile;
+        }
+
         List<Pattern> servers = new ArrayList<>();
         for (Path dir : names(stageDir)) {
             // The install's directory, then the domain's within it.
@@ -174,6 +192,19 @@ public final class GlassFishDomain {
                 .filter(Matcher::find)
                 .findFirst()
                 .map(server -> new GlassFishDomain(stageDir.resolve(server.group(1))));
+    }
+
+    /** {@code domain1} of an install directly under {@code stageDir}, if its {@code config/pid} names its server. */
+    static Optional<GlassFishDomain> runningByPidFileIn(Path stageDir) {
+        try (Stream<Path> installs = Files.list(stageDir)) {
+            return installs.filter(install -> Files.exists(install.resolve(DOMAIN_CONFIG).resolve("pid")))
+                    .map(GlassFishDomain::new)
+                    .filter(GlassFishDomain::isRunning)
+                    .findFirst();
+        } catch (IOException e) {
+            // Gone, as after mvn clean, or not a directory: no install to look in.
+            return Optional.empty();
+        }
     }
 
     /** {@code path}, and its real path if that differs, as a process may have been given either. */
@@ -282,15 +313,11 @@ public final class GlassFishDomain {
      * JMX connector or an IIOP listener only on a restart. A system property
      * it sets at once, but what {@code domain.xml} sets with
      * {@code ${NAME}}, such as a JVM option, keeps the old value until then.
-     * Package-private for unit tests.
+     * Only {@code set}, {@code create-} and {@code delete-} commands change
+     * anything. The reason names what changed, not the command, whose values
+     * may be secrets. Package-private for unit tests.
      */
     static String unreportedRestart(String command, String domainXml) {
-        for (Map.Entry<String, String> restartOnly : RESTART_ONLY.entrySet()) {
-            if (command.contains(restartOnly.getKey())) {
-                return command + " changes " + restartOnly.getValue();
-            }
-        }
-
         List<String> words;
         try {
             words = PostBootCommands.words(command);
@@ -298,32 +325,93 @@ public final class GlassFishDomain {
             // It failed as a command, so it changed nothing.
             return null;
         }
-        if (!words.contains("create-system-properties") && !words.contains("delete-system-property")) {
+        int at = subcommandAt(words);
+        if (at < 0) {
             return null;
         }
-        for (String property : PROPERTY_SEPARATOR.split(words.get(words.size() - 1))) {
-            String name = property.split("=", 2)[0];
+        String subcommand = words.get(at);
+        if (!subcommand.equals("set") && !subcommand.startsWith("create-") && !subcommand.startsWith("delete-")) {
+            return null;
+        }
+
+        List<String> operands = words.subList(at + 1, words.size());
+        String changes = "a " + subcommand + " command changes ";
+        for (Map.Entry<String, String> restartOnly : RESTART_ONLY.entrySet()) {
+            if (subcommand.contains(restartOnly.getKey())
+                    || operands.stream().anyMatch(operand -> operand.contains(restartOnly.getKey()))) {
+                return changes + restartOnly.getValue();
+            }
+        }
+        for (String name : systemProperties(subcommand, operands)) {
             if (domainXml.contains("${" + name + "}")) {
-                return command + " changes " + name + ", which domain.xml refers to";
+                return changes + name + ", which domain.xml refers to";
             }
         }
 
         return null;
     }
 
-    /** What {@code _get-restart-required} reports. */
-    private List<String> reportedRestartReasons(int adminPort) {
-        List<String> lines = new AsAdmin(home, adminPort).run(RESTART_QUERY_TIMEOUT, "_get-restart-required", "--why")
-                .lines()
+    /** Where the subcommand is in {@code words}, after any {@code asadmin} options; -1 if there's none. */
+    private static int subcommandAt(List<String> words) {
+        for (int i = 0; i < words.size(); i++) {
+            String word = words.get(i);
+            if (!word.startsWith("-")) {
+                return i;
+            }
+            if (VALUE_OPTIONS.contains(word)) {
+                // Its value.
+                i++;
+            }
+        }
+
+        return -1;
+    }
+
+    /** The names of the system properties {@code subcommand} sets or deletes. */
+    private static List<String> systemProperties(String subcommand, List<String> operands) {
+        List<String> names = new ArrayList<>();
+        if (subcommand.equals("set")) {
+            for (String operand : operands) {
+                Matcher property = SYSTEM_PROPERTY_VALUE.matcher(operand.split("=", 2)[0]);
+                if (property.find()) {
+                    names.add(property.group(1).replace("\\.", "."));
+                }
+            }
+        } else if ((subcommand.equals("create-system-properties") || subcommand.equals("delete-system-property"))
+                && !operands.isEmpty()) {
+            for (String property : PROPERTY_SEPARATOR.split(operands.get(operands.size() - 1))) {
+                names.add(property.split("=", 2)[0]);
+            }
+        }
+
+        return names;
+    }
+
+    /**
+     * What {@code _get-restart-required} reports. Java may print notices
+     * before its answer, such as for {@code JDK_JAVA_OPTIONS}. The values of
+     * {@code -D} options in its reasons are left out.
+     *
+     * @throws IOException if the answer can't be read
+     */
+    private List<String> reportedRestartReasons(int adminPort) throws IOException {
+        String output = new AsAdmin(home, adminPort).run(RESTART_QUERY_TIMEOUT, "_get-restart-required", "--why");
+        List<String> lines = output.lines()
                 .map(String::trim)
                 .filter(line -> !line.isEmpty())
                 .collect(toList());
-        if (lines.isEmpty() || !lines.get(0).equals("true")) {
-            return List.of();
+        int answer = lines.indexOf("true");
+        if (answer < 0) {
+            if (lines.contains("false")) {
+                return List.of();
+            }
+            throw new IOException("Can't read whether GlassFish needs a restart from: " + output);
         }
 
-        return (lines.size() == 1) ? List.of("GlassFish reports that it needs a restart")
-                : lines.subList(1, lines.size());
+        List<String> reasons = lines.subList(answer + 1, lines.size()).stream()
+                .map(reason -> OPTION_VALUE.matcher(reason).replaceAll("$1***"))
+                .collect(toList());
+        return reasons.isEmpty() ? List.of("GlassFish reports that it needs a restart") : reasons;
     }
 
     /**
@@ -338,13 +426,27 @@ public final class GlassFishDomain {
      * @throws IOException if the domain's process still runs afterwards
      */
     public boolean stop() throws IOException {
+        return stopThrough(null);
+    }
+
+    /**
+     * {@link #stop()}, through {@code adminPort}, where the domain answers:
+     * {@code stop-domain} otherwise goes by the admin port in
+     * {@code domain.xml}, which a command may have changed since the domain
+     * started. GlassFish 7.0 goes by {@code domain.xml} regardless.
+     */
+    public boolean stop(int adminPort) throws IOException {
+        return stopThrough(adminPort);
+    }
+
+    private boolean stopThrough(Integer adminPort) throws IOException {
         Optional<ProcessHandle> process = process();
         if (process.isEmpty()) {
             return false;
         }
 
         if (Files.exists(pidFile())) {
-            stopDomain(process.get());
+            stopDomain(process.get(), adminPort);
         } else {
             process.get().destroy();
             if (!hasEnded(process.get())) {
@@ -360,8 +462,8 @@ public final class GlassFishDomain {
     }
 
     /** {@code stop-domain}, and {@code stop-domain --kill} if {@code process} still runs after that. */
-    private void stopDomain(ProcessHandle process) {
-        AsAdmin asadmin = new AsAdmin(home);
+    private void stopDomain(ProcessHandle process, Integer adminPort) {
+        AsAdmin asadmin = new AsAdmin(home, adminPort);
         try {
             asadmin.run(STOP_TIMEOUT, "stop-domain", DOMAIN);
         } catch (AsAdminException e) {

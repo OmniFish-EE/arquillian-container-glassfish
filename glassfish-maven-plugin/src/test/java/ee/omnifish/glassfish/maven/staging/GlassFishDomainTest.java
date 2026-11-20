@@ -200,28 +200,67 @@ class GlassFishDomainTest {
         String config = "set configs.config.server-config.";
 
         assertThat(GlassFishDomain.unreportedRestart(config + "network-config.network-listeners.network-listener"
-                + ".admin-listener.port=4949", ""), containsString(" changes the admin listener"));
+                + ".admin-listener.port=4949", ""), equalTo("a set command changes the admin listener"));
         assertThat(GlassFishDomain.unreportedRestart(config + "admin-service.jmx-connector.system.port=8787", ""),
                 containsString(" changes the JMX connector"));
         assertThat(GlassFishDomain.unreportedRestart(config + "iiop-service.iiop-listener.orb-listener-1.port=3800",
                 ""), containsString(" changes an IIOP listener"));
         assertThat(GlassFishDomain.unreportedRestart(config + "network-config.network-listeners.network-listener"
                 + ".http-listener-1.port=8282", ""), is(nullValue()));
+        assertThat(GlassFishDomain.unreportedRestart("create-iiop-listener --iiopport 3900 orb-listener-2", ""),
+                equalTo("a create-iiop-listener command changes an IIOP listener"));
+        // After asadmin options, one with a value.
+        assertThat(GlassFishDomain.unreportedRestart("--user admin " + config + "network-config.network-listeners"
+                + ".network-listener.admin-listener.port=4949", ""),
+                equalTo("a set command changes the admin listener"));
+    }
+
+    @Test
+    void aCommandThatOnlyReadsNeedsNoRestart() {
+        assertThat(GlassFishDomain.unreportedRestart("get configs.config.server-config.network-config"
+                + ".network-listeners.network-listener.admin-listener.port", ""), is(nullValue()));
+        assertThat(GlassFishDomain.unreportedRestart("list-iiop-listeners", ""), is(nullValue()));
     }
 
     /** GlassFish sets the property at once, but a JVM option that refers to it keeps the old value until a restart. */
     @Test
     void aSystemPropertyThatDomainXmlRefersToNeedsARestartGlassFishDoesNotReport() {
-        String domainXml = "<jvm-options>-Dderived=${NAME}</jvm-options>";
+        String domainXml = "<jvm-options>-Dderived=${NAME}</jvm-options>"
+                + "<jvm-options>-Ddotted=${my.prop}</jvm-options>";
 
         assertThat(GlassFishDomain.unreportedRestart("create-system-properties --target server A=1:NAME=x\\:y",
-                domainXml), containsString(" changes NAME, which domain.xml refers to"));
+                domainXml), equalTo("a create-system-properties command changes NAME, which domain.xml refers to"));
         assertThat(GlassFishDomain.unreportedRestart("delete-system-property NAME", domainXml),
                 containsString(" changes NAME"));
         assertThat(GlassFishDomain.unreportedRestart("create-system-properties OTHER=1", domainXml), is(nullValue()));
         // An escaped colon is part of the value.
         assertThat(GlassFishDomain.unreportedRestart("create-system-properties OTHER=a\\:NAME=b", domainXml),
                 is(nullValue()));
+        // The same change with set, where an escaped dot is part of the name.
+        assertThat(GlassFishDomain.unreportedRestart("set server-config.system-property.NAME.value=27677", domainXml),
+                equalTo("a set command changes NAME, which domain.xml refers to"));
+        assertThat(GlassFishDomain.unreportedRestart(
+                "set configs.config.server-config.system-property.my\\.prop.value=1", domainXml),
+                equalTo("a set command changes my.prop, which domain.xml refers to"));
+        assertThat(GlassFishDomain.unreportedRestart("set server-config.system-property.OTHER.value=1", domainXml),
+                is(nullValue()));
+    }
+
+    /** Where Java doesn't say what a process runs, as on Windows, its config/pid still finds the server. */
+    @Test
+    void aServerOfAnInstallInTheStageDirectoryIsFoundByItsPidFile() throws Exception {
+        Path install = home.resolve("glassfish7");
+        Files.createDirectories(home.resolve("glassfish8").resolve(GlassFishStaging.DOMAIN_CONFIG));
+        Process server = FakeDomain.startServer(install);
+        try {
+            assertThat(GlassFishDomain.runningByPidFileIn(home).map(GlassFishDomain::home),
+                    equalTo(Optional.of(install)));
+        } finally {
+            server.destroyForcibly().waitFor();
+        }
+
+        // Its config/pid stays behind, naming a process that ended.
+        assertThat(GlassFishDomain.runningByPidFileIn(home), equalTo(Optional.empty()));
     }
 
     /** A process of which the system only says when it started. */
