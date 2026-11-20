@@ -15,7 +15,10 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +58,31 @@ class GlassFishDomainTest {
         assertThat(new GlassFishDomain(home).isRunning(), is(false));
     }
 
+    /** As after a server was killed, and the system gave its number to another process since. */
+    @Test
+    void aPidFileThatNamesAnotherProcessDoesNotCount() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), FakeDomain.STOP));
+        Files.writeString(home.resolve(GlassFishStaging.DOMAIN_CONFIG).resolve("pid"),
+                String.valueOf(ProcessHandle.current().pid()));
+
+        assertThat(domain.isRunning(), is(false));
+        assertThat(domain.stop(), is(false));
+        assertThat(FakeDomain.calls(home), is(empty()));
+    }
+
+    /** A system property can set the admin port; GlassFish starts with it all the same. */
+    @Test
+    void theAdminPortMayComeFromASystemProperty() throws Exception {
+        FakeDomain.install(home, 0, "");
+        Path domainXml = home.resolve(GlassFishStaging.DOMAIN_CONFIG).resolve("domain.xml");
+        Files.writeString(domainXml, Files.readString(domainXml)
+                .replace("port=\"0\"", "port=\"${ADMIN_PORT}\"")
+                .replace("<domain>", "<domain><servers><server name=\"server\" config-ref=\"server-config\">"
+                        + "<system-property name=\"ADMIN_PORT\" value=\"24848\"/></server></servers>"));
+
+        assertThat(new GlassFishDomain(home).adminPort(), equalTo(24848));
+    }
+
     /** Also when another server answers on its admin port: that's not this domain. */
     @Test
     void aDomainThatDoesNotRunIsLeftAlone() throws Exception {
@@ -76,8 +104,21 @@ class GlassFishDomainTest {
         assertThat(domain.stop(), is(true));
 
         assertThat(domain.isRunning(), is(false));
-        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain domain1",
+        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse stop-domain domain1")));
+    }
+
+    /** As after mvn clean deleted the install it runs from: config/pid and asadmin are gone with it. */
+    @Test
+    void aDomainWhoseInstallIsGoneIsStoppedByItsCommandLine() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), FakeDomain.START));
+        domain.start(false, false, Duration.ofSeconds(30));
+        ProcessHandle server = domain.process().orElseThrow();
+        deleteInstall();
+
+        assertThat(domain.process().map(ProcessHandle::pid), equalTo(Optional.of(server.pid())));
+        assertThat(domain.stop(), is(true));
+        assertThat(server.isAlive(), is(false));
     }
 
     @Test
@@ -89,7 +130,7 @@ class GlassFishDomainTest {
         assertThat(domain.stop(), is(true));
 
         assertThat(domain.isRunning(), is(false));
-        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain domain1",
+        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse stop-domain domain1", "--terse stop-domain --kill domain1")));
     }
 
@@ -107,6 +148,12 @@ class GlassFishDomainTest {
     @Test
     void theDebugAddressComesFromTheDomain() throws Exception {
         assertThat(new GlassFishDomain(FakeDomain.install(home, freePort(), "")).debugAddress(), equalTo("9009"));
+    }
+
+    private void deleteInstall() throws IOException {
+        try (Stream<Path> files = Files.walk(home.resolve("glassfish"))) {
+            files.sorted(Comparator.reverseOrder()).forEach(file -> file.toFile().delete());
+        }
     }
 
     private static int freePort() throws IOException {

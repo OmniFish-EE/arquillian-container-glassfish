@@ -117,6 +117,21 @@ class PostBootCommandsTest {
         assertTrue(e.getMessage().contains("user already exists"), e.getMessage());
     }
 
+    /** A line that can't be read fails as a command, so the caller's policy covers it, as with any failure. */
+    @Test
+    void aLineThatCanNotBeReadFailsAsACommand() {
+        CommandFailedException e = assertThrows(CommandFailedException.class,
+                () -> PostBootCommands.run(List.of("set \"a=b"), (command, args) -> {
+                    throw new AssertionError("ran " + command);
+                }, true));
+
+        assertTrue(e.getMessage().contains("set \"a=b"), e.getMessage());
+
+        List<String> run = new ArrayList<>();
+        PostBootCommands.run(List.of("set \"a=b", "next"), (command, args) -> run.add(command), false);
+        assertEquals(List.of("next"), run);
+    }
+
     @Test
     void runContinuesAfterAFailureOtherwise() {
         List<String> run = new ArrayList<>();

@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.AfterEach;
@@ -50,10 +52,27 @@ class StartMojoTest {
         int adminPort = freePort();
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, adminPort, FakeDomain.START));
 
-        StartMojo.start(domain, new StagingCommands("create-file-user --groups g joe", true), false, false, TIMEOUT, log);
+        int startedOn = StartMojo.start(domain, StagingCommands.NONE, false, false, TIMEOUT, log);
+        StartMojo.runPostStartCommands(domain, startedOn,
+                new StagingCommands("create-file-user --groups g joe", true), log);
+
+        assertThat(startedOn, equalTo(adminPort));
+        assertThat(domain.isRunning(), is(true));
+        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
+                "--terse --port " + adminPort + " create-file-user --groups g joe")));
+    }
+
+    /** Staging's post-boot commands, when it has them to run, run on the start itself, not on a brief one. */
+    @Test
+    void startRunsThePostBootCommandsItIsGiven() throws Exception {
+        int adminPort = freePort();
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, adminPort, FakeDomain.START));
+
+        StartMojo.start(domain, new StagingCommands("create-file-user --groups g joe", true), false, false, TIMEOUT,
+                log);
 
         assertThat(domain.isRunning(), is(true));
-        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain domain1",
+        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " create-file-user --groups g joe")));
     }
 
@@ -72,26 +91,50 @@ class StartMojoTest {
         }
     }
 
+    /** start checks them before it provisions or starts anything, so there's no server to stop again. */
+    @Test
+    void aPostStartCommandThatCanNotBeReadIsRejected() {
+        MojoExecutionException e = assertThrows(MojoExecutionException.class,
+                () -> StartMojo.requireReadable(new StagingCommands("set \"a=b", true)));
+
+        assertThat(e.getMessage(), containsString("Can't read a post-start command"));
+    }
+
     /** Otherwise a failure in pre-integration-test leaves the server running: Maven never gets to stop. */
     @Test
     void aFailedPostStartCommandStopsTheDomainAgain() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(),
+                FakeDomain.START + FakeDomain.STOP + "  *boom*) exit 1 ;;\n"));
+        int startedOn = StartMojo.start(domain, StagingCommands.NONE, false, false, TIMEOUT, log);
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class,
+                () -> StartMojo.runPostStartCommands(domain, startedOn, new StagingCommands("boom", true), log));
+
+        assertThat(e.getMessage(), containsString("A post-start command failed, so GlassFish was stopped again"));
+        assertThat(domain.isRunning(), is(false));
+        assertThat(FakeDomain.calls(home), hasItem("--terse stop-domain domain1"));
+    }
+
+    /** Staging then fails, and the next build stages afresh, as after a failure on a brief start. */
+    @Test
+    void aFailedPostBootCommandStopsTheDomainAgain() throws Exception {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(),
                 FakeDomain.START + FakeDomain.STOP + "  *boom*) exit 1 ;;\n"));
 
         MojoExecutionException e = assertThrows(MojoExecutionException.class,
                 () -> StartMojo.start(domain, new StagingCommands("boom", true), false, false, TIMEOUT, log));
 
-        assertThat(e.getMessage(), containsString("stopped again"));
+        assertThat(e.getMessage(), containsString("A post-boot command failed, so GlassFish was stopped again"));
         assertThat(domain.isRunning(), is(false));
-        assertThat(FakeDomain.calls(home), hasItem("--terse stop-domain domain1"));
     }
 
     @Test
     void withoutFailOnCommandErrorAFailedCommandLeavesTheDomainRunning() throws Exception {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(),
                 FakeDomain.START + FakeDomain.STOP + "  *boom*) exit 1 ;;\n"));
+        int startedOn = StartMojo.start(domain, StagingCommands.NONE, false, false, TIMEOUT, log);
 
-        StartMojo.start(domain, new StagingCommands("boom", false), false, false, TIMEOUT, log);
+        StartMojo.runPostStartCommands(domain, startedOn, new StagingCommands("boom", false), log);
 
         assertThat(domain.isRunning(), is(true));
     }
@@ -102,7 +145,7 @@ class StartMojoTest {
 
         StartMojo.start(domain, StagingCommands.NONE, true, true, TIMEOUT, log);
 
-        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --debug --suspend domain1")));
+        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 --debug --suspend domain1")));
         assertThat(log.infos, hasItem("Waiting up to 30 seconds for a debugger to attach on 9009"));
     }
 
@@ -121,7 +164,11 @@ class StartMojoTest {
                 () -> StartMojo.start(domain, StagingCommands.NONE, true, true, Duration.ofSeconds(2), log));
 
         long pid = Long.parseLong(Files.readString(server).trim());
-        assertThat(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), is(false));
+        Optional<ProcessHandle> left = ProcessHandle.of(pid);
+        if (left.isPresent()) {
+            // Killed, it ends at once, though the system may list it a moment longer.
+            left.get().onExit().get(5, TimeUnit.SECONDS);
+        }
     }
 
     @Test

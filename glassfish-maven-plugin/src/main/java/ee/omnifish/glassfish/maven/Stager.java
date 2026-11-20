@@ -31,6 +31,7 @@ import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.ArtifactResolver;
+import ee.omnifish.glassfish.maven.staging.GlassFishStaging.CommandRunner;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
@@ -117,6 +118,11 @@ public final class Stager {
     /** Run {@code spec}; see {@link GlassFishStaging#stage}. */
     public void stage(StageSpec spec) throws IOException {
         GlassFishStaging.stage(spec, resolver);
+    }
+
+    /** Run {@code spec}, with {@code commandRunner} running its commands; see {@link GlassFishStaging#stage}. */
+    public void stage(StageSpec spec, CommandRunner commandRunner) throws IOException {
+        GlassFishStaging.stage(spec, resolver, commandRunner);
     }
 
     private static void requireVersion(DistributionCoord distribution) throws MojoExecutionException {

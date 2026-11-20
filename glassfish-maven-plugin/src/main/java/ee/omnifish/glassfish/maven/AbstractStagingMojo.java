@@ -28,6 +28,8 @@ import org.eclipse.aether.repository.RemoteRepository;
 
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
+import ee.omnifish.glassfish.maven.staging.GlassFishStaging.CommandRunner;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
@@ -131,7 +133,11 @@ abstract class AbstractStagingMojo extends AbstractMojo {
     /**
      * {@code asadmin} commands run once on the staged install, one per line,
      * during a brief start after the overlays and certificates: setup whose
-     * effects persist, such as users, resources and {@code set} calls. Quotes
+     * effects persist, such as users, resources and {@code set} calls.
+     * {@code glassfish:start} runs them on the start it makes anyway, so a
+     * command that only takes effect when GlassFish restarts, such as
+     * {@code create-jvm-options}, takes effect from the next start; run
+     * {@code glassfish:provision} before it to have them in effect at once. Quotes
      * group words; backslashes are passed on as they are. Blank lines and
      * lines starting with {@code #} are skipped. Changing them stages the
      * install afresh. They need an install this goal unpacks, so they can't
@@ -191,15 +197,26 @@ abstract class AbstractStagingMojo extends AbstractMojo {
     }
 
     /**
-     * Stage the install, and publish its root as {@code homeProperty}.
+     * Stage the install, with its post-boot commands on a brief start, and
+     * publish its root as {@code homeProperty}.
      *
      * @return the install root, or {@code null} when it isn't known
      */
     protected Path provision() throws MojoExecutionException {
+        return provision(GlassFishStaging.BRIEF_START);
+    }
+
+    /**
+     * Stage the install, with {@code commandRunner} running its post-boot
+     * commands when they're due, and publish its root as {@code homeProperty}.
+     *
+     * @return the install root, or {@code null} when it isn't known
+     */
+    protected Path provision(CommandRunner commandRunner) throws MojoExecutionException {
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
         StageSpec spec = spec(stager);
         try {
-            stager.stage(spec);
+            stager.stage(spec, commandRunner);
         } catch (IOException e) {
             throw new MojoExecutionException("Provisioning GlassFish failed: " + e.getMessage(), e);
         }
@@ -217,8 +234,24 @@ abstract class AbstractStagingMojo extends AbstractMojo {
         return spec.home();
     }
 
-    /** Where the install is, from the same parameters, without staging it; {@code null} when it isn't known. */
+    /**
+     * Where the install is, without staging it: {@code home}, else the one
+     * staged in {@code stageDir}, as its marker records it, else the one the
+     * distribution would unpack to. The staged one wins over that, since
+     * another distribution unpacks to another directory, while a domain
+     * {@code glassfish:start} started runs from the one staged before.
+     *
+     * @return the install root, or {@code null} when it isn't known
+     */
     protected Path installRoot() throws MojoExecutionException {
+        if (home != null) {
+            return home.toPath();
+        }
+        Path staged = GlassFishStaging.stagedHome(stageDir().toPath());
+        if (staged != null) {
+            return staged;
+        }
+
         return spec(new Stager(repoSystem, repoSession, remoteRepos, getLog())).home();
     }
 

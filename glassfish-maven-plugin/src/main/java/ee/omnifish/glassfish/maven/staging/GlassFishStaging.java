@@ -71,6 +71,7 @@ public final class GlassFishStaging {
     private static final String MARKER_FILE = ".staging-glassfish.properties";
     private static final String MARKER_KEY_DIST = "distribution";
     private static final String MARKER_KEY_FINGERPRINT = "fingerprint";
+    private static final String MARKER_KEY_HOME = "home";
 
     /** Where a domain's configuration, and its truststore, live, relative to the install root. */
     static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
@@ -85,6 +86,19 @@ public final class GlassFishStaging {
     public interface ArtifactResolver {
         Path resolve(ArtifactCoord coord) throws IOException;
     }
+
+    /**
+     * Runs the {@link StagingCommands} on the staged install at {@code home},
+     * on a start of the domain: a brief one of their own, unless the caller
+     * starts it anyway.
+     */
+    @FunctionalInterface
+    public interface CommandRunner {
+        void run(Path home, StagingCommands commands) throws IOException;
+    }
+
+    /** Runs the commands on a brief start of their own, on free ports. */
+    public static final CommandRunner BRIEF_START = BriefStart::runCommands;
 
     private GlassFishStaging() {
     }
@@ -114,10 +128,16 @@ public final class GlassFishStaging {
      * starts afresh.
      */
     public static void stage(StageSpec spec, ArtifactResolver resolver) throws IOException {
+        stage(spec, resolver, BRIEF_START);
+    }
+
+    /** {@link #stage(StageSpec, ArtifactResolver)}, with {@code commandRunner} running the commands. */
+    public static void stage(StageSpec spec, ArtifactResolver resolver, CommandRunner commandRunner)
+            throws IOException {
         Path lockKey = spec.stageDir().toAbsolutePath().normalize();
         synchronized (STAGE_DIR_LOCKS.computeIfAbsent(lockKey, dir -> new Object())) {
             if (!spec.unpackSkip() && spec.distribution() != null) {
-                stageOwned(spec, resolver);
+                stageOwned(spec, resolver, commandRunner);
             } else if ((!spec.overlaySkip() && !spec.overlays().isEmpty()) || spec.certImport().hasWork()) {
                 forgetFingerprint(spec.stageDir().resolve(MARKER_FILE));
                 applyOverlaysAndCerts(spec, resolver);
@@ -125,7 +145,8 @@ public final class GlassFishStaging {
         }
     }
 
-    private static void stageOwned(StageSpec spec, ArtifactResolver resolver) throws IOException {
+    private static void stageOwned(StageSpec spec, ArtifactResolver resolver, CommandRunner commandRunner)
+            throws IOException {
         Path stageDir = spec.stageDir();
         Path marker = stageDir.resolve(MARKER_FILE);
         String gav = spec.distribution().toGav();
@@ -138,14 +159,19 @@ public final class GlassFishStaging {
                 return;
             }
 
+            // The install staged there before: another distribution unpacks to another directory.
+            Path stagedHome = stagedHome(stageDir);
+            if (stagedHome == null) {
+                stagedHome = spec.home();
+            }
             if (stagedFingerprint == null) {
                 LOG.info("Re-staging " + stageDir + ": its last staging didn't finish");
-                BriefStart.stopLeftover(spec.home());
-            } else if (spec.home() != null && new GlassFishDomain(spec.home()).isRunning()) {
+                BriefStart.stopLeftover(stagedHome);
+            } else if (stagedHome != null && new GlassFishDomain(stagedHome).isRunning()) {
                 // Started by glassfish:start: it's not staging's to stop, and wiping it would pull the install out
                 // from under it.
                 throw new IOException("The inputs of " + stageDir + " changed, but " + GlassFishDomain.DOMAIN
-                        + " runs from it. Stop it with glassfish:stop, then build again.");
+                        + " runs from " + stagedHome + ". Stop it with glassfish:stop, then build again.");
             } else {
                 LOG.info("Re-staging " + stageDir + ": its inputs changed");
             }
@@ -157,15 +183,27 @@ public final class GlassFishStaging {
         // A marker without a fingerprint claims the directory, so a staging
         // interrupted from here on is redone by the next run.
         Files.createDirectories(stageDir);
-        writeMarker(marker, gav, null);
+        writeMarker(marker, gav, spec.home(), null);
         wipeAllBut(stageDir, marker);
         LOG.info("Unpacking " + gav + " to " + stageDir);
         unzip(zip, stageDir);
         applyOverlaysAndCerts(spec, resolver);
         if (spec.commands().hasWork()) {
-            BriefStart.runCommands(spec.home(), spec.commands());
+            commandRunner.run(spec.home(), spec.commands());
         }
-        writeMarker(marker, gav, fingerprint);
+        writeMarker(marker, gav, spec.home(), fingerprint);
+    }
+
+    /**
+     * The install root staged in {@code stageDir}, as its marker records it,
+     * or {@code null} without one. It's where a domain {@code glassfish:start}
+     * started runs from, also after the pom names another distribution, which
+     * would unpack to another directory.
+     */
+    public static Path stagedHome(Path stageDir) {
+        Path marker = stageDir.resolve(MARKER_FILE);
+        String home = Files.exists(marker) ? readMarker(marker, MARKER_KEY_HOME) : null;
+        return (home == null) ? null : Paths.get(home);
     }
 
     private static void applyOverlaysAndCerts(StageSpec spec, ArtifactResolver resolver) throws IOException {
@@ -461,15 +499,19 @@ public final class GlassFishStaging {
      */
     private static void forgetFingerprint(Path marker) throws IOException {
         if (Files.exists(marker) && readMarker(marker, MARKER_KEY_FINGERPRINT) != null) {
-            writeMarker(marker, readMarker(marker, MARKER_KEY_DIST), null);
+            String home = readMarker(marker, MARKER_KEY_HOME);
+            writeMarker(marker, readMarker(marker, MARKER_KEY_DIST), (home == null) ? null : Paths.get(home), null);
         }
     }
 
     /** Write the marker; a {@code null} fingerprint marks a staging that hasn't finished. */
-    private static void writeMarker(Path marker, String gav, String fingerprint) throws IOException {
+    private static void writeMarker(Path marker, String gav, Path home, String fingerprint) throws IOException {
         Properties props = new Properties();
         if (gav != null) {
             props.setProperty(MARKER_KEY_DIST, gav);
+        }
+        if (home != null) {
+            props.setProperty(MARKER_KEY_HOME, home.toAbsolutePath().normalize().toString());
         }
         if (fingerprint != null) {
             props.setProperty(MARKER_KEY_FINGERPRINT, fingerprint);

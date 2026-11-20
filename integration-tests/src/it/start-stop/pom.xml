@@ -28,9 +28,12 @@
 
     <name>Integration Test: glassfish:start and glassfish:stop</name>
     <description>
-        Three Maven invocations: glassfish:start from a clean checkout, a test
-        that GlassFish still answers after that Maven exited, and
-        glassfish:stop from a fresh one. Run via integration-tests'
+        Separate Maven invocations: glassfish:start from a clean checkout,
+        which runs the post-boot commands on its own start, a test that
+        GlassFish still answers after that Maven exited, clean
+        glassfish:stop, which stops it although clean deleted its install,
+        start and stop again, and a suspended start nobody attaches to,
+        which leaves no server behind. Run via integration-tests'
         maven-invoker harness.
     </description>
 
@@ -60,6 +63,10 @@
                 <version>${container.version}</version>
                 <configuration>
                     <distribution>${glassfish.version}</distribution>
+                    <!-- Run on start's own start, not on a brief one. -->
+                    <postBootCommands>
+                        create-system-properties start.stop.it=applied
+                    </postBootCommands>
                 </configuration>
             </plugin>
 

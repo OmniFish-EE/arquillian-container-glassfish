@@ -243,14 +243,41 @@ class GlassFishStagingTest {
         StageSpec spec = ownedSpec(tmp.resolve("stage"), List.of(faces()), CertImport.NONE);
         GlassFishStaging.stage(spec, facesOr(jar, zip));
         Path leftover = Files.createFile(tmp.resolve("stage/glassfish9/leftover.txt"));
-        runsFrom(tmp.resolve("stage/glassfish9"), ProcessHandle.current().pid());
+        Process server = FakeDomain.startServer(tmp.resolve("stage/glassfish9"));
+        try {
+            Files.writeString(jar, "build 2");
+            Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+            IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(spec, facesOr(jar, zip)));
 
-        Files.writeString(jar, "build 2");
-        Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
-        IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(spec, facesOr(jar, zip)));
+            assertThat(e.getMessage(), containsString("glassfish:stop"));
+            assertThat(Files.exists(leftover), is(true));
+        } finally {
+            server.destroyForcibly();
+        }
+    }
 
-        assertThat(e.getMessage(), containsString("glassfish:stop"));
-        assertThat(Files.exists(leftover), is(true));
+    /**
+     * Another distribution unpacks to another directory, while the domain
+     * glassfish:start started runs from the one staged before. The marker
+     * records that one, and staging checks it.
+     */
+    @Test
+    void anInstallItsDomainRunsFromIsNotReplacedByAnotherDistribution(@TempDir Path tmp) throws Exception {
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(new StageSpec(stage, distribution("7.1.0"), false, stage.resolve("glassfish7"),
+                null, List.of(), false), coord -> zip(tmp, "glassfish7/glassfish/modules/shipped.jar"));
+        assertThat(GlassFishStaging.stagedHome(stage), equalTo(stage.resolve("glassfish7").toAbsolutePath()));
+        Process server = FakeDomain.startServer(stage.resolve("glassfish7"));
+        try {
+            IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(
+                    new StageSpec(stage, distribution("8.0.5"), false, stage.resolve("glassfish8"), null, List.of(),
+                            false), coord -> zip(tmp.resolve("other"), "glassfish8/glassfish/modules/shipped.jar")));
+
+            assertThat(e.getMessage(), containsString(stage.resolve("glassfish7").toAbsolutePath().toString()));
+            assertThat(Files.isDirectory(stage.resolve("glassfish7")), is(true));
+        } finally {
+            server.destroyForcibly();
+        }
     }
 
     /** As after a server was killed, which leaves its pid file behind. */

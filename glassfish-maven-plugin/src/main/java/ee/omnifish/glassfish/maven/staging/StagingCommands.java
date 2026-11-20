@@ -17,9 +17,10 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 
 /**
  * {@code asadmin} commands for {@link GlassFishStaging} to run on the staged
- * install, during a brief start after the overlays and certificates: setup
- * whose effects persist, such as users, resources and {@code set} calls. They
- * run once per staging, so only on an install staging unpacks itself.
+ * install, during a start after the overlays and certificates: a brief one of
+ * their own, or the one {@code glassfish:start} makes. They're setup whose
+ * effects persist, such as users, resources and {@code set} calls. They run
+ * once per staging, so only on an install staging unpacks itself.
  */
 public final class StagingCommands {
 

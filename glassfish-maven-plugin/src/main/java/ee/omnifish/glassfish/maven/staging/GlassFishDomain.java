@@ -36,8 +36,12 @@ import static ee.omnifish.glassfish.maven.staging.GlassFishStaging.DOMAIN_CONFIG
  * {@code domain1} of an install, as {@code glassfish:start} and
  * {@code glassfish:stop} run it: started and stopped with {@code asadmin}, and
  * known to run by the {@code config/pid} file GlassFish keeps while it runs,
- * naming a process that's alive. A stale {@code config/pid}, left by a server
- * that was killed, doesn't count.
+ * naming a process that's alive, and that is this domain's server: GlassFish
+ * passes its server the domain's directory. A stale {@code config/pid}, left
+ * by a server that was killed, doesn't count, also when the system has given
+ * its number to another process since. Without a {@code config/pid}, the
+ * server is found by its command line, as after {@code mvn clean} deleted the
+ * install it runs from.
  */
 public final class GlassFishDomain {
 
@@ -46,10 +50,16 @@ public final class GlassFishDomain {
     /** Deadline for {@code stop-domain}. */
     private static final Duration STOP_TIMEOUT = Duration.ofMinutes(2);
 
+    /** How much longer {@code start-domain}'s own timeout is than the one this class enforces. */
+    private static final Duration ASADMIN_TIMEOUT_MARGIN = Duration.ofMinutes(1);
+
     /** How long a stopped server's process may take to end. */
     private static final Duration DEFAULT_EXIT_WAIT = Duration.ofSeconds(10);
 
     private static final int PROBE_TIMEOUT_MILLIS = 1000;
+
+    /** How GlassFish passes its server the domain's directory. */
+    private static final String INSTANCE_ROOT = "-Dcom.sun.aas.instanceRoot=";
 
     private static final Pattern DEBUG_ADDRESS = Pattern.compile("debug-options=\"[^\"]*address=([^,\" ]+)");
 
@@ -71,14 +81,43 @@ public final class GlassFishDomain {
         return home;
     }
 
-    /** The process of the running domain, by its {@code config/pid}, if that process is alive. */
+    /**
+     * The process of the running domain: by its {@code config/pid}, if that
+     * process is alive and this domain's, or, without a {@code config/pid},
+     * by its command line. That finds a server whose install {@code mvn clean}
+     * deleted while it ran, and one that waits for a debugger and has no
+     * {@code config/pid} yet. Where the system doesn't say what a process
+     * runs, only {@code config/pid} finds it.
+     */
     public Optional<ProcessHandle> process() {
-        Path pidFile = home.resolve(DOMAIN_CONFIG).resolve("pid");
+        Path pidFile = pidFile();
+        if (!Files.exists(pidFile)) {
+            return ProcessHandle.allProcesses()
+                    .filter(process -> process.info().commandLine().map(this::runsThisDomain).orElse(false))
+                    .findFirst();
+        }
         try {
             long pid = Long.parseLong(Files.readString(pidFile).trim());
-            return ProcessHandle.of(pid).filter(ProcessHandle::isAlive);
+            return ProcessHandle.of(pid)
+                    .filter(ProcessHandle::isAlive)
+                    .filter(process -> process.info().commandLine().map(this::runsThisDomain).orElse(true));
         } catch (IOException | NumberFormatException e) {
             return Optional.empty();
+        }
+    }
+
+    /** Whether {@code commandLine} is that of this domain's server, which GlassFish passes the domain's directory. */
+    private boolean runsThisDomain(String commandLine) {
+        String args = commandLine + " ";
+        Path domainDir = pidFile().getParent().getParent().toAbsolutePath().normalize();
+        if (args.contains(INSTANCE_ROOT + domainDir + " ")) {
+            return true;
+        }
+        try {
+            return args.contains(INSTANCE_ROOT + domainDir.toRealPath() + " ");
+        } catch (IOException e) {
+            // Gone, as after mvn clean, so there's no other name for it.
+            return false;
         }
     }
 
@@ -86,9 +125,10 @@ public final class GlassFishDomain {
         return process().isPresent();
     }
 
-    /** The admin port in the domain's {@code domain.xml}. */
+    /** The admin port in the domain's {@code domain.xml}, also when a system property sets it. */
     public int adminPort() throws IOException {
-        String port = DomainXmlEditor.ports(home.resolve(DOMAIN_CONFIG).resolve("domain.xml")).get(ADMIN_LISTENER);
+        Path domainXml = home.resolve(DOMAIN_CONFIG).resolve("domain.xml");
+        String port = DomainXmlEditor.resolve(domainXml, DomainXmlEditor.ports(domainXml).get(ADMIN_LISTENER));
         if (port == null || !port.matches("\\d+")) {
             throw new IOException("No admin port in the domain.xml of " + home + ": " + port);
         }
@@ -110,10 +150,14 @@ public final class GlassFishDomain {
      * Run {@code start-domain}, which returns once the admin endpoint
      * answers. If it doesn't within {@code timeout}, {@code asadmin} is
      * killed with what it started, so a server JVM that waits for a debugger
-     * doesn't stay behind.
+     * doesn't stay behind. {@code start-domain}'s own timeout is set past
+     * that: when it gives up first, it exits, and leaves such a JVM running,
+     * without a {@code config/pid} yet to find it by.
      */
     public void start(boolean debug, boolean suspend, Duration timeout) {
         List<String> args = new ArrayList<>();
+        args.add("--timeout");
+        args.add(String.valueOf(timeout.plus(ASADMIN_TIMEOUT_MARGIN).toSeconds()));
         if (debug) {
             args.add("--debug");
         }
@@ -127,8 +171,10 @@ public final class GlassFishDomain {
     /**
      * Stop the domain with a local {@code stop-domain}, which checks that it
      * reaches this domain, and with {@code stop-domain --kill} if this
-     * domain's process still runs after that. A domain that doesn't run is
-     * left alone, also when another server answers on its admin port.
+     * domain's process still runs after that. Without a {@code config/pid},
+     * which {@code asadmin} needs to find the process, it's asked to end,
+     * and killed if it doesn't. A domain that doesn't run is left alone, also
+     * when another server answers on its admin port.
      *
      * @return whether the domain ran
      * @throws IOException if the domain's process still runs afterwards
@@ -139,27 +185,39 @@ public final class GlassFishDomain {
             return false;
         }
 
+        if (Files.exists(pidFile())) {
+            stopDomain(process.get());
+        } else {
+            process.get().destroy();
+            if (!hasEnded(process.get())) {
+                process.get().destroyForcibly();
+            }
+        }
+        if (!hasEnded(process.get())) {
+            throw new IOException(DOMAIN + " of " + home + " still runs, as process " + process.get().pid()
+                    + ", after it was stopped and killed");
+        }
+
+        return true;
+    }
+
+    /** {@code stop-domain}, and {@code stop-domain --kill} if {@code process} still runs after that. */
+    private void stopDomain(ProcessHandle process) {
         AsAdmin asadmin = new AsAdmin(home);
         try {
             asadmin.run(STOP_TIMEOUT, "stop-domain", DOMAIN);
         } catch (AsAdminException e) {
             // Killed below, if it still runs.
         }
-        if (hasEnded(process.get())) {
-            return true;
+        if (hasEnded(process)) {
+            return;
         }
 
         try {
             asadmin.run(STOP_TIMEOUT, "stop-domain", "--kill", DOMAIN);
         } catch (AsAdminException e) {
-            // Reported below, if it still runs.
+            // Reported by stop, if it still runs.
         }
-        if (!hasEnded(process.get())) {
-            throw new IOException(DOMAIN + " of " + home + " still runs, as process " + process.get().pid()
-                    + ", after stop-domain and stop-domain --kill");
-        }
-
-        return true;
     }
 
     /** Whether something answers on {@code port} on this machine. */
@@ -170,6 +228,10 @@ public final class GlassFishDomain {
         } catch (IOException e) {
             return false;
         }
+    }
+
+    private Path pidFile() {
+        return home.resolve(DOMAIN_CONFIG).resolve("pid");
     }
 
     private boolean hasEnded(ProcessHandle process) {

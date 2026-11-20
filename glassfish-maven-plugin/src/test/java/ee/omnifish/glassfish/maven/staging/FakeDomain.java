@@ -18,8 +18,16 @@ import java.util.Optional;
  */
 public final class FakeDomain {
 
-    /** {@code start-domain} starts a stand-in server, which outlives the script, as GlassFish does. */
-    public static final String START = "  *start-domain*) sleep 120 >/dev/null 2>&1 & echo $! > \"$PID\" ;;\n";
+    /** Idles; its sleeps are short, so none outlives it for long. */
+    private static final String IDLE = "while :; do sleep 1; done";
+
+    /**
+     * {@code start-domain} starts a stand-in server, which outlives the
+     * script, as GlassFish does. GlassFish passes its server the domain's
+     * directory, and so does this.
+     */
+    public static final String START = "  *start-domain*) sh -c '" + IDLE + "' \"-Dcom.sun.aas.instanceRoot=$DOMAIN\""
+            + " >/dev/null 2>&1 & echo $! > \"$PID\" ;;\n";
 
     /** {@code stop-domain}, with or without {@code --kill}, ends the stand-in server. */
     public static final String STOP = "  *stop-domain*) kill $(cat \"$PID\") && rm -f \"$PID\" ;;\n";
@@ -30,7 +38,7 @@ public final class FakeDomain {
     /**
      * An install at {@code home}, whose {@code asadmin} runs {@code cases},
      * lines of a shell {@code case "$*" in}, with {@code $PID} the domain's
-     * pid file.
+     * pid file, and {@code $DOMAIN} its directory.
      */
     public static Path install(Path home, int adminPort, String cases) throws IOException {
         Path config = Files.createDirectories(home.resolve(GlassFishStaging.DOMAIN_CONFIG));
@@ -44,6 +52,7 @@ public final class FakeDomain {
         Path asadmin = Files.createDirectories(home.resolve("glassfish/bin")).resolve("asadmin");
         Files.writeString(asadmin, "#!/bin/sh\n"
                 + "PID='" + config.resolve("pid") + "'\n"
+                + "DOMAIN='" + config.getParent() + "'\n"
                 + "echo \"$@\" >> \"$(dirname \"$0\")/calls.log\"\n"
                 + "case \"$*\" in\n" + cases + "esac\n");
         if (!asadmin.toFile().setExecutable(true)) {
@@ -62,6 +71,16 @@ public final class FakeDomain {
     /** The stand-in server process, if it runs. */
     public static Optional<ProcessHandle> server(Path home) {
         return new GlassFishDomain(home).process();
+    }
+
+    /** A stand-in server for {@code home}'s domain, started outside asadmin, with its pid where GlassFish keeps it. */
+    public static Process startServer(Path home) throws IOException {
+        Path pid = Files.createDirectories(home.resolve(GlassFishStaging.DOMAIN_CONFIG)).resolve("pid");
+        Files.writeString(pid, "");
+        Process server = new ProcessBuilder("sh", "-c", IDLE, "-Dcom.sun.aas.instanceRoot=" + pid.getParent().getParent())
+                .start();
+        Files.writeString(pid, String.valueOf(server.pid()));
+        return server;
     }
 
     /** End the stand-in server a test left running. */

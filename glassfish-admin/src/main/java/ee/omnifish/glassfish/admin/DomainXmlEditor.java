@@ -128,6 +128,31 @@ public final class DomainXmlEditor {
     }
 
     /**
+     * {@code value}, or the value of the system property its {@code ${name}}
+     * stands for, as the DAS resolves it: the server's own
+     * {@code <system-property>} first, then its config's, then the domain's.
+     * A value that isn't one placeholder, or one no system property defines,
+     * comes back as it is.
+     */
+    public static String resolve(Path domainXml, String value) throws IOException {
+        if (value == null || !value.matches("\\$\\{[^}]+}")) {
+            return value;
+        }
+
+        String name = value.substring(2, value.length() - 1);
+        Document doc = parse(domainXml);
+        for (Element scope : dasScopes(doc)) {
+            for (Element property : directChildren(scope, "system-property")) {
+                if (name.equals(property.getAttribute("name"))) {
+                    return property.getAttribute("value");
+                }
+            }
+        }
+
+        return value;
+    }
+
+    /**
      * Upsert {@code -D<key>=<value>} entries into every {@code <java-config>}
      * block. Each {@code key=value} input becomes/overwrites a
      * {@code <jvm-options>-Dkey=value</jvm-options>} child of {@code <java-config>}:
@@ -241,6 +266,32 @@ public final class DomainXmlEditor {
      * its {@code <server name="server">} element's {@code config-ref} names,
      * else {@code server-config}.
      */
+    /** The DAS's {@code <server>}, its {@code <config>} and the {@code <domain>}, in that order, where present. */
+    private static List<Element> dasScopes(Document doc) {
+        List<Element> scopes = new ArrayList<>();
+        String configRef = DEFAULT_SERVER_CONFIG;
+        NodeList servers = doc.getElementsByTagName("server");
+        for (int i = 0; i < servers.getLength(); i++) {
+            Element server = (Element) servers.item(i);
+            if ("server".equals(server.getAttribute("name"))) {
+                scopes.add(server);
+                if (server.hasAttribute("config-ref")) {
+                    configRef = server.getAttribute("config-ref");
+                }
+            }
+        }
+        NodeList configs = doc.getElementsByTagName("config");
+        for (int i = 0; i < configs.getLength(); i++) {
+            Element config = (Element) configs.item(i);
+            if (configRef.equals(config.getAttribute("name"))) {
+                scopes.add(config);
+            }
+        }
+        scopes.add(doc.getDocumentElement());
+
+        return scopes;
+    }
+
     private static List<Element> serverListeners(Document doc, Path domainXml) throws IOException {
         String configRef = DEFAULT_SERVER_CONFIG;
         NodeList servers = doc.getElementsByTagName("server");

@@ -78,6 +78,8 @@
                         <project.version>${project.version}</project.version>
                     </filterProperties>
                     <streamLogs>true</streamLogs>
+                    <!-- The ITs check their outcome in verify.groovy; the plugin looks for postbuild.* by default. -->
+                    <postBuildHookScript>verify</postBuildHookScript>
                     <skipInvocation>${skipITs}</skipInvocation>
                 </configuration>
                 <executions>

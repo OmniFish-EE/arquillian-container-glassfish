@@ -114,7 +114,7 @@ note applies:
 | `trustStore`       | `glassfish.trustStore`       | the domain's `cacerts.p12`        | Where they go; `cacerts.jks` in older versions. Doesn't change which truststore GlassFish reads. |
 | `trustStorePassword` | `glassfish.trustStorePassword` | `changeit`                    | The truststore's password. |
 | `certsSkip`        | `glassfish.certs.skip`       | `false`                           | Skip the certificate import. |
-| `postBootCommands` | (none)                       | (none)                            | `asadmin` commands run once, on a brief start during staging. One per line. See *Post-boot commands*. |
+| `postBootCommands` | (none)                       | (none)                            | `asadmin` commands run once, on a brief start during staging, or on `start`'s own start. One per line. See *Post-boot commands*. |
 | `failOnCommandError` | `glassfish.failOnCommandError` | `true`                        | Whether a failed post-boot or post-start command fails the build. |
 | `skip`             | `glassfish.provision.skip`   | `false`                           | Skip the goal: nothing is unpacked or published. |
 
@@ -270,8 +270,9 @@ half of it behind.
 
 `<postBootCommands>` are `asadmin` commands that `provision` runs once on
 the staged install, during a brief start after the overlays and
-certificates. They're for setup whose effects persist, such as users,
-resources and `set` calls:
+certificates. `glassfish:start` runs them on the start it makes anyway; see
+*Starting and stopping GlassFish*. They're for setup whose effects persist,
+such as users, resources and `set` calls:
 
 ```xml
 <configuration>
@@ -345,11 +346,19 @@ the same, also from a clean checkout.
 - **An occupied admin port:** `start` fails before starting anything when
   something already answers on the domain's admin port. That may be another
   domain set up with the same port, or this one, still running.
-- **`postStartCommands`** run after every start, against the domain's admin
-  port as it is then, also when a post-boot command changed it. One per
-  line, as post-boot commands. With `failOnCommandError`, a failed one stops
-  the domain again and fails the goal, so a failure in
-  `pre-integration-test` doesn't leave a server behind.
+- **`postBootCommands`**, when staging has them to run, run on this start,
+  not on a brief one of their own, and before the `postStartCommands`. A
+  command that only takes effect when GlassFish restarts, such as
+  `create-jvm-options`, then takes effect from the next start. When
+  `provision` runs first in the same build, as the extension binds it, it
+  runs them on a brief start, and they're in effect at once. With
+  `failOnCommandError`, a failed one stops the domain again, and the next
+  build stages afresh.
+- **`postStartCommands`** run after every start, against the admin port the
+  domain started on. One per line, as post-boot commands. With
+  `failOnCommandError`, a failed one stops the domain again and fails the
+  goal, so a failure in `pre-integration-test` doesn't leave a server
+  behind.
 - **`debug` and `suspend`** (`-Dglassfish.start.debug`,
   `-Dglassfish.start.suspend`) start the domain with `start-domain --debug`
   and `--suspend`. With `suspend`, the server waits for a debugger before it
@@ -361,6 +370,12 @@ the same, also from a clean checkout.
   both. A domain that doesn't run is fine, also when another server answers
   on its admin port: `stop` leaves that server alone. `stop` doesn't
   provision, so it also stops a domain after the pom changed.
+- **After `mvn clean`**, which deletes the install while the domain runs from
+  it, `stop` finds the server by the domain directory on its command line,
+  since `config/pid` and `asadmin` are gone, and ends it directly: asked
+  first, then killed. On Windows, Java doesn't read other processes' command
+  lines, so there, stop the domain before `clean`, as in
+  `mvn glassfish:stop clean`.
 - `start` and `stop` skip with `-DskipTests` or `-Dmaven.test.skip`, like
   `provision`, or with `-Dglassfish.start.skip` and `-Dglassfish.stop.skip`.
 
