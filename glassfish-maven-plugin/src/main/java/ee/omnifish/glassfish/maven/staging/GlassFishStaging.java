@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -155,6 +156,10 @@ public final class GlassFishStaging {
         if (Files.exists(marker)) {
             String stagedFingerprint = readMarker(marker, MARKER_KEY_FINGERPRINT);
             if (fingerprint.equals(stagedFingerprint)) {
+                if (stagedHome(stageDir) == null && spec.home() != null) {
+                    // Written by plugin 2.2.2, which didn't record the install.
+                    writeMarker(marker, gav, spec.home(), fingerprint);
+                }
                 LOG.debug("Already staged at " + stageDir + " (" + gav + ")");
                 return;
             }
@@ -167,12 +172,15 @@ public final class GlassFishStaging {
             if (stagedFingerprint == null) {
                 LOG.info("Re-staging " + stageDir + ": its last staging didn't finish");
                 BriefStart.stopLeftover(stagedHome);
-            } else if (stagedHome != null && new GlassFishDomain(stagedHome).isRunning()) {
-                // Started by glassfish:start: it's not staging's to stop, and wiping it would pull the install out
-                // from under it.
-                throw new IOException("The inputs of " + stageDir + " changed, but " + GlassFishDomain.DOMAIN
-                        + " runs from " + stagedHome + ". Stop it with glassfish:stop, then build again.");
             } else {
+                Optional<GlassFishDomain> running = runningDomain(stageDir, stagedHome);
+                if (running.isPresent()) {
+                    // Started by glassfish:start: it's not staging's to stop, and wiping it would pull the install
+                    // out from under it.
+                    throw new IOException("The inputs of " + stageDir + " changed, but " + GlassFishDomain.DOMAIN
+                            + " runs from " + running.get().home() + ". Stop it with glassfish:stop, then build "
+                            + "again.");
+                }
                 LOG.info("Re-staging " + stageDir + ": its inputs changed");
             }
         } else if (!isEmpty(stageDir)) {
@@ -204,6 +212,23 @@ public final class GlassFishStaging {
         Path marker = stageDir.resolve(MARKER_FILE);
         String home = Files.exists(marker) ? readMarker(marker, MARKER_KEY_HOME) : null;
         return (home == null) ? null : Paths.get(home);
+    }
+
+    /**
+     * {@code domain1} of the install staged in {@code stageDir}, if it runs:
+     * by the {@code config/pid} of {@code stagedHome}, or by the command line
+     * of a server of any install there, as for a marker plugin 2.2.2 wrote,
+     * which doesn't record the install.
+     */
+    private static Optional<GlassFishDomain> runningDomain(Path stageDir, Path stagedHome) {
+        if (stagedHome != null) {
+            GlassFishDomain staged = new GlassFishDomain(stagedHome);
+            if (staged.isRunning()) {
+                return Optional.of(staged);
+            }
+        }
+
+        return GlassFishDomain.runningIn(stageDir);
     }
 
     private static void applyOverlaysAndCerts(StageSpec spec, ArtifactResolver resolver) throws IOException {

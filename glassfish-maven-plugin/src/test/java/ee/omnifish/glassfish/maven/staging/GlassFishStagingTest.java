@@ -26,6 +26,7 @@ import java.security.cert.CertificateFactory;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -267,6 +268,45 @@ class GlassFishStagingTest {
         GlassFishStaging.stage(new StageSpec(stage, distribution("7.1.0"), false, stage.resolve("glassfish7"),
                 null, List.of(), false), coord -> zip(tmp, "glassfish7/glassfish/modules/shipped.jar"));
         assertThat(GlassFishStaging.stagedHome(stage), equalTo(stage.resolve("glassfish7").toAbsolutePath()));
+        Process server = FakeDomain.startServer(stage.resolve("glassfish7"));
+        try {
+            IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(
+                    new StageSpec(stage, distribution("8.0.5"), false, stage.resolve("glassfish8"), null, List.of(),
+                            false), coord -> zip(tmp.resolve("other"), "glassfish8/glassfish/modules/shipped.jar")));
+
+            assertThat(e.getMessage(), containsString(stage.resolve("glassfish7").toAbsolutePath().toString()));
+            assertThat(Files.isDirectory(stage.resolve("glassfish7")), is(true));
+        } finally {
+            server.destroyForcibly();
+        }
+    }
+
+    /** Plugin 2.2.2 didn't record the install in the marker; a run that finds it staged adds it. */
+    @Test
+    void aMarkerWithoutTheInstallGetsIt(@TempDir Path tmp) throws Exception {
+        Path stage = tmp.resolve("stage");
+        StageSpec spec = new StageSpec(stage, distribution("7.1.0"), false, stage.resolve("glassfish7"), null,
+                List.of(), false);
+        Path zip = zip(tmp, "glassfish7/glassfish/modules/shipped.jar");
+        GlassFishStaging.stage(spec, coord -> zip);
+        forgetHome(stage);
+        Path leftover = Files.writeString(stage.resolve("glassfish7/leftover.txt"), "kept");
+
+        GlassFishStaging.stage(spec, coord -> zip);
+
+        assertThat(GlassFishStaging.stagedHome(stage), equalTo(stage.resolve("glassfish7").toAbsolutePath()));
+        assertThat(Files.exists(leftover), is(true));
+    }
+
+    /** Also with a marker plugin 2.2.2 wrote, which doesn't say which install the domain runs from. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "Java doesn't read other processes' command lines there")
+    void anInstallItsDomainRunsFromIsNotReplacedAlsoWhenTheMarkerDoesNotRecordIt(@TempDir Path tmp)
+            throws Exception {
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(new StageSpec(stage, distribution("7.1.0"), false, stage.resolve("glassfish7"),
+                null, List.of(), false), coord -> zip(tmp, "glassfish7/glassfish/modules/shipped.jar"));
+        forgetHome(stage);
         Process server = FakeDomain.startServer(stage.resolve("glassfish7"));
         try {
             IOException e = assertThrows(IOException.class, () -> GlassFishStaging.stage(
@@ -687,5 +727,18 @@ class GlassFishStagingTest {
 
     private static Path stagedTrustStore(Path tmp) {
         return tmp.resolve("stage/glassfish9").resolve(DOMAIN_CONFIG).resolve("cacerts.p12");
+    }
+
+    /** Rewrite the marker in {@code stage} as plugin 2.2.2 wrote it: without the install. */
+    private static void forgetHome(Path stage) throws IOException {
+        Path marker = stage.resolve(".staging-glassfish.properties");
+        Properties props = new Properties();
+        try (InputStream in = Files.newInputStream(marker)) {
+            props.load(in);
+        }
+        props.remove("home");
+        try (OutputStream out = Files.newOutputStream(marker)) {
+            props.store(out, null);
+        }
     }
 }

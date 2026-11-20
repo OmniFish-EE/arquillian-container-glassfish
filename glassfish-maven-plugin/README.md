@@ -62,14 +62,18 @@ declares it (directly or inherited from a parent's `<plugins>`):
 It picks up the plugin-level `<configuration>`, and a `provision` you bind
 yourself is left alone. `process-test-classes` is the last phase before
 `test`, so the install is ready for surefire and failsafe alike, while
-`mvn test-compile` doesn't fetch GlassFish.
+`mvn test-compile` doesn't fetch GlassFish. When you bind `start`, the
+extension adds nothing: `start` provisions the install itself, and runs the
+post-boot commands on its own start.
 
 The extension also hands the install to the test JVMs. `provision` sets
 the project property `glassfish.home`, but surefire and failsafe don't pass
 project properties to their forks. So the plugin adds
 `<glassfish.home>${glassfish.home}</glassfish.home>` to the
 `<systemPropertyVariables>` of both. Maven resolves that reference when the
-tests run, after `provision`. An entry you configure yourself wins.
+tests run, after `provision`. With `start` bound, which runs in
+`pre-integration-test`, only failsafe gets it. An entry you configure
+yourself wins.
 
 Without `<extensions>true</extensions>`, bind the goal and add the
 reference yourself:
@@ -124,6 +128,7 @@ first and `stop` works out where the install is from them. `start` adds:
 | Parameter          | Property                     | Default                           | Notes |
 | ------------------ | ---------------------------- | --------------------------------- | ----- |
 | `postStartCommands` | (none)                      | (none)                            | `asadmin` commands run after every start. One per line. |
+| `postBootRestart`  | `glassfish.postBootRestart`  | `auto`                            | Whether to restart GlassFish after the post-boot commands ran on this start: `auto`, `always` or `never`. See *Starting and stopping GlassFish*. |
 | `debug`            | `glassfish.start.debug`      | `false`                           | Start with `start-domain --debug`. |
 | `suspend`          | `glassfish.start.suspend`    | `false`                           | Start with `start-domain --suspend`, waiting for a debugger. |
 | `startTimeout`     | `glassfish.start.timeout`    | `300`                             | Seconds `start-domain` may take, including the wait for a debugger. |
@@ -318,8 +323,8 @@ there to `<postBootCommands>` runs once, instead of delaying every start.
 nothing when it's staged already, then starts `domain1` and returns once it
 answers and its `postStartCommands` have run. The server keeps running,
 also after Maven exits, until `glassfish:stop`. The extension binds neither
-goal, so a build starts a server only when it says so. For the remote
-Arquillian Container:
+goal, so a build starts a server only when it says so, and it leaves
+`provision` out when you bind `start`. For the remote Arquillian Container:
 
 ```xml
 <plugin>
@@ -347,18 +352,37 @@ the same, also from a clean checkout.
   something already answers on the domain's admin port. That may be another
   domain set up with the same port, or this one, still running.
 - **`postBootCommands`**, when staging has them to run, run on this start,
-  not on a brief one of their own, and before the `postStartCommands`. A
-  command that only takes effect when GlassFish restarts, such as
-  `create-jvm-options`, then takes effect from the next start. When
-  `provision` runs first in the same build, as the extension binds it, it
-  runs them on a brief start, and they're in effect at once. With
-  `failOnCommandError`, a failed one stops the domain again, and the next
-  build stages afresh.
+  not on a brief one of their own, and before the `postStartCommands`.
+  Some take effect only when GlassFish restarts, such as a JVM option like
+  `-Xmx`, or a change to the admin listener. `postBootRestart`
+  (`-Dglassfish.postBootRestart`) says whether `start` then restarts
+  GlassFish, so that what they configured is active when it returns:
+  - `auto`, the default, restarts when GlassFish reports that a change
+    needs a restart, as `asadmin _get-restart-required --why` shows, or
+    when a command makes a change GlassFish applies only on a restart
+    without reporting it: one to the admin listener, the JMX connector or
+    an IIOP listener, such as its port, or to a system property that
+    `domain.xml` refers to, as a JVM option `-Dderived=${NAME}` does. The
+    log says why.
+  - `always` restarts, for a change GlassFish needs a restart for without
+    reporting it.
+  - `never` doesn't, and what needs a restart takes effect from the next
+    start.
+
+  The restart happens only on the first start after staging. With
+  `suspend`, the start before a restart isn't suspended, so the debugger
+  attaches once, to the start that stays; with `auto`, `suspend` restarts
+  it for that. A `-D` JVM option needs no restart: GlassFish sets it in the
+  running server, though code that read it at startup doesn't see it. When
+  you bind `provision` before it yourself, that runs them on a brief start,
+  and they're in effect at once. With `failOnCommandError`, a failed one
+  stops the domain again, and the next build stages afresh.
 - **`postStartCommands`** run after every start, against the admin port the
   domain started on. One per line, as post-boot commands. With
   `failOnCommandError`, a failed one stops the domain again and fails the
   goal, so a failure in `pre-integration-test` doesn't leave a server
-  behind.
+  behind, and one that can't be read, such as one with an unclosed quote,
+  fails the goal before anything starts.
 - **`debug` and `suspend`** (`-Dglassfish.start.debug`,
   `-Dglassfish.start.suspend`) start the domain with `start-domain --debug`
   and `--suspend`. With `suspend`, the server waits for a debugger before it
@@ -371,9 +395,10 @@ the same, also from a clean checkout.
   on its admin port: `stop` leaves that server alone. `stop` doesn't
   provision, so it also stops a domain after the pom changed.
 - **After `mvn clean`**, which deletes the install while the domain runs from
-  it, `stop` finds the server by the domain directory on its command line,
-  since `config/pid` and `asadmin` are gone, and ends it directly: asked
-  first, then killed. On Windows, `clean` can't delete the files a running
+  it, with `config/pid`, `asadmin` and the staging marker, `stop` finds the
+  server by its command line: the server of a domain in any install in
+  `stageDir`, also when the pom names another distribution by then. It ends
+  it directly: asked first, then killed. On Windows, `clean` can't delete the files a running
   GlassFish keeps open, and Java doesn't read other processes' command
   lines, so there, stop the domain before `clean`, as in
   `mvn glassfish:stop clean`.

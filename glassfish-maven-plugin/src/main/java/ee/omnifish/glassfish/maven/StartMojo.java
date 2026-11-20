@@ -13,6 +13,8 @@ package ee.omnifish.glassfish.maven;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.maven.plugin.MojoExecutionException;
@@ -34,8 +36,8 @@ import ee.omnifish.glassfish.maven.staging.StagingCommands;
  * example for the remote Arquillian Container. The install is provisioned
  * first, as {@code provision} does, which costs nothing when it's staged
  * already. Its {@code postBootCommands}, when staging has them to run, run on
- * this start, not on a brief one of their own. Stop it with
- * {@code glassfish:stop}.
+ * this start, not on a brief one of their own, followed by a restart when
+ * {@code postBootRestart} says so. Stop it with {@code glassfish:stop}.
  *
  * <p>The extension doesn't bind this goal: a server that outlives the build
  * should be started explicitly, in an {@code <execution>}. Default phase
@@ -59,6 +61,17 @@ public class StartMojo extends AbstractStagingMojo {
      */
     @Parameter
     private String postStartCommands;
+
+    /**
+     * Whether to restart GlassFish after its {@code postBootCommands} ran on
+     * this start, so that what they configured is active when this goal
+     * returns: {@code auto} restarts when GlassFish reports that a change
+     * needs a restart, or a command is one GlassFish needs a restart for
+     * without reporting it, such as one that moves the admin listener;
+     * {@code always} restarts; {@code never} doesn't.
+     */
+    @Parameter(property = "glassfish.postBootRestart", defaultValue = "auto")
+    private String postBootRestart;
 
     /** Start with the debugger enabled, as {@code start-domain --debug}. */
     @Parameter(property = "glassfish.start.debug", defaultValue = "false")
@@ -90,6 +103,7 @@ public class StartMojo extends AbstractStagingMojo {
             return;
         }
 
+        PostBootRestart restart = PostBootRestart.of(postBootRestart);
         StagingCommands commands = new StagingCommands(postStartCommands, failOnCommandError);
         requireReadable(commands);
         Duration timeout = Duration.ofSeconds(startTimeout);
@@ -97,8 +111,8 @@ public class StartMojo extends AbstractStagingMojo {
         AtomicInteger startedOn = new AtomicInteger();
         Path home = provision((installRoot, postBootCommands) -> {
             try {
-                startedOn.set(start(new GlassFishDomain(installRoot), postBootCommands, debug, suspend, timeout,
-                        getLog()));
+                startedOn.set(start(new GlassFishDomain(installRoot), postBootCommands, restart, debug, suspend,
+                        timeout, getLog()));
             } catch (MojoExecutionException e) {
                 throw new IOException(e.getMessage(), e);
             }
@@ -110,16 +124,22 @@ public class StartMojo extends AbstractStagingMojo {
         GlassFishDomain domain = new GlassFishDomain(home);
         int adminPort = startedOn.get();
         if (adminPort == 0) {
-            adminPort = start(domain, StagingCommands.NONE, debug, suspend, timeout, getLog());
+            adminPort = start(domain, StagingCommands.NONE, restart, debug, suspend, timeout, getLog());
         }
         runPostStartCommands(domain, adminPort, commands, getLog());
     }
 
     /**
-     * Fail on a command that can't be read, such as one with an unclosed
-     * quote, before anything starts. Package-private for unit tests.
+     * With {@code failOnError}, fail on a command that can't be read, such as
+     * one with an unclosed quote, before anything starts. Without it, such a
+     * command is logged as failed when it's due, as any other failure.
+     * Package-private for unit tests.
      */
     static void requireReadable(StagingCommands commands) throws MojoExecutionException {
+        if (!commands.failOnError()) {
+            return;
+        }
+
         for (String command : commands.lines()) {
             try {
                 PostBootCommands.words(command);
@@ -131,14 +151,18 @@ public class StartMojo extends AbstractStagingMojo {
 
     /**
      * Start {@code domain}, and run {@code postBootCommands} on it: staging's,
-     * when it has them to run. Fails before starting anything when its admin
-     * port already answers, and stops the domain again when a command fails
-     * with {@code failOnError}. Package-private for unit tests.
+     * when it has them to run. Then restart it when {@code restart} says so,
+     * so that what they configured is active. A debugger attaches to the
+     * start that stays: when a restart may follow, the first start isn't
+     * suspended, and with {@code AUTO}, {@code suspend} then restarts it.
+     * Fails before starting anything when its admin port already answers,
+     * and stops the domain again when a command fails with
+     * {@code failOnError}. Package-private for unit tests.
      *
      * @return the admin port it started on
      */
-    static int start(GlassFishDomain domain, StagingCommands postBootCommands, boolean debug, boolean suspend,
-                     Duration timeout, Log log) throws MojoExecutionException {
+    static int start(GlassFishDomain domain, StagingCommands postBootCommands, PostBootRestart restart,
+                     boolean debug, boolean suspend, Duration timeout, Log log) throws MojoExecutionException {
         int adminPort;
         try {
             // From domain.xml as it is now: post-boot commands that provision ran may have changed it.
@@ -152,23 +176,66 @@ public class StartMojo extends AbstractStagingMojo {
                     + "this domain.");
         }
 
-        if (suspend) {
+        boolean mayRestart = postBootCommands.hasWork() && restart != PostBootRestart.NEVER;
+        boolean suspendNow = suspend && !mayRestart;
+        if (suspendNow) {
             log.info("Waiting up to " + timeout.toSeconds() + " seconds for a debugger to attach on "
                     + domain.debugAddress());
         }
         try {
-            domain.start(debug, suspend, timeout);
+            domain.start(debug, suspendNow, timeout);
         } catch (AsAdminException e) {
             throw new MojoExecutionException("Starting GlassFish from " + domain.home() + " failed: "
                     + e.getMessage(), e);
         }
-
-        if (postBootCommands.hasWork()) {
-            log.info("Running the post-boot commands of " + domain.home() + " on admin port " + adminPort);
+        if (!postBootCommands.hasWork()) {
+            return adminPort;
         }
-        runCommands(domain, adminPort, postBootCommands, "post-boot", log);
 
-        return adminPort;
+        log.info("Running the post-boot commands of " + domain.home() + " on admin port " + adminPort);
+        runCommands(domain, adminPort, postBootCommands, "post-boot", log);
+        String why = mayRestart ? restartMessage(domain, adminPort, postBootCommands.lines(), restart, suspend, log)
+                : null;
+        if (why == null) {
+            return adminPort;
+        }
+
+        log.info(why);
+        try {
+            domain.stop();
+        } catch (IOException e) {
+            throw new MojoExecutionException("Can't restart GlassFish: " + e.getMessage(), e);
+        }
+
+        // From domain.xml again: a post-boot command may have changed the admin port.
+        return start(domain, StagingCommands.NONE, restart, debug, suspend, timeout, log);
+    }
+
+    /**
+     * Why to restart {@code domain} after {@code commands} ran on it, as a
+     * message to log, or null not to. With {@code AUTO}, that's when
+     * GlassFish reports that a change needs a restart, when a command is one
+     * GlassFish needs a restart for without reporting it, or when the domain
+     * should start suspended. Package-private for unit tests.
+     */
+    static String restartMessage(GlassFishDomain domain, int adminPort, List<String> commands,
+                                 PostBootRestart restart, boolean suspend, Log log) {
+        if (restart == PostBootRestart.ALWAYS) {
+            return "Restarting GlassFish after its post-boot commands, as postBootRestart is always";
+        }
+
+        List<String> reasons;
+        try {
+            reasons = domain.restartReasons(adminPort, commands);
+        } catch (AsAdminException | IOException e) {
+            log.warn("Can't tell whether GlassFish needs a restart: " + e.getMessage());
+            reasons = List.of("GlassFish didn't say whether it needs one");
+        }
+        if (!reasons.isEmpty()) {
+            return "Restarting GlassFish for its post-boot commands: " + String.join("; ", reasons);
+        }
+
+        return suspend ? "Restarting GlassFish suspended, now that its post-boot commands have run" : null;
     }
 
     /**
@@ -201,6 +268,19 @@ public class StartMojo extends AbstractStagingMojo {
             domain.stop();
         } catch (IOException e) {
             log.warn(e.getMessage());
+        }
+    }
+
+    /** When {@code start} restarts GlassFish after its post-boot commands; see {@code postBootRestart}. */
+    enum PostBootRestart {
+        AUTO, ALWAYS, NEVER;
+
+        static PostBootRestart of(String value) throws MojoExecutionException {
+            try {
+                return valueOf(value.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                throw new MojoExecutionException("postBootRestart is auto, always or never, not '" + value + "'", e);
+            }
         }
     }
 }

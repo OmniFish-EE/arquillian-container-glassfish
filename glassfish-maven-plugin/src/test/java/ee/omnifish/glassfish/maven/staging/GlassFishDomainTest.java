@@ -8,6 +8,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -70,6 +72,17 @@ class GlassFishDomainTest {
         assertThat(FakeDomain.calls(home), is(empty()));
     }
 
+    /** Where the system doesn't say what a process runs, as on Windows: by when it started. */
+    @Test
+    void withoutItsCommandLineAProcessThatStartedAfterThePidFileWasWrittenIsAnothers() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), ""));
+        Path pidFile = Files.writeString(home.resolve(GlassFishStaging.DOMAIN_CONFIG).resolve("pid"), "1");
+        Instant written = Files.getLastModifiedTime(pidFile).toInstant();
+
+        assertThat(domain.isThisDomains(startedAt(written.minusSeconds(5)), pidFile), is(true));
+        assertThat(domain.isThisDomains(startedAt(written.plusSeconds(5)), pidFile), is(false));
+    }
+
     /** A system property can set the admin port; GlassFish starts with it all the same. */
     @Test
     void theAdminPortMayComeFromASystemProperty() throws Exception {
@@ -114,11 +127,42 @@ class GlassFishDomainTest {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), FakeDomain.START));
         domain.start(false, false, Duration.ofSeconds(30));
         ProcessHandle server = domain.process().orElseThrow();
-        deleteInstall();
+        deleteInstall(home);
 
         assertThat(domain.process().map(ProcessHandle::pid), equalTo(Optional.of(server.pid())));
         assertThat(domain.stop(), is(true));
         assertThat(server.isAlive(), is(false));
+    }
+
+    /** As on GlassFish 7.0, which reads its timeout from AS_START_TIMEOUT instead, in milliseconds. */
+    @Test
+    void startDomainRunsWithoutTheTimeoutOptionWhereGlassFishDoesNotHaveIt() throws Exception {
+        Path asadminTimeout = home.resolve("as-start-timeout.txt");
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(),
+                "  *--timeout*) echo 'Invalid option: --timeout'; exit 1 ;;\n"
+                + "  *start-domain*) echo \"$AS_START_TIMEOUT\" > '" + asadminTimeout + "' ;;\n"));
+
+        domain.start(true, false, Duration.ofSeconds(30));
+
+        assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 --debug domain1",
+                "--terse start-domain --debug domain1")));
+        assertThat(Files.readString(asadminTimeout).trim(), equalTo("90000"));
+    }
+
+    /** Whichever distribution was unpacked there, also after mvn clean deleted it. */
+    @Test
+    void aServerOfAnyInstallInTheStageDirectoryIsFound() throws Exception {
+        Path install = home.resolve("glassfish7");
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(install, freePort(), FakeDomain.START));
+        domain.start(false, false, Duration.ofSeconds(30));
+        try {
+            deleteInstall(install);
+
+            assertThat(GlassFishDomain.runningIn(home).map(GlassFishDomain::home), equalTo(Optional.of(install)));
+            assertThat(GlassFishDomain.runningIn(home.resolve("glassfish7")), equalTo(Optional.empty()));
+        } finally {
+            domain.process().ifPresent(ProcessHandle::destroyForcibly);
+        }
     }
 
     @Test
@@ -150,8 +194,73 @@ class GlassFishDomainTest {
         assertThat(new GlassFishDomain(FakeDomain.install(home, freePort(), "")).debugAddress(), equalTo("9009"));
     }
 
-    private void deleteInstall() throws IOException {
-        try (Stream<Path> files = Files.walk(home.resolve("glassfish"))) {
+    /** GlassFish moves these only on a restart, without reporting that; an HTTP listener moves at once. */
+    @Test
+    void aCommandThatMovesTheAdminJmxOrIiopListenerNeedsARestartGlassFishDoesNotReport() {
+        String config = "set configs.config.server-config.";
+
+        assertThat(GlassFishDomain.unreportedRestart(config + "network-config.network-listeners.network-listener"
+                + ".admin-listener.port=4949", ""), containsString(" changes the admin listener"));
+        assertThat(GlassFishDomain.unreportedRestart(config + "admin-service.jmx-connector.system.port=8787", ""),
+                containsString(" changes the JMX connector"));
+        assertThat(GlassFishDomain.unreportedRestart(config + "iiop-service.iiop-listener.orb-listener-1.port=3800",
+                ""), containsString(" changes an IIOP listener"));
+        assertThat(GlassFishDomain.unreportedRestart(config + "network-config.network-listeners.network-listener"
+                + ".http-listener-1.port=8282", ""), is(nullValue()));
+    }
+
+    /** GlassFish sets the property at once, but a JVM option that refers to it keeps the old value until a restart. */
+    @Test
+    void aSystemPropertyThatDomainXmlRefersToNeedsARestartGlassFishDoesNotReport() {
+        String domainXml = "<jvm-options>-Dderived=${NAME}</jvm-options>";
+
+        assertThat(GlassFishDomain.unreportedRestart("create-system-properties --target server A=1:NAME=x\\:y",
+                domainXml), containsString(" changes NAME, which domain.xml refers to"));
+        assertThat(GlassFishDomain.unreportedRestart("delete-system-property NAME", domainXml),
+                containsString(" changes NAME"));
+        assertThat(GlassFishDomain.unreportedRestart("create-system-properties OTHER=1", domainXml), is(nullValue()));
+        // An escaped colon is part of the value.
+        assertThat(GlassFishDomain.unreportedRestart("create-system-properties OTHER=a\\:NAME=b", domainXml),
+                is(nullValue()));
+    }
+
+    /** A process of which the system only says when it started. */
+    private static ProcessHandle.Info startedAt(Instant started) {
+        return new ProcessHandle.Info() {
+            @Override
+            public Optional<String> command() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<String> commandLine() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<String[]> arguments() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<Instant> startInstant() {
+                return Optional.of(started);
+            }
+
+            @Override
+            public Optional<Duration> totalCpuDuration() {
+                return Optional.empty();
+            }
+
+            @Override
+            public Optional<String> user() {
+                return Optional.empty();
+            }
+        };
+    }
+
+    private static void deleteInstall(Path install) throws IOException {
+        try (Stream<Path> files = Files.walk(install.resolve("glassfish"))) {
             files.sorted(Comparator.reverseOrder()).forEach(file -> file.toFile().delete());
         }
     }

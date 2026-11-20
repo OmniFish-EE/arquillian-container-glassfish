@@ -7,7 +7,7 @@
 // started and stopped it again.
 def log = new File(basedir, 'build.log').text
 assert log.contains('GlassFish runs from')
-assert log.contains('Tests run: 1, Failures: 0, Errors: 0, Skipped: 0')
+assert log.contains('Tests run: 2, Failures: 0, Errors: 0, Skipped: 0')
 assert log.findAll(/GlassFish at .* stopped/).size() == 2
 assert !log.contains("doesn't run")
 
@@ -17,7 +17,12 @@ def windows = System.getProperty('os.name').startsWith('Windows')
 assert !log.contains('briefly')
 assert log.count('Running the post-boot commands of') == (windows ? 1 : 2)
 def install = new File(basedir, 'target/dist').listFiles().find { it.name.startsWith('glassfish') }
-assert new File(install, 'glassfish/domains/domain1/config/domain.xml').text.contains('name="start.stop.it"')
+def domainXml = new File(install, 'glassfish/domains/domain1/config/domain.xml').text
+assert domainXml.contains('name="start.stop.it"')
+assert domainXml.contains('<jvm-options>-Xss1m</jvm-options>')
+
+// GlassFish reported that the JVM option needs a restart, so start restarted it after the post-boot commands.
+assert log.count("Restarting GlassFish for its post-boot commands: Addition of: '-Xss1m'") == (windows ? 1 : 2)
 
 // GlassFish removes its pid file when it stops.
 assert !new File(install, 'glassfish/domains/domain1/config/pid').exists()

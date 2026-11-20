@@ -63,9 +63,11 @@
                 <version>${container.version}</version>
                 <configuration>
                     <distribution>${glassfish.version}</distribution>
-                    <!-- Run on start's own start, not on a brief one. -->
+                    <!-- Run on start's own start, not on a brief one. GlassFish applies the JVM option only on a
+                         restart, and reports that, so start restarts it. -->
                     <postBootCommands>
                         create-system-properties start.stop.it=applied
+                        create-jvm-options -Xss1m
                     </postBootCommands>
                 </configuration>
             </plugin>

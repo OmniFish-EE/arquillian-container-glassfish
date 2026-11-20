@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 
 import org.apache.maven.plugin.AbstractMojo;
@@ -28,6 +29,7 @@ import org.eclipse.aether.repository.RemoteRepository;
 
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.CommandRunner;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
@@ -236,10 +238,13 @@ abstract class AbstractStagingMojo extends AbstractMojo {
 
     /**
      * Where the install is, without staging it: {@code home}, else the one
-     * staged in {@code stageDir}, as its marker records it, else the one the
-     * distribution would unpack to. The staged one wins over that, since
-     * another distribution unpacks to another directory, while a domain
-     * {@code glassfish:start} started runs from the one staged before.
+     * staged in {@code stageDir}, as its marker records it, else one there
+     * whose server runs, else the one the distribution would unpack to. The
+     * staged one wins over that, since another distribution unpacks to
+     * another directory, while a domain {@code glassfish:start} started runs
+     * from the one staged before. Without a marker that records it, as after
+     * {@code mvn clean}, or with one plugin 2.2.2 wrote, the server's command
+     * line tells.
      *
      * @return the install root, or {@code null} when it isn't known
      */
@@ -250,6 +255,10 @@ abstract class AbstractStagingMojo extends AbstractMojo {
         Path staged = GlassFishStaging.stagedHome(stageDir().toPath());
         if (staged != null) {
             return staged;
+        }
+        Optional<GlassFishDomain> running = GlassFishDomain.runningIn(stageDir().toPath());
+        if (running.isPresent()) {
+            return running.get().home();
         }
 
         return spec(new Stager(repoSystem, repoSession, remoteRepos, getLog())).home();
