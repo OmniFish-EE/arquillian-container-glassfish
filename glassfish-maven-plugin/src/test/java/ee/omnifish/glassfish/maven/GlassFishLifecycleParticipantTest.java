@@ -36,6 +36,21 @@ class GlassFishLifecycleParticipantTest {
         }
     }
 
+    /** start provisions itself, and runs the post-boot commands on its own start, not on a brief one. */
+    @Test
+    void bindsNothingWhenStartIsBoundAndForwardsItsHomeToFailsafe() {
+        Plugin glassfish = glassfish(true, null);
+        glassfish.addExecution(execution("start", "start", null));
+        MavenProject project = project(glassfish, plugin(SUREFIRE), plugin(FAILSAFE));
+
+        GlassFishLifecycleParticipant.wire(project);
+
+        assertEquals(List.of("start:[start]"), describe(glassfish));
+        assertEquals("${glassfish.home}", variables(project.getPlugin(FAILSAFE)).getChild("glassfish.home").getValue());
+        // Surefire's tests run before start.
+        assertNull(variables(project.getPlugin(SUREFIRE)).getChild("glassfish.home"));
+    }
+
     @Test
     void leavesPluginWithoutExtensionsAlone() {
         MavenProject project = project(glassfish(false, null), plugin(SUREFIRE));
@@ -60,8 +75,8 @@ class GlassFishLifecycleParticipantTest {
     @Test
     void forwardsHomePropertyOfEachExplicitExecution() {
         Plugin glassfish = glassfish(true, null);
-        glassfish.addExecution(provision("gf7", "gf7.home"));
-        glassfish.addExecution(provision("gf8", "gf8.home"));
+        glassfish.addExecution(execution("gf7", "provision", "gf7.home"));
+        glassfish.addExecution(execution("gf8", "provision", "gf8.home"));
         MavenProject project = project(glassfish, plugin(FAILSAFE));
 
         GlassFishLifecycleParticipant.wire(project);
@@ -98,11 +113,13 @@ class GlassFishLifecycleParticipantTest {
         return plugin;
     }
 
-    private static PluginExecution provision(String id, String homeProperty) {
+    private static PluginExecution execution(String id, String goal, String homeProperty) {
         PluginExecution execution = new PluginExecution();
         execution.setId(id);
-        execution.addGoal("provision");
-        execution.setConfiguration(homePropertyConfiguration(homeProperty));
+        execution.addGoal(goal);
+        if (homeProperty != null) {
+            execution.setConfiguration(homePropertyConfiguration(homeProperty));
+        }
         return execution;
     }
 

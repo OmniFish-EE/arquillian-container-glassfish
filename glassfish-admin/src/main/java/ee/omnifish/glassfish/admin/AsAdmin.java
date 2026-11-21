@@ -20,7 +20,9 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -47,6 +49,7 @@ public final class AsAdmin {
 
     private final Path glassFishHome;
     private final Integer adminPort;
+    private final Map<String, String> environment;
 
     public AsAdmin(Path glassFishHome) {
         this(glassFishHome, null);
@@ -60,8 +63,20 @@ public final class AsAdmin {
      *        asadmin default to 4848 or resolve it from the domain operand.
      */
     public AsAdmin(Path glassFishHome, Integer adminPort) {
+        this(glassFishHome, adminPort, Map.of());
+    }
+
+    private AsAdmin(Path glassFishHome, Integer adminPort, Map<String, String> environment) {
         this.glassFishHome = glassFishHome;
         this.adminPort = adminPort;
+        this.environment = environment;
+    }
+
+    /** This, with {@code name} set to {@code value} in asadmin's environment, over what it inherits. */
+    public AsAdmin withEnvironment(String name, String value) {
+        Map<String, String> withName = new HashMap<>(environment);
+        withName.put(name, value);
+        return new AsAdmin(glassFishHome, adminPort, withName);
     }
 
     /**
@@ -90,6 +105,7 @@ public final class AsAdmin {
         Path javaHome = Paths.get(System.getProperty("java.home"));
         pb.environment().putIfAbsent("AS_JAVA", javaHome.toString());
         pb.environment().putIfAbsent("JAVA_HOME", javaHome.toString());
+        pb.environment().putAll(environment);
 
         // Raw bytes, decoded once, so multi-byte characters split across reads
         // survive. ByteArrayOutputStream is synchronized, so the output so far

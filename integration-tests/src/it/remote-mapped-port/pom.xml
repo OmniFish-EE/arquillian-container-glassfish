@@ -91,45 +91,19 @@
                         create-http-listener --listenerport ${mapped.http.port} --listeneraddress 0.0.0.0 --defaultvs server mapped-listener
                     </postBootCommands>
                 </configuration>
-            </plugin>
-
-            <!-- The remote container connects to a running server: start it before the tests, stop it after. -->
-            <plugin>
-                <artifactId>maven-antrun-plugin</artifactId>
+                <!-- The remote container connects to a running server: start it before the tests, stop it after. -->
                 <executions>
                     <execution>
-                        <id>start-domain</id>
-                        <phase>pre-integration-test</phase>
+                        <id>start</id>
                         <goals>
-                            <goal>run</goal>
+                            <goal>start</goal>
                         </goals>
-                        <configuration>
-                            <target>
-                                <exec executable="${glassfish.home}/bin/asadmin" osfamily="unix" failonerror="true">
-                                    <arg value="start-domain"/>
-                                </exec>
-                                <exec executable="${glassfish.home}/bin/asadmin.bat" osfamily="windows" failonerror="true">
-                                    <arg value="start-domain"/>
-                                </exec>
-                            </target>
-                        </configuration>
                     </execution>
                     <execution>
-                        <id>stop-domain</id>
-                        <phase>post-integration-test</phase>
+                        <id>stop</id>
                         <goals>
-                            <goal>run</goal>
+                            <goal>stop</goal>
                         </goals>
-                        <configuration>
-                            <target>
-                                <exec executable="${glassfish.home}/bin/asadmin" osfamily="unix">
-                                    <arg value="stop-domain"/>
-                                </exec>
-                                <exec executable="${glassfish.home}/bin/asadmin.bat" osfamily="windows">
-                                    <arg value="stop-domain"/>
-                                </exec>
-                            </target>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>

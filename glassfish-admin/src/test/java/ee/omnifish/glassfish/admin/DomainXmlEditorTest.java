@@ -106,6 +106,22 @@ class DomainXmlEditorTest {
                 DomainXmlEditor.ports(domainXml));
     }
 
+    /** As the DAS resolves it: the server's own system property first, then its config's, then the domain's. */
+    @Test
+    void resolvesAPlaceholderWithTheDasSystemProperty(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><system-property name=\"ADMIN_PORT\" value=\"1\"/>"
+                + "<servers><server name=\"server\" config-ref=\"server-config\">"
+                + "<system-property name=\"ADMIN_PORT\" value=\"24848\"/></server></servers>"
+                + "<configs><config name=\"server-config\"><system-property name=\"ADMIN_PORT\" value=\"2\"/>"
+                + "<network-config>" + FRAGMENT.replace("port=\"4848\"", "port=\"${ADMIN_PORT}\"")
+                + "</network-config></config></configs></domain>");
+
+        assertEquals("24848", DomainXmlEditor.resolve(domainXml, DomainXmlEditor.ports(domainXml).get(ADMIN_LISTENER)));
+        assertEquals("8080", DomainXmlEditor.resolve(domainXml, "8080"));
+        assertEquals("${UNDEFINED}", DomainXmlEditor.resolve(domainXml, "${UNDEFINED}"));
+    }
+
     @Test
     void putsAPortBackAsItWasRead(@TempDir Path tmp) throws IOException {
         Path domainXml = tmp.resolve("domain.xml");

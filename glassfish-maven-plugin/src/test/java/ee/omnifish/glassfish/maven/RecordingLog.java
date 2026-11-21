@@ -12,6 +12,13 @@ import org.apache.maven.plugin.logging.SystemStreamLog;
 class RecordingLog extends SystemStreamLog {
 
     final List<String> warnings = new ArrayList<>();
+    final List<String> infos = new ArrayList<>();
+
+    @Override
+    public void info(CharSequence content) {
+        infos.add(content.toString());
+        super.info(content);
+    }
 
     @Override
     public void warn(CharSequence content) {

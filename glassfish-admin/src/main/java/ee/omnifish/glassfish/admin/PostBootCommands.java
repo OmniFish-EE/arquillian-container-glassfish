@@ -64,14 +64,13 @@ public final class PostBootCommands {
      */
     public static void run(List<String> commandLines, AdminCommandExecutor executor, boolean failOnError) {
         for (String commandLine : commandLines) {
-            List<String> words = words(commandLine);
-            if (words.isEmpty()) {
-                continue;
-            }
-
             try {
-                List<String> ordered = passwordFileFirst(words);
-                executor.run(ordered.get(0), ordered.subList(1, ordered.size()));
+                // Also a line that can't be read fails as a command, so the caller's policy covers it.
+                List<String> words = passwordFileFirst(words(commandLine));
+                if (words.isEmpty()) {
+                    continue;
+                }
+                executor.run(words.get(0), words.subList(1, words.size()));
             } catch (Exception e) {
                 if (failOnError) {
                     throw new CommandFailedException(commandLine, e);

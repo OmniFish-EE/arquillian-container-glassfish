@@ -29,10 +29,14 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
  *
  * <p>The added execution carries no phase, so it lands on the mojo's
  * {@code defaultPhase} ({@code process-test-classes}). A {@code provision}
- * the user already binds is left alone. The {@code homeProperty} of each
- * {@code provision} execution (default {@code glassfish.home}) is added to the
- * {@code systemPropertyVariables} of surefire and failsafe as a {@code ${...}}
- * reference; see {@link LifecycleSupport#forwardProperties}.
+ * the user already binds is left alone. When the user binds {@code start},
+ * nothing is bound: {@code start} provisions itself, and runs the post-boot
+ * commands on its own start, not on a brief one of {@code provision}'s. The
+ * {@code homeProperty} of each {@code provision} execution (default
+ * {@code glassfish.home}) is added to the {@code systemPropertyVariables} of
+ * surefire and failsafe as a {@code ${...}} reference, and that of each
+ * {@code start} execution to failsafe's, whose tests run after it; see
+ * {@link LifecycleSupport#forwardProperties}.
  *
  * <p>Registered via {@code META-INF/plexus/components.xml}. Maven loads it for
  * plugins declared as extensions, but also as part of the pool plugin, which
@@ -47,6 +51,8 @@ public class GlassFishLifecycleParticipant extends AbstractMavenLifecyclePartici
             "org.apache.maven.plugins:maven-failsafe-plugin");
 
     private static final String GOAL = "provision";
+    private static final String START = "start";
+    private static final String FAILSAFE = "org.apache.maven.plugins:maven-failsafe-plugin";
 
     @Override
     public void afterProjectsRead(MavenSession session) {
@@ -61,22 +67,30 @@ public class GlassFishLifecycleParticipant extends AbstractMavenLifecyclePartici
         if (plugin == null || !plugin.isExtensions()) {
             return;
         }
-        LifecycleSupport.bind(plugin, "glassfish-provision", GOAL);
-        Set<String> homeProperties = homeProperties(plugin);
+        if (!hasGoal(plugin, START)) {
+            LifecycleSupport.bind(plugin, "glassfish-provision", GOAL);
+        }
+        Set<String> homeProperties = homeProperties(plugin, GOAL);
+        Set<String> afterStart = new LinkedHashSet<>(homeProperties);
+        afterStart.addAll(homeProperties(plugin, START));
         for (String key : TEST_PLUGINS) {
             Plugin testPlugin = project.getPlugin(key);
             if (testPlugin != null) {
-                LifecycleSupport.forwardProperties(testPlugin, homeProperties);
+                LifecycleSupport.forwardProperties(testPlugin, key.equals(FAILSAFE) ? afterStart : homeProperties);
                 LifecycleSupport.forwardServerLogColor(project, testPlugin);
             }
         }
     }
 
-    /** The {@code homeProperty} of every execution that runs {@code provision}. */
-    private static Set<String> homeProperties(Plugin plugin) {
+    private static boolean hasGoal(Plugin plugin, String goal) {
+        return plugin.getExecutions().stream().anyMatch(execution -> execution.getGoals().contains(goal));
+    }
+
+    /** The {@code homeProperty} of every execution that runs {@code goal}. */
+    private static Set<String> homeProperties(Plugin plugin, String goal) {
         Set<String> keys = new LinkedHashSet<>();
         for (PluginExecution execution : plugin.getExecutions()) {
-            if (execution.getGoals().contains(GOAL)) {
+            if (execution.getGoals().contains(goal)) {
                 Xpp3Dom configuration = (Xpp3Dom) execution.getConfiguration();
                 Xpp3Dom homeProperty = (configuration == null) ? null : configuration.getChild("homeProperty");
                 String key = (homeProperty == null) ? null : homeProperty.getValue();

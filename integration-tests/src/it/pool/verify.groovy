@@ -14,3 +14,6 @@ assert log.readLines().count { it.contains('[glassfish:slot-') && it.contains('p
 def slots = new File(basedir, 'target/pool').listFiles().findAll { it.name ==~ /slot-\d+/ }
 assert !slots.isEmpty()
 slots.each { assert !new File(it, 'glassfish/glassfish/domains/domain1/config/pid').exists() }
+
+// The invoker counts a script that returns anything but true or null as failed.
+return true

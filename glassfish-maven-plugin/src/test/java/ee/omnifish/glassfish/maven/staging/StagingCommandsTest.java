@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -60,6 +61,20 @@ class StagingCommandsTest {
                 "--terse stop-domain domain1")));
         assertThat(rawCalls().get(1), not(containsString("--port 4848")));
         assertThat(ports(), equalTo(Map.of(ADMIN_LISTENER, "4848", HTTP_LISTENER, "8080", HTTPS_LISTENER, "8181")));
+    }
+
+    /** As glassfish:start does, which runs them on the start it makes anyway. */
+    @Test
+    void aCommandRunnerRunsTheCommandsInsteadOfABriefStart() throws Exception {
+        Path zip = fakeGlassFish();
+        List<String> ran = new ArrayList<>();
+        GlassFishStaging.CommandRunner runner = (home, commands) -> ran.addAll(commands.lines());
+
+        GlassFishStaging.stage(spec(commands("set a=b")), coord -> zip, runner);
+        GlassFishStaging.stage(spec(commands("set a=b")), coord -> zip, runner);
+
+        assertThat(ran, equalTo(List.of("set a=b")));
+        assertThat(calls(), equalTo(List.of()));
     }
 
     @Test
