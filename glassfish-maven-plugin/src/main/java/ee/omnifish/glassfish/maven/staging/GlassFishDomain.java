@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -92,9 +93,6 @@ public final class GlassFishDomain {
     private static final Set<String> VALUE_OPTIONS = Set.of("--host", "-H", "--port", "-p", "--user", "-u",
             "--passwordfile", "-W");
 
-    /** The value of a {@code -D} option in a reason GlassFish gives for a restart, which may be a secret. */
-    private static final Pattern OPTION_VALUE = Pattern.compile("(-D[^=\\s']+=)[^']*");
-
     private final Path home;
     private final Duration exitWait;
 
@@ -124,9 +122,10 @@ public final class GlassFishDomain {
     public Optional<ProcessHandle> process() {
         Path pidFile = pidFile();
         if (!Files.exists(pidFile)) {
+            // The oldest: a process the server forks has its command line until it runs what it forked for.
             return ProcessHandle.allProcesses()
                     .filter(process -> process.info().commandLine().map(this::runsThisDomain).orElse(false))
-                    .findFirst();
+                    .min(Comparator.comparing(process -> process.info().startInstant().orElse(Instant.MAX)));
         }
         try {
             long pid = Long.parseLong(Files.readString(pidFile).trim());
@@ -195,7 +194,7 @@ public final class GlassFishDomain {
     }
 
     /** {@code domain1} of an install directly under {@code stageDir}, if its {@code config/pid} names its server. */
-    static Optional<GlassFishDomain> runningByPidFileIn(Path stageDir) {
+    private static Optional<GlassFishDomain> runningByPidFileIn(Path stageDir) {
         try (Stream<Path> installs = Files.list(stageDir)) {
             return installs.filter(install -> Files.exists(install.resolve(DOMAIN_CONFIG).resolve("pid")))
                     .map(GlassFishDomain::new)
@@ -286,16 +285,20 @@ public final class GlassFishDomain {
 
     /**
      * Why the running domain needs a restart for {@code commands}, which ran
-     * on it: what GlassFish reports with {@code _get-restart-required}, for
-     * each change it can't apply while it runs, and the changes it needs a
+     * on it: that GlassFish reports one with {@code _get-restart-required},
+     * for a change it can't apply while it runs, and the changes it needs a
      * restart for without reporting them; see {@link #unreportedRestart}.
-     * Empty when it needs none.
+     * Empty when it needs none. GlassFish's own reasons are left out: they
+     * can hold values, such as a password in a {@code -D} option.
      *
      * @throws AsAdminException if {@code asadmin} fails
-     * @throws IOException if {@code domain.xml} can't be read
+     * @throws IOException if {@code domain.xml} or GlassFish's answer can't be read
      */
     public List<String> restartReasons(int adminPort, List<String> commands) throws IOException {
-        List<String> reasons = new ArrayList<>(reportedRestartReasons(adminPort));
+        List<String> reasons = new ArrayList<>();
+        if (isRestartRequired(adminPort)) {
+            reasons.add("GlassFish reports that a change needs a restart");
+        }
         String domainXml = Files.readString(domainXml());
         for (String command : commands) {
             String reason = unreportedRestart(command, domainXml);
@@ -314,13 +317,14 @@ public final class GlassFishDomain {
      * it sets at once, but what {@code domain.xml} sets with
      * {@code ${NAME}}, such as a JVM option, keeps the old value until then.
      * Only {@code set}, {@code create-} and {@code delete-} commands change
-     * anything. The reason names what changed, not the command, whose values
-     * may be secrets. Package-private for unit tests.
+     * anything. The command is read as it runs, with its
+     * {@code --passwordfile} in front. The reason names what changed, not the
+     * command, whose values may be secrets. Package-private for unit tests.
      */
     static String unreportedRestart(String command, String domainXml) {
         List<String> words;
         try {
-            words = PostBootCommands.words(command);
+            words = PostBootCommands.passwordFileFirst(PostBootCommands.words(command));
         } catch (IllegalArgumentException e) {
             // It failed as a command, so it changed nothing.
             return null;
@@ -337,8 +341,9 @@ public final class GlassFishDomain {
         List<String> operands = words.subList(at + 1, words.size());
         String changes = "a " + subcommand + " command changes ";
         for (Map.Entry<String, String> restartOnly : RESTART_ONLY.entrySet()) {
+            // In what an operand names, not in a value it sets.
             if (subcommand.contains(restartOnly.getKey())
-                    || operands.stream().anyMatch(operand -> operand.contains(restartOnly.getKey()))) {
+                    || operands.stream().anyMatch(operand -> operand.split("=", 2)[0].contains(restartOnly.getKey()))) {
                 return changes + restartOnly.getValue();
             }
         }
@@ -388,30 +393,26 @@ public final class GlassFishDomain {
     }
 
     /**
-     * What {@code _get-restart-required} reports. Java may print notices
-     * before its answer, such as for {@code JDK_JAVA_OPTIONS}. The values of
-     * {@code -D} options in its reasons are left out.
+     * Whether GlassFish reports with {@code _get-restart-required} that it
+     * needs a restart. Java may print notices before its answer, such as for
+     * {@code JDK_JAVA_OPTIONS}.
      *
      * @throws IOException if the answer can't be read
      */
-    private List<String> reportedRestartReasons(int adminPort) throws IOException {
-        String output = new AsAdmin(home, adminPort).run(RESTART_QUERY_TIMEOUT, "_get-restart-required", "--why");
-        List<String> lines = output.lines()
+    private boolean isRestartRequired(int adminPort) throws IOException {
+        List<String> lines = new AsAdmin(home, adminPort).run(RESTART_QUERY_TIMEOUT, "_get-restart-required")
+                .lines()
                 .map(String::trim)
-                .filter(line -> !line.isEmpty())
                 .collect(toList());
-        int answer = lines.indexOf("true");
-        if (answer < 0) {
-            if (lines.contains("false")) {
-                return List.of();
-            }
-            throw new IOException("Can't read whether GlassFish needs a restart from: " + output);
+        if (lines.contains("true")) {
+            return true;
+        }
+        if (lines.contains("false")) {
+            return false;
         }
 
-        List<String> reasons = lines.subList(answer + 1, lines.size()).stream()
-                .map(reason -> OPTION_VALUE.matcher(reason).replaceAll("$1***"))
-                .collect(toList());
-        return reasons.isEmpty() ? List.of("GlassFish reports that it needs a restart") : reasons;
+        // Without the output: it may hold what JDK_JAVA_OPTIONS sets.
+        throw new IOException("GlassFish's answer to _get-restart-required can't be read");
     }
 
     /**
@@ -433,7 +434,7 @@ public final class GlassFishDomain {
      * {@link #stop()}, through {@code adminPort}, where the domain answers:
      * {@code stop-domain} otherwise goes by the admin port in
      * {@code domain.xml}, which a command may have changed since the domain
-     * started. GlassFish 7.0 goes by {@code domain.xml} regardless.
+     * started.
      */
     public boolean stop(int adminPort) throws IOException {
         return stopThrough(adminPort);

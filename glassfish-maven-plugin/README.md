@@ -358,14 +358,15 @@ the same, also from a clean checkout.
   (`-Dglassfish.postBootRestart`) says whether `start` then restarts
   GlassFish, so that what they configured is active when it returns:
   - `auto`, the default, restarts when GlassFish reports that a change
-    needs a restart, as `asadmin _get-restart-required --why` shows, or
+    needs a restart, as `asadmin _get-restart-required` does, or
     when a `set`, `create-…` or `delete-…` command makes a change GlassFish
     applies only on a restart without reporting it: one to the admin
     listener, the JMX connector or an IIOP listener, such as its port, or
     to a system property that `domain.xml` refers to, as a JVM option
     `-Dderived=${NAME}` does, with `create-system-properties` or `set`. When
-    it can't read GlassFish's answer, it restarts. The log says why, without
-    the values of `-D` options or of the commands, which may be secrets.
+    it can't read GlassFish's answer, it restarts. The log says why: what
+    changed, or that GlassFish reports a change, but not the commands or
+    GlassFish's reasons, which may hold secrets, such as in a `-D` option.
   - `always` restarts, for a change GlassFish needs a restart for without
     reporting it.
   - `never` doesn't, and what needs a restart takes effect from the next
@@ -373,11 +374,12 @@ the same, also from a clean checkout.
 
   The restart happens only on the first start after staging. It stops the
   domain through the admin port it started on, also when a command moved
-  it; GlassFish 7.0 goes by `domain.xml`, and then needs `--kill`. With
+  it. With
   `suspend`, the start before a restart isn't suspended, so the debugger
   attaches once, to the start that stays; with `auto`, `suspend` restarts
-  it for that. A `-D` JVM option needs no restart: GlassFish sets it in the
-  running server, though code that read it at startup doesn't see it. When
+  it for that. A `-D` JVM option needs no restart, unless it starts with
+  `-Djava.` or `-Djavax.`: GlassFish sets it in the running server, though
+  code that read it at startup doesn't see it. When
   you bind `provision` before it yourself, that runs them on a brief start,
   and they're in effect at once. With `failOnCommandError`, a failed one
   stops the domain again, and the next build stages afresh.

@@ -22,7 +22,8 @@ assert domainXml.contains('name="start.stop.it"')
 assert domainXml.contains('<jvm-options>-Xss1m</jvm-options>')
 
 // GlassFish reported that the JVM option needs a restart, so start restarted it after the post-boot commands.
-assert log.count("Restarting GlassFish for its post-boot commands: Addition of: '-Xss1m'") == (windows ? 1 : 2)
+assert log.count('Restarting GlassFish for its post-boot commands: GlassFish reports that a change needs a restart') \
+        == (windows ? 1 : 2)
 
 // GlassFish removes its pid file when it stops.
 assert !new File(install, 'glassfish/domains/domain1/config/pid').exists()

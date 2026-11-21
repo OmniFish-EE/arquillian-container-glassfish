@@ -24,10 +24,14 @@ public final class FakeDomain {
     /**
      * {@code start-domain} starts a stand-in server, which outlives the
      * script, as GlassFish does. GlassFish passes its server the domain's
-     * directory, and so does this.
+     * directory, and so does this. It returns once the server runs, as
+     * {@code start-domain} does: until then, its process is a copy of this
+     * script, with this script's command line.
      */
     public static final String START = "  *start-domain*) sh -c '" + IDLE + "' \"-Dcom.sun.aas.instanceRoot=$DOMAIN\""
-            + " >/dev/null 2>&1 & echo $! > \"$PID\" ;;\n";
+            + " >/dev/null 2>&1 & echo $! > \"$PID\"; i=0;"
+            + " until ps -o args= -p $! | grep -q instanceRoot || [ $i -ge 50 ];"
+            + " do sleep 0.1; i=$((i+1)); done ;;\n";
 
     /** {@code stop-domain}, with or without {@code --kill}, ends the stand-in server. */
     public static final String STOP = "  *stop-domain*) kill $(cat \"$PID\") && rm -f \"$PID\" ;;\n";

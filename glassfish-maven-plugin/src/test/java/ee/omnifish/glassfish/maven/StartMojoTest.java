@@ -86,17 +86,16 @@ class StartMojoTest {
         assertThat(domain.isRunning(), is(true));
         assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " create-file-user --groups g joe",
-                "--terse --port " + adminPort + " _get-restart-required --why")));
+                "--terse --port " + adminPort + " _get-restart-required")));
     }
 
     /** GlassFish applies an option such as -Xmx only on a restart, and says so, after any notice Java prints. */
     @Test
     void autoRestartsWhenGlassFishReportsThatItNeedsTo() throws Exception {
         int adminPort = freePort();
-        String why = "Addition of: '-Xmx1g' cannot take effect without server restart";
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, adminPort, FakeDomain.START
                 + FakeDomain.STOP + "  *_get-restart-required*) echo 'NOTE: Picked up JDK_JAVA_OPTIONS: -Dx=y';"
-                + " echo true; echo \"" + why + "\" ;;\n"));
+                + " echo true ;;\n"));
 
         StartMojo.start(domain, new StagingCommands("create-jvm-options -Xmx1g", true), AUTO, false, false, TIMEOUT,
                 log);
@@ -104,10 +103,11 @@ class StartMojoTest {
         assertThat(domain.isRunning(), is(true));
         assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " create-jvm-options -Xmx1g",
-                "--terse --port " + adminPort + " _get-restart-required --why",
+                "--terse --port " + adminPort + " _get-restart-required",
                 "--terse --port " + adminPort + " stop-domain domain1",
                 "--terse start-domain --timeout 90 domain1")));
-        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: " + why));
+        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: GlassFish reports that a"
+                + " change needs a restart"));
     }
 
     /** GlassFish applies a change to the admin listener only on a restart, without reporting that. */
@@ -132,26 +132,27 @@ class StartMojoTest {
     void autoRestartsWhenItCanNotReadGlassFishsAnswer() throws Exception {
         int adminPort = freePort();
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, adminPort, FakeDomain.START
-                + FakeDomain.STOP + "  *_get-restart-required*) echo 'Something else' ;;\n"));
+                + FakeDomain.STOP + "  *_get-restart-required*) echo 'NOTE: Picked up JDK_JAVA_OPTIONS:"
+                + " -Djavax.net.ssl.keyStorePassword=secret' ;;\n"));
 
         StartMojo.start(domain, new StagingCommands("set a=b", true), AUTO, false, false, TIMEOUT, log);
 
         assertThat(FakeDomain.calls(home), hasItem("--terse --port " + adminPort + " stop-domain domain1"));
-        assertThat(log.warnings, hasItem(containsString("Can't tell whether GlassFish needs a restart")));
+        assertThat(log.warnings, equalTo(List.of("Can't tell whether GlassFish needs a restart, so it's restarted")));
     }
 
-    /** A -D option's value may be a secret, so the log leaves it out, also of what GlassFish reports. */
+    /** A command, or what GlassFish says about it, may hold a secret, such as a -D option's value. */
     @Test
-    void theReasonForARestartLeavesOutOptionValues() throws Exception {
+    void theReasonForARestartLeavesOutCommandsAndWhatGlassFishSays() throws Exception {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), FakeDomain.START
                 + FakeDomain.STOP + "  *_get-restart-required*) echo true; echo \"Addition of:"
-                + " '-Djavax.example.password=secret' cannot take effect without server restart\" ;;\n"));
+                + " '-Djavax.example.password=it's secret' cannot take effect without server restart\" ;;\n"));
 
-        StartMojo.start(domain, new StagingCommands("create-jvm-options -Djavax.example.password=secret", true),
-                AUTO, false, false, TIMEOUT, log);
+        StartMojo.start(domain, new StagingCommands("create-jvm-options \"-Djavax.example.password=it's secret\"",
+                true), AUTO, false, false, TIMEOUT, log);
 
-        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: Addition of:"
-                + " '-Djavax.example.password=***' cannot take effect without server restart"));
+        assertThat(log.infos, hasItem("Restarting GlassFish for its post-boot commands: GlassFish reports that a"
+                + " change needs a restart"));
         assertThat(log.infos, everyItem(not(containsString("secret"))));
     }
 
@@ -195,7 +196,7 @@ class StartMojoTest {
 
         assertThat(FakeDomain.calls(home), equalTo(List.of("--terse start-domain --timeout 90 domain1",
                 "--terse --port " + adminPort + " set a=b",
-                "--terse --port " + adminPort + " _get-restart-required --why",
+                "--terse --port " + adminPort + " _get-restart-required",
                 "--terse --port " + adminPort + " stop-domain domain1",
                 "--terse start-domain --timeout 90 --suspend domain1")));
         assertThat(log.infos, hasItem("Restarting GlassFish suspended, now that its post-boot commands have run"));

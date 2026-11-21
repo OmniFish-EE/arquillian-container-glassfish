@@ -229,7 +229,8 @@ public class StartMojo extends AbstractStagingMojo {
         try {
             reasons = domain.restartReasons(adminPort, commands);
         } catch (AsAdminException | IOException e) {
-            log.warn("Can't tell whether GlassFish needs a restart: " + e.getMessage());
+            // Without the output: it may hold what JDK_JAVA_OPTIONS sets.
+            log.warn("Can't tell whether GlassFish needs a restart, so it's restarted");
             reasons = List.of("GlassFish didn't say whether it needs one");
         }
         if (!reasons.isEmpty()) {
