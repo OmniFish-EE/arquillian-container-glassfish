@@ -3,9 +3,9 @@
  */
 package ee.omnifish.glassfish.maven;
 
-import static ee.omnifish.glassfish.maven.StartMojo.PostBootRestart.ALWAYS;
-import static ee.omnifish.glassfish.maven.StartMojo.PostBootRestart.AUTO;
-import static ee.omnifish.glassfish.maven.StartMojo.PostBootRestart.NEVER;
+import static ee.omnifish.glassfish.maven.AbstractStartMojo.PostBootRestart.ALWAYS;
+import static ee.omnifish.glassfish.maven.AbstractStartMojo.PostBootRestart.AUTO;
+import static ee.omnifish.glassfish.maven.AbstractStartMojo.PostBootRestart.NEVER;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
@@ -32,7 +32,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
-import ee.omnifish.glassfish.maven.StartMojo.PostBootRestart;
+import ee.omnifish.glassfish.maven.AbstractStartMojo.PostBootRestart;
 import ee.omnifish.glassfish.maven.staging.FakeDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;

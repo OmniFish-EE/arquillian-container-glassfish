@@ -22,6 +22,7 @@ up without further configuration.
 | `provision` | `process-test-classes` | Resolve, unpack and overlay GlassFish, import certificates and run post-boot commands, then set `glassfish.home`. A re-run leaves the install alone while these inputs stay the same. |
 | `start`     | `pre-integration-test` | Provision as above, start `domain1`, run `postStartCommands`, and return, leaving it running. See *Starting and stopping GlassFish*. |
 | `stop`      | `post-integration-test` | Stop `domain1`. See *Starting and stopping GlassFish*. |
+| `run`       | none                   | Package the project, start `domain1` as `start` does, deploy the project's artifact, and keep running, with GlassFish's log on the console, until Ctrl+C. See *Running an application*. |
 
 ## Quick start
 
@@ -412,6 +413,54 @@ the same, also from a clean checkout.
 - `start` and `stop` skip with `-DskipTests` or `-Dmaven.test.skip`, like
   `provision`, or with `-Dglassfish.start.skip` and `-Dglassfish.stop.skip`.
 
+## Running an application
+
+`mvn glassfish:run` packages the project, starts `domain1` as
+`glassfish:start` does, deploys the project's WAR, EAR, EJB jar or RAR, and
+prints where it answers:
+
+```
+[INFO] Deployed shop-1.0, at http://localhost:8080/shop/
+[INFO] Ctrl+C stops GlassFish, as glassfish:stop does
+```
+
+It needs no more than the plugin with a `<distribution>`. Until Ctrl+C, Maven
+stays attached, and GlassFish's `server.log` appears on the console. Then
+GlassFish stops.
+
+- **Running again**, after a change, needs no `clean`: the artifact replaces
+  the application deployed under the same name, as `asadmin deploy --force`
+  does.
+- **The URLs** are those of the application's web modules, with the context
+  roots GlassFish reports: one for a WAR, one for each WAR in an EAR, none
+  for an EJB jar.
+- **`name`** (`-Dglassfish.run.name`) names the application. GlassFish
+  otherwise takes the name from an EAR's `application.xml`, or from the
+  artifact's file name, without its extension. Set it to keep one
+  deployment when the version in that file name changes.
+- **`contextRoot`** (`-Dglassfish.run.contextRoot`) sets a WAR's context
+  root. GlassFish otherwise takes it from its `glassfish-web.xml`, or from
+  its name.
+- **Ending it:** Ctrl+C stops GlassFish, with Maven, as does mvnd's Ctrl+C,
+  which interrupts the goal. When GlassFish stops otherwise, as after
+  `mvn glassfish:stop` in another terminal, `run` returns.
+- **As `start`:** `run` takes the same parameters, such as
+  `postStartCommands`, `postBootRestart`, `debug` and `suspend`. It fails on
+  an occupied admin port, also when another `run` keeps this domain
+  running, and leaves that domain alone.
+- **`-DskipTests`** skips the tests of the `package` that `run` runs, not
+  `run` itself.
+- **A multi-module project:** install the modules first, then run the one
+  with the application, as in `mvn -pl web -am install`, then
+  `mvn -pl web glassfish:run`. The `package` that `run` runs doesn't make
+  the other modules' artifacts available to it. A project that isn't a WAR,
+  EAR, EJB jar or RAR has nothing to deploy, and `run` does nothing there.
+- **With `<extensions>true</extensions>`**, the `package` that `run` runs
+  includes `provision`, in `process-test-classes`. On a fresh install with
+  `postBootCommands`, that's when they run, on a brief start of their own,
+  before `run` shows GlassFish's log, which starts with the domain `run`
+  starts.
+
 ## Recipes
 
 ### One-off, outside a project
@@ -481,6 +530,9 @@ The install moves from wherever the old unpack put it to
 
 - [`arquillian-glassfish-server-managed`](../glassfish-managed/) — starts
   the provisioned GlassFish for Arquillian tests.
+- [`glassfish-admin-rest`](../glassfish-admin-rest/) — the client of
+  GlassFish's admin REST interface that `run` deploys with, as the
+  Arquillian Containers do.
 - [`glassfish-pool-maven-plugin`](../glassfish-pool-maven-plugin/) — a
   pool of GlassFish instances for parallel tests. It stages with the same
   code and accepts the same `<distribution>` and `<overlays>`.

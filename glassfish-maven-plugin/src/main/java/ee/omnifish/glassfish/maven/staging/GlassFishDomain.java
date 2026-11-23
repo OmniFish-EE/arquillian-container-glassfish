@@ -491,6 +491,11 @@ public final class GlassFishDomain {
         }
     }
 
+    /** The domain's {@code server.log}, which may not exist yet. */
+    public Path serverLog() {
+        return home.resolve(DOMAIN_CONFIG).resolveSibling("logs").resolve("server.log");
+    }
+
     private Path pidFile() {
         return home.resolve(DOMAIN_CONFIG).resolve("pid");
     }

@@ -91,6 +91,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- GlassFish's admin REST interface, through which glassfish:run deploys. -->
+        <dependency>
+            <groupId>ee.omnifish.glassfish</groupId>
+            <artifactId>glassfish-admin-rest</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Unzips the dist keeping POSIX permissions (asadmin's +x bit). -->
         <dependency>
             <groupId>org.apache.commons</groupId>
