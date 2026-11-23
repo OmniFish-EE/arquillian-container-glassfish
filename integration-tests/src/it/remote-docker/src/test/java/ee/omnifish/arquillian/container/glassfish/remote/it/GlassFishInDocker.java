@@ -41,7 +41,11 @@ public class GlassFishInDocker implements ExecutionCondition, BeforeAllCallback,
         glassfish = 
             new GenericContainer<>(DockerImageName.parse(System.getProperty("glassfish.image")))
                 .withExposedPorts(4848, 8080)
-                // The image has the admin user admin/admin, and secure admin with a self-signed certificate.
+                // The admin user admin/admin, and secure admin with a self-signed certificate. The GlassFish 7
+                // image has them built in, and ignores this password, which it already has. The GlassFish 8
+                // image creates its domain on the first start, with secure admin only when a password is set.
+                // Without secure admin, GlassFish refuses admin requests from outside the container.
+                .withEnv("AS_ADMIN_PASSWORD", "admin")
                 .waitingFor(
                     Wait.forHttps("/management/domain").forPort(4848).allowInsecure()
                         .withBasicCredentials("admin", "admin")
