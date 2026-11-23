@@ -10,17 +10,19 @@
  */
 package ee.omnifish.arquillian.container.glassfish.clientutils;
 
-import jakarta.ws.rs.ProcessingException;
-
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.junit.jupiter.api.Test;
 
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
+import ee.omnifish.glassfish.admin.rest.AdminConnection;
+import ee.omnifish.glassfish.admin.rest.AdminRestClient;
+import ee.omnifish.glassfish.admin.rest.DeployOptions;
+import ee.omnifish.glassfish.admin.rest.GlassFishClientException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -35,60 +37,54 @@ class GlassFishClientServiceTest {
      */
     @Test
     void aFailureAfterTheDeploymentSaysTheApplicationIsDeployed() {
-        StubbedRequests requests = new StubbedRequests(false);
+        StubbedClient requests = new StubbedClient(false);
 
-        DeploymentException e = assertThrows(DeploymentException.class,
-                () -> client(requests).doDeploy("app", new FormDataMultiPart()));
+        DeploymentException e = assertThrows(DeploymentException.class, () -> deploy(requests));
 
         assertTrue(e.getMessage().contains("app was deployed"), e.getMessage());
-        assertEquals(List.of("POST", "GET"), requests.methods);
+        assertEquals(List.of("deploy", "servlets"), requests.calls);
     }
 
     /** It fails with GlassFish's answer, which tells the caller that nothing is deployed. */
     @Test
     void aRejectedDeploymentIsNoDeploymentException() {
-        StubbedRequests requests = new StubbedRequests(true);
+        StubbedClient requests = new StubbedClient(true);
 
-        assertThrows(ProcessingException.class, () -> client(requests).doDeploy("app", new FormDataMultiPart()));
+        assertThrows(GlassFishClientException.class, () -> deploy(requests));
 
-        assertEquals(List.of("POST"), requests.methods);
+        assertEquals(List.of("deploy"), requests.calls);
     }
 
-    private static GlassFishClientService client(GlassFishClientUtil requests) {
-        return new GlassFishClientService(new CommonGlassFishConfiguration()) {
-            @Override
-            GlassFishClientUtil getClientUtil() {
-                return requests;
-            }
-        };
+    private static void deploy(AdminRestClient requests) throws DeploymentException {
+        new GlassFishClientService(new CommonGlassFishConfiguration(), requests)
+                .doDeploy("app", new ByteArrayInputStream(new byte[0]), "app.war", new DeployOptions());
     }
 
-    /** GlassFish's answers, without HTTP: the deploy request succeeds unless rejected, and every GET fails. */
-    private static final class StubbedRequests extends GlassFishClientUtil {
+    /** GlassFish's answers, without HTTP: the deployment succeeds unless rejected, and every lookup fails. */
+    private static final class StubbedClient extends AdminRestClient {
 
-        final List<String> methods = new ArrayList<>();
+        final List<String> calls = new ArrayList<>();
         private final boolean rejectDeployment;
 
-        StubbedRequests(boolean rejectDeployment) {
-            super(new CommonGlassFishConfiguration(), "http://localhost:4848/management/domain");
+        StubbedClient(boolean rejectDeployment) {
+            super(AdminConnection.local(4848));
             this.rejectDeployment = rejectDeployment;
         }
 
         @Override
-        public Map<String, Object> POSTMultiPartRequest(String operation, String additionalResourceUrl,
-                                                        FormDataMultiPart form) {
-            methods.add("POST");
+        public String deploy(InputStream archive, String fileName, DeployOptions options) {
+            calls.add("deploy");
             if (rejectDeployment) {
-                throw new ProcessingException("While " + operation + " --exit_code: FAILURE");
+                throw new GlassFishClientException("While deploying application app --exit_code: FAILURE");
             }
 
-            return Map.of("exit_code", "SUCCESS");
+            return "app";
         }
 
         @Override
-        public Map<String, Object> GETRequest(String additionalResourceUrl) {
-            methods.add("GET");
-            throw new ProcessingException("While getting " + additionalResourceUrl
+        public List<Servlet> servlets(String name) {
+            calls.add("servlets");
+            throw new GlassFishClientException("While getting /applications/application/app/list-sub-components"
                     + " -- [status: SERVER_ERROR reason: Internal Server Error]");
         }
     }

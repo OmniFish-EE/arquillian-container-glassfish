@@ -54,48 +54,126 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2026] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
-package ee.omnifish.arquillian.container.glassfish.clientutils;
+package ee.omnifish.glassfish.admin.rest;
+
+import java.net.URI;
 
 /**
  * @author Z.Paulovics
  */
-public class GlassFishClientException extends RuntimeException {
-
-    private static final long serialVersionUID = 1L;
+public class NodeAddress {
+    
+    /**
+     * HTTP protocol URI prefix
+     */
+    public static final String HTTP_PROTOCOL_PREFIX = "http://";
 
     /**
-     * Construct a new instance with {@code null} as its detail message.
+     * HTTPS protocol URI prefix
      */
-    public GlassFishClientException() {
-        super();
+    public static final String HTTPS_PROTOCOL_PREFIX = "https://";
+
+    /**
+     * name of the server instance
+     */
+    private String serverName = AdminRestClient.ADMINSERVER;
+
+    /**
+     * IP or HOST name of the node
+     */
+    private String host = "localhost";
+
+    /**
+     * Port number for http:// calls
+     */
+    private int httpPort;
+
+    /**
+     * Port number for https:// calls
+     */
+    private int httpsPort;
+
+    public NodeAddress() {
+    }
+
+    public NodeAddress(String host) {
+        this.host = host;
+    }
+
+    public NodeAddress(String serverName, String host, int port, int secure_port) {
+        this.serverName = serverName;
+        this.host = host;
+        this.httpPort = port;
+        this.httpsPort = secure_port;
     }
 
     /**
-     * Construct a new instance with the supplied message
-     *
-     * @param message the message
+     * @return the serverName
      */
-    public GlassFishClientException(String message) {
-        super(message);
+    public String getServerName() {
+        return serverName;
     }
 
     /**
-     * Construct a new instance with the supplied message and cause
-     *
-     * @param message the message
-     * @param cause the Throwable that caused the exception to be thrown
+     * @param serverName name of the server
      */
-    public GlassFishClientException(String message, Throwable cause) {
-        super(message, cause);
+    public void setServerName(String serverName) {
+        this.serverName = serverName;
     }
 
     /**
-     * Construct a new instance with the supplied cause
-     *
-     * @param cause the Throwable that caused the exception to be thrown
+     * @return the ip
      */
-    public GlassFishClientException(Throwable cause) {
-        super(cause);
+    public String getHost() {
+        return host;
+    }
+
+    /**
+     * @param host the host
+     */
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    /**
+     * @return the port
+     */
+    public int getHttpPort() {
+        return httpPort;
+    }
+
+    /**
+     * @param httpPort the http port
+     */
+    public void setHttpPort(int httpPort) {
+        this.httpPort = httpPort;
+    }
+
+    /**
+     * @return the secure port
+     */
+    public int getHttpsPort() {
+        return httpsPort;
+    }
+
+    /**
+     * @param httpsPort the port used for https
+     */
+    public void setHttpsPort(int httpsPort) {
+        this.httpsPort = httpsPort;
+    }
+
+    public URI getURI() {
+        return getURI(false);
+    }
+
+    public URI getURI(boolean secure) {
+        return URI.create(getHttpProtocolPrefix(secure) + host + ":" + ((!secure) ? this.httpPort : this.httpsPort));
+    }
+
+    public static String getHttpProtocolPrefix(boolean secure) {
+        return secure ? HTTPS_PROTOCOL_PREFIX : HTTP_PROTOCOL_PREFIX;
     }
 }

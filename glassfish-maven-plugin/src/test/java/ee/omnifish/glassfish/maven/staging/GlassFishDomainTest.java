@@ -121,6 +121,27 @@ class GlassFishDomainTest {
                 "--terse stop-domain domain1")));
     }
 
+    /** As after mvnd's Ctrl+C during a post-start command, whose asadmin call keeps the interrupt. */
+    @Test
+    void anInterruptedThreadStillStopsTheDomainAndKeepsTheInterrupt() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(
+                FakeDomain.install(home, freePort(), FakeDomain.START + FakeDomain.STOP));
+        domain.start(false, false, Duration.ofSeconds(30));
+
+        Thread.currentThread().interrupt();
+        boolean stopped;
+        boolean interruptedAfter;
+        try {
+            stopped = domain.stop();
+        } finally {
+            interruptedAfter = Thread.interrupted();
+        }
+
+        assertThat(stopped, is(true));
+        assertThat(interruptedAfter, is(true));
+        assertThat(domain.isRunning(), is(false));
+    }
+
     /** As after mvn clean deleted the install it runs from: config/pid and asadmin are gone with it. */
     @Test
     void aDomainWhoseInstallIsGoneIsStoppedByItsCommandLine() throws Exception {
