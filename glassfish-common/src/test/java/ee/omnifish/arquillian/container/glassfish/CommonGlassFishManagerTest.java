@@ -10,11 +10,10 @@
  */
 package ee.omnifish.arquillian.container.glassfish;
 
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
@@ -23,7 +22,8 @@ import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.junit.jupiter.api.Test;
 
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClient;
-import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientException;
+import ee.omnifish.glassfish.admin.rest.DeployOptions;
+import ee.omnifish.glassfish.admin.rest.GlassFishClientException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -89,7 +89,8 @@ class CommonGlassFishManagerTest {
         }
 
         @Override
-        public HTTPContext doDeploy(String name, FormDataMultiPart form) throws DeploymentException {
+        public HTTPContext doDeploy(String name, InputStream archive, String fileName, DeployOptions options)
+                throws DeploymentException {
             calls.add("deploy " + name);
             if (deployFailure instanceof DeploymentException) {
                 throw (DeploymentException) deployFailure;
@@ -102,9 +103,8 @@ class CommonGlassFishManagerTest {
         }
 
         @Override
-        public Map<String, Object> doUndeploy(String name, FormDataMultiPart form) {
+        public void doUndeploy(String name) {
             calls.add("undeploy " + name);
-            return Map.of();
         }
 
         @Override

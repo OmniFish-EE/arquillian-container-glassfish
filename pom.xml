@@ -127,6 +127,7 @@
     <modules>
         <module>dependencies</module>
         <module>glassfish-admin</module>
+        <module>glassfish-admin-rest</module>
         <module>glassfish-common</module>
         <module>glassfish-managed</module>
         <module>glassfish-remote</module>

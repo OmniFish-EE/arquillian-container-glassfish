@@ -54,14 +54,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// Portions Copyright [2026] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish.clientutils;
 
-import java.util.Map;
+import java.io.InputStream;
 
-import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
+
+import ee.omnifish.glassfish.admin.rest.AdminRestClient;
+import ee.omnifish.glassfish.admin.rest.DeployOptions;
+import ee.omnifish.glassfish.admin.rest.GlassFishClientException;
 
 /**
  * @author Z.Paulovics
@@ -71,7 +75,7 @@ public interface GlassFishClient {
     /**
      * Admin Server key for the REST request.
      */
-    public static final String ADMINSERVER = "server";
+    public static final String ADMINSERVER = AdminRestClient.ADMINSERVER;
 
     /**
      * Start-up the server
@@ -87,26 +91,26 @@ public interface GlassFishClient {
     public void startUp();
 
     /**
-     * Do deploy an application defined by a multipart form's data to the target server or cluster
-     * of GlassFish
+     * Do deploy an application to the target server or cluster of GlassFish
      *
-     * @param name - name of the application form - a form of MediaType.MULTIPART_FORM_DATA_TYPE
-     * @param form - form containing data to be deployed
+     * @param name - the name the caller knows the deployment by, and undeploys it by
+     * @param archive - the archive to deploy
+     * @param fileName - the archive's file name
+     * @param options - the deployment's options
      * @throws DeploymentException if the application was deployed, but reading what it contains
      *         failed: it stays deployed, so the caller still undeploys it. A failed deployment throws
-     *         a {@link GlassFishClientException} or a {@code ProcessingException} instead.
-     * @return subComponents - a map of SubComponents of the application
+     *         a {@link GlassFishClientException} instead.
+     * @return the HTTP context of the application, with its servlets
      */
-    public HTTPContext doDeploy(String name, FormDataMultiPart form) throws DeploymentException;
+    public HTTPContext doDeploy(String name, InputStream archive, String fileName, DeployOptions options)
+            throws DeploymentException;
 
     /**
      * Do undeploy the application
      *
-     * @param name - application name
-     * @param form - form
-     * @return responseMap
+     * @param name - the name it was deployed by
      */
-    public Map<String, Object> doUndeploy(String name, FormDataMultiPart form);
+    public void doUndeploy(String name);
 
     /**
      * Verify whether the Domain Administration Server is running.

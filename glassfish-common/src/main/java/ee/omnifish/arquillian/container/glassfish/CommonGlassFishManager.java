@@ -54,11 +54,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2025] [OmniFish and/or its affiliates]
+// Portions Copyright [2025, 2026] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
 package ee.omnifish.arquillian.container.glassfish;
-
-import jakarta.ws.rs.ProcessingException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -69,8 +67,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.glassfish.jersey.media.multipart.FormDataMultiPart;
-import org.glassfish.jersey.media.multipart.file.StreamDataBodyPart;
 import org.jboss.arquillian.container.spi.client.container.DeploymentException;
 import org.jboss.arquillian.container.spi.client.container.LifecycleException;
 import org.jboss.arquillian.container.spi.client.protocol.metadata.HTTPContext;
@@ -79,10 +75,10 @@ import org.jboss.shrinkwrap.api.Archive;
 import org.jboss.shrinkwrap.api.exporter.ZipExporter;
 
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClient;
-import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientException;
 import ee.omnifish.arquillian.container.glassfish.clientutils.GlassFishClientService;
+import ee.omnifish.glassfish.admin.rest.DeployOptions;
+import ee.omnifish.glassfish.admin.rest.GlassFishClientException;
 
-import static jakarta.ws.rs.core.MediaType.TEXT_PLAIN_TYPE;
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.INFO;
 
@@ -100,7 +96,6 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
 
     private static final Logger LOG = System.getLogger(CommonGlassFishManager.class.getName());
 
-    private static final String DELETE_OPERATION = "__deleteoperation";
     private static final Lock deployLock;
     private static final boolean prependDeploySequence;
 
@@ -147,24 +142,19 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         LOG.log(INFO, "Deploying {0} as {1}", archiveName, deploymentName);
 
         try (InputStream deployment = archive.as(ZipExporter.class).exportAsInputStream()) {
-            // Build up the POST form to send to GlassFish
-            final FormDataMultiPart form = new FormDataMultiPart();
-            form.bodyPart(new StreamDataBodyPart("id", deployment, archiveName));
-
-            addDeployFormFields(deploymentName, form);
-
             // Do Deploy the application on the remote GlassFish
             HTTPContext httpContext;
             deployLock.lock();
             try {
-                httpContext = glassFishClient.doDeploy(deploymentName, form);
+                httpContext = glassFishClient.doDeploy(deploymentName, deployment, archiveName,
+                        deployOptions(deploymentName));
             } finally {
                 deployLock.unlock();
             }
             final ProtocolMetaData protocolMetaData = new ProtocolMetaData();
             protocolMetaData.addContext(httpContext);
             return protocolMetaData;
-        } catch (GlassFishClientException | IOException | ProcessingException e) {
+        } catch (GlassFishClientException | IOException e) {
             // The deployment failed, so there's nothing for undeploy to remove. A failure after the
             // application deployed comes as a DeploymentException, which keeps the archive.
             forgetArchive(archive);
@@ -187,18 +177,13 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         LOG.log(INFO, "Undeploying {0}", deploymentName);
 
         try {
-            // Build up the POST form to send to GlassFish
-            FormDataMultiPart form = new FormDataMultiPart();
-            form.field("target", configuration.getTarget(), TEXT_PLAIN_TYPE);
-            form.field("operation", DELETE_OPERATION, TEXT_PLAIN_TYPE);
-
             deployLock.lock();
             try {
-                glassFishClient.doUndeploy(deploymentName, form);
+                glassFishClient.doUndeploy(deploymentName);
             } finally {
                 deployLock.unlock();
             }
-        } catch (GlassFishClientException | ProcessingException e) {
+        } catch (GlassFishClientException e) {
             throw new DeploymentException("Could not undeploy " + archive.getName(), e);
         }
     }
@@ -207,36 +192,26 @@ public class CommonGlassFishManager<C extends CommonGlassFishConfiguration> {
         return glassFishClient.isDASRunning();
     }
 
-    private void addDeployFormFields(String name, FormDataMultiPart deployform) {
+    private DeployOptions deployOptions(String name) {
+        // The target is the client's, and the libraries and properties are optional
+        DeployOptions options = new DeployOptions()
+                .libraries(configuration.getLibraries())
+                .properties(configuration.getProperties())
+                .availabilityEnabled(configuration.isAvailabilityEnabled());
 
         // Add the name field, the name is the archive filename without extension
         // We add this conditionally, since when setting it the name can not be set
         // in application.xml anymore.
         if (configuration.isAddDeployName() || prependDeploySequence) {
-            deployform.field("name", name, TEXT_PLAIN_TYPE);
-        }
-
-        // Add the target field (the default is "server" - Admin Server)
-        deployform.field("target", configuration.getTarget(), TEXT_PLAIN_TYPE);
-
-        // Add the libraries field (optional)
-        if (configuration.getLibraries() != null) {
-            deployform.field("libraries", configuration.getLibraries(), TEXT_PLAIN_TYPE);
-        }
-
-        // Add the properties field (optional)
-        if (configuration.getProperties() != null) {
-            deployform.field("properties", configuration.getProperties(), TEXT_PLAIN_TYPE);
-        }
-
-        if (configuration.isAvailabilityEnabled()) {
-            deployform.field("availabilityenabled", "true", TEXT_PLAIN_TYPE);
+            options.name(name);
         }
 
         // Add the type field (optional, the only valid value is "osgi", other values are ommited)
-        if (configuration.getType() != null && "osgi".equals(configuration.getType())) {
-            deployform.field("type", configuration.getType(), TEXT_PLAIN_TYPE);
+        if ("osgi".equals(configuration.getType())) {
+            options.type(configuration.getType());
         }
+
+        return options;
     }
 
 

@@ -54,9 +54,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Portions Copyright [2025] [OmniFish and/or its affiliates]
+// Portions Copyright [2025, 2026] [OmniFish and/or its affiliates]
 // Portions Copyright [2021] [OmniFaces and/or its affiliates]
-package ee.omnifish.arquillian.container.glassfish.clientutils;
+package ee.omnifish.glassfish.admin.rest;
 
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.client.Client;
@@ -92,8 +92,6 @@ import org.glassfish.jersey.client.filter.CsrfProtectionFilter;
 import org.glassfish.jersey.media.multipart.FormDataMultiPart;
 import org.glassfish.jersey.media.multipart.MultiPartFeature;
 
-import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
-
 import static jakarta.ws.rs.client.Entity.entity;
 import static jakarta.ws.rs.core.MediaType.APPLICATION_XML_TYPE;
 import static jakarta.ws.rs.core.Response.Status.Family.SUCCESSFUL;
@@ -105,9 +103,14 @@ import static javax.xml.stream.XMLStreamConstants.END_ELEMENT;
 import static javax.xml.stream.XMLStreamConstants.START_ELEMENT;
 
 /**
+ * Requests to GlassFish's admin REST interface, with its answers as maps.
+ * Every failure, of a request or in GlassFish's answer, is a
+ * {@link GlassFishClientException}; one of the request has the JAX-RS
+ * {@code ProcessingException} as its cause.
+ *
  * @author Z.Paulovics
  */
-public class GlassFishClientUtil {
+class GlassFishClientUtil {
 
     private static final Logger log = Logger.getLogger(GlassFishClientUtil.class.getName());
 
@@ -121,16 +124,12 @@ public class GlassFishClientUtil {
      */
     public static final String WARNING = "WARNING";
 
-    private final CommonGlassFishConfiguration configuration;
+    private final AdminConnection connection;
     private final String adminBaseUrl;
 
-    public GlassFishClientUtil(CommonGlassFishConfiguration configuration, String adminBaseUrl) {
-        this.configuration = configuration;
+    GlassFishClientUtil(AdminConnection connection, String adminBaseUrl) {
+        this.connection = connection;
         this.adminBaseUrl = adminBaseUrl;
-    }
-
-    public CommonGlassFishConfiguration getConfiguration() {
-        return configuration;
     }
 
     @SuppressWarnings("unchecked")
@@ -260,16 +259,15 @@ public class GlassFishClientUtil {
         }
 
         ClientBuilder clientBuilder = ClientBuilder.newBuilder();
-        if (configuration.isIgnoreCertificates() && sslContext != null) {
+        if (connection.ignoreCertificates() && sslContext != null) {
             clientBuilder.sslContext(sslContext).hostnameVerifier((hostname, session) -> true);
         } else if (sslContext == null) {
             log.warning("Unable to ignore SSL certificate information");
         }
 
         try (Client client = clientBuilder.build()) {
-            if (configuration.isAuthorisation()) {
-                client.register(
-                    HttpAuthenticationFeature.basic(configuration.getAdminUser(), configuration.getAdminPassword()));
+            if (connection.user() != null) {
+                client.register(HttpAuthenticationFeature.basic(connection.user(), connection.password()));
             }
 
             client.register(new CsrfProtectionFilter());
@@ -282,6 +280,9 @@ public class GlassFishClientUtil {
                         client.target(adminBaseUrl + additionalResourceUrl)
                               .request(APPLICATION_XML_TYPE)
                               .header("X-GlassFish-3", "ignore"));
+        } catch (ProcessingException e) {
+            // So that no JAX-RS type, relocated in this jar, reaches its users.
+            throw new GlassFishClientException(e.getMessage(), e);
         }
     }
 
