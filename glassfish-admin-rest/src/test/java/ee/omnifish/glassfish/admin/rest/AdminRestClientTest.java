@@ -140,6 +140,35 @@ class AdminRestClientTest {
         assertEquals(List.of(), client.webContextRoots("ejb"));
     }
 
+    /** As with http-listener-1 disabled: only the HTTPS listener serves the applications. */
+    @Test
+    void aDomainWithoutAnEnabledHttpListenerHasNoHttpPort() {
+        String config = "/management/domain/configs/config/server-config";
+        answers.put("GET /management/domain/servers/server", new Answer(200, map(entry("exit_code", "SUCCESS")
+                + "<entry key=\"extraProperties\">"
+                + map("<entry key=\"childResources\">" + map(entry("server", "server")) + "</entry>")
+                + "</entry>")));
+        answers.put("GET /management/domain/servers/server/server",
+                entity(entry("name", "server") + entry("configRef", "server-config")));
+        answers.put("GET " + config + "/http-service/list-virtual-servers", new Answer(200, map(
+                entry("exit_code", "SUCCESS")
+                + "<entry key=\"children\"><list>" + map(entry("message", "server"))
+                + map(entry("message", "__asadmin")) + "</list></entry>")));
+        answers.put("GET " + config + "/http-service/virtual-server/server",
+                entity(entry("networkListeners", "http-listener-1, http-listener-2")));
+        answers.put("GET " + config + "/network-config/network-listeners/network-listener/http-listener-1",
+                entity(entry("enabled", "false") + entry("port", "8080") + entry("protocol", "http-listener-1")));
+        answers.put("GET " + config + "/network-config/network-listeners/network-listener/http-listener-2",
+                entity(entry("enabled", "true") + entry("port", "8181") + entry("protocol", "http-listener-2")));
+        answers.put("GET " + config + "/network-config/protocols/protocol/http-listener-2",
+                entity(entry("securityEnabled", "true")));
+
+        NodeAddress node = client().startUp();
+
+        assertEquals(-1, node.getHttpPort());
+        assertEquals(8181, node.getHttpsPort());
+    }
+
     private AdminRestClient client() {
         return new AdminRestClient(AdminConnection.local(server.getAddress().getPort()));
     }
@@ -161,6 +190,13 @@ class AdminRestClientTest {
     private static void assertField(String body, String field, String value) {
         assertTrue(body.matches("(?s).*name=\"" + field + "\"\\r?\\n(?:[^\\r\\n]+\\r?\\n)*\\r?\\n"
                 + Pattern.quote(value) + "\\r?\\n.*"), field + " = " + value + " in " + body);
+    }
+
+    /** The answer for a configuration element with {@code entries} as its attributes. */
+    private static Answer entity(String entries) {
+        return new Answer(200, map(entry("exit_code", "SUCCESS")
+                + "<entry key=\"extraProperties\">" + map("<entry key=\"entity\">" + map(entries) + "</entry>")
+                + "</entry>"));
     }
 
     private static String map(String entries) {

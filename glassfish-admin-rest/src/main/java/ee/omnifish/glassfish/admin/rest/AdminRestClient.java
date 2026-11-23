@@ -784,9 +784,13 @@ public class AdminRestClient {
      * @param portNum The port number or a system property that stores the port number
      *
      * @return The port number as stored in the network listener configuration or in the system
-     *         property
+     *         property, or -1 without an enabled listener of its kind
      */
     private int getPortValue(Map<String, String> attributes, String serverName, String portNum) {
+        if (portNum == null || portNum.isEmpty()) {
+            return -1;
+        }
+
         try {
             return Integer.parseInt(portNum);
         } catch (NumberFormatException formatEx) {

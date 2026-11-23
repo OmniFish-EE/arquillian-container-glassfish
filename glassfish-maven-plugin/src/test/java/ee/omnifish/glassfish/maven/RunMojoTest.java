@@ -35,6 +35,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import ee.omnifish.glassfish.admin.rest.NodeAddress;
 import ee.omnifish.glassfish.maven.staging.FakeDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
@@ -166,6 +167,14 @@ class RunMojoTest {
         MojoExecutionException e = assertThrows(MojoExecutionException.class, run::execute);
 
         assertThat(e.getMessage(), containsString("the package phase made no war"));
+    }
+
+    @Test
+    void theUrlIsHttpsWithoutAnHttpPort() {
+        assertThat(RunMojo.url(new NodeAddress("server", "localhost", 8080, 8181), "/run-it"),
+                is("http://localhost:8080/run-it/"));
+        assertThat(RunMojo.url(new NodeAddress("server", "localhost", -1, 8181), "/run-it"),
+                is("https://localhost:8181/run-it/"));
     }
 
     private RunMojo runMojo(String packaging) throws ReflectiveOperationException {

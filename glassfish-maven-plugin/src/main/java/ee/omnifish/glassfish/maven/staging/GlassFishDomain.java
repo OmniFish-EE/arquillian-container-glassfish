@@ -440,26 +440,38 @@ public final class GlassFishDomain {
         return stopThrough(adminPort);
     }
 
+    /**
+     * Clears the thread's interrupt status meanwhile, which a cancelled
+     * {@code asadmin} call leaves set, as with mvnd's Ctrl+C during a
+     * post-start command, so the stop still runs; and restores it after.
+     */
     private boolean stopThrough(Integer adminPort) throws IOException {
-        Optional<ProcessHandle> process = process();
-        if (process.isEmpty()) {
-            return false;
-        }
+        boolean interrupted = Thread.interrupted();
+        try {
+            Optional<ProcessHandle> process = process();
+            if (process.isEmpty()) {
+                return false;
+            }
 
-        if (Files.exists(pidFile())) {
-            stopDomain(process.get(), adminPort);
-        } else {
-            process.get().destroy();
+            if (Files.exists(pidFile())) {
+                stopDomain(process.get(), adminPort);
+            } else {
+                process.get().destroy();
+                if (!hasEnded(process.get())) {
+                    process.get().destroyForcibly();
+                }
+            }
             if (!hasEnded(process.get())) {
-                process.get().destroyForcibly();
+                throw new IOException(DOMAIN + " of " + home + " still runs, as process " + process.get().pid()
+                        + ", after it was stopped and killed");
+            }
+
+            return true;
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
             }
         }
-        if (!hasEnded(process.get())) {
-            throw new IOException(DOMAIN + " of " + home + " still runs, as process " + process.get().pid()
-                    + ", after it was stopped and killed");
-        }
-
-        return true;
     }
 
     /** {@code stop-domain}, and {@code stop-domain --kill} if {@code process} still runs after that. */
