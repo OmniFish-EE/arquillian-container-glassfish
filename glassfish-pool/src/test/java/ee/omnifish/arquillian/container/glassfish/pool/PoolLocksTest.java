@@ -66,13 +66,19 @@ class PoolLocksTest {
         }
         assertThat(ForeignJvm.canLock(file), equalTo(true));
 
-        // Held in this JVM: closing the result leaves that lock alone.
-        try (PoolLocks.Held held = PoolLocks.tryLock(file)) {
-            PoolLocks.Held again = PoolLocks.tryLockUnlessHeldElsewhere(file);
-            assertThat(again, notNullValue());
-            again.close();
-            assertThat(ForeignJvm.canLock(file), equalTo(false));
-        }
+        // Held in this JVM: the result shares that lock, which stays held until both let go, in either order.
+        PoolLocks.Held held = PoolLocks.tryLock(file);
+        PoolLocks.Held shared = PoolLocks.tryLockUnlessHeldElsewhere(file);
+        assertThat(shared, notNullValue());
+        shared.close();
+        assertThat(ForeignJvm.canLock(file), equalTo(false));
+
+        shared = PoolLocks.tryLockUnlessHeldElsewhere(file);
+        held.close();
+        held.close();
+        assertThat(ForeignJvm.canLock(file), equalTo(false));
+        shared.close();
+        assertThat(ForeignJvm.canLock(file), equalTo(true));
 
         try (AutoCloseable foreign = ForeignJvm.hold(file)) {
             assertThat(PoolLocks.tryLockUnlessHeldElsewhere(file), nullValue());

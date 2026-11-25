@@ -264,8 +264,7 @@ public final class SlotLeaser {
     /**
      * Mark slot {@code slot}, whose lock the caller holds, as a run's.
      * {@code null} when it can't be: a run that ended keeps it only while it
-     * releases the slot, and another JVM's stop after its build while it
-     * stops the slot.
+     * releases the slot, and a stop after a build while it stops the slot.
      */
     private static PoolLocks.Held markRun(Path poolDir, int slot) {
         try {

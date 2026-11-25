@@ -104,16 +104,23 @@ final class PoolLocks {
 
     /**
      * Lock {@code lockFile} unless another JVM holds it, creating it if
-     * needed. Returns {@code null} when another JVM holds it. When this JVM
-     * holds it already, or the file's directory is gone, the result holds
-     * nothing, and closing it releases nothing.
+     * needed. Returns {@code null} when another JVM holds it. When this
+     * registry holds it already, the result shares that lock, which stays
+     * held until both have been closed, in either order. When this JVM holds
+     * it outside the registry, or the file's directory is gone, the result
+     * holds nothing, and closing it releases nothing.
      */
     static Held tryLockUnlessHeldElsewhere(Path lockFile) throws IOException {
         Path key = key(lockFile);
         synchronized (LOCK) {
-            if (CHANNELS.containsKey(key)) {
-                // Held here, or, after an overlap, by this JVM outside the registry.
-                return Held.nothing();
+            Channel kept = CHANNELS.get(key);
+            if (kept != null) {
+                if (kept.lock == null) {
+                    // After an overlap: held by this JVM outside the registry.
+                    return Held.nothing();
+                }
+                kept.holders++;
+                return new Held(key);
             }
             try {
                 if (lock(key, true)) {
@@ -208,7 +215,10 @@ final class PoolLocks {
         }
     }
 
-    /** A slot lock this JVM holds; {@link #close} releases it. */
+    /**
+     * A slot lock this JVM holds; {@link #close} releases it, once every
+     * holder it's shared with has closed theirs.
+     */
     static final class Held implements AutoCloseable {
 
         private final Path key;
@@ -230,17 +240,24 @@ final class PoolLocks {
             synchronized (LOCK) {
                 if (!released) {
                     released = true;
-                    unlock(key);
+                    Channel held = CHANNELS.get(key);
+                    if (held != null && --held.holders == 0) {
+                        unlock(key);
+                    }
                 }
             }
         }
     }
 
-    /** A channel on a slot lock file, with its lock, or none while kept after an overlap. */
+    /**
+     * A channel on a slot lock file, with its lock and how many {@link Held}s
+     * share it, or no lock while kept after an overlap.
+     */
     private static final class Channel {
 
         final FileChannel channel;
         final FileLock lock;
+        int holders = 1;
 
         Channel(FileChannel channel, FileLock lock) {
             this.channel = channel;

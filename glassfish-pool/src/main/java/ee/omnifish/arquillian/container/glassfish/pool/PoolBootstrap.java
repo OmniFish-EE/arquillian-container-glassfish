@@ -558,7 +558,9 @@ public final class PoolBootstrap {
      * a {@code glassfish-pool:run} in another JVM holds it: that slot keeps
      * running. Neither a run of this JVM, whose own end runs side by side
      * with this stop on Ctrl+C, nor a test JVM's lease keeps a slot running:
-     * on Ctrl+C, the build's own test JVMs may still hold theirs.
+     * on Ctrl+C, the build's own test JVMs may still hold theirs. This stop
+     * shares the mark of a run of this JVM, so the slot stays marked until
+     * it's stopped, also when that run hands it back first.
      */
     private static boolean holdRunMark(Path poolDir, int slot, List<PoolLocks.Held> runMarks) {
         PoolLocks.Held runMark;

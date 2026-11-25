@@ -246,6 +246,42 @@ class PoolBootstrapTest {
         assertThat(ForeignJvm.canLock(runLock), equalTo(true));
     }
 
+    /**
+     * On Ctrl+C, a run of this JVM hands its slot back while the stop after
+     * the build stops that slot. A run in another JVM must not lease the slot
+     * meanwhile, and then lose it to the stop.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theStopAfterTheBuildKeepsTheRunLockOfThisJvmsRunThatHandsItsSlotBack(@TempDir Path tmp)
+            throws Exception {
+        Path stopping = tmp.resolve("stopping");
+        Path release = tmp.resolve("release");
+        PoolConfig config = fakePool(tmp, "case \"$*\" in *stop-domain*)\n"
+                + "  touch '" + stopping + "'\n"
+                + "  while [ ! -f '" + release + "' ]; do sleep 0.1; done ;;\n"
+                + "esac\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+        Path runLock = PoolPaths.runLockFile(config.poolDir(), 1);
+        PoolLocks.Held run = PoolLocks.tryLock(runLock);
+
+        CompletableFuture<Void> down = CompletableFuture.runAsync(() -> PoolBootstrap.downAfterBuild(config));
+        try {
+            for (int i = 0; i < 200 && !Files.exists(stopping); i++) {
+                Thread.sleep(50);
+            }
+
+            assertThat(Files.exists(stopping), equalTo(true));
+            run.close();
+            assertThat(ForeignJvm.canLock(runLock), equalTo(false));
+        } finally {
+            run.close();
+            Files.createFile(release);
+            down.get(30, TimeUnit.SECONDS);
+        }
+        assertThat(ForeignJvm.canLock(runLock), equalTo(true));
+    }
+
     /** On Ctrl+C, also with the build's own test JVMs still holding their slots. */
     @Test
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
