@@ -50,6 +50,7 @@ poolDir/
 ├── grow.lock                        # serialises pool-grow across JVMs
 ├── slot-1/
 │   ├── lock                         # FileLock holds the slot
+│   ├── run.lock                     # also held while a glassfish-pool:run has the slot
 │   ├── ports.properties             # adminPort, httpPort, httpsPort, glassFishHome
 │   └── glassfish/                   # the cloned install
 ├── slot-2/

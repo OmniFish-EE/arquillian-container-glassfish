@@ -103,6 +103,31 @@ final class PoolLocks {
     }
 
     /**
+     * Whether another JVM holds {@code lockFile}'s lock. Read-only, like
+     * {@link #isBusy}; a lock this JVM holds doesn't count.
+     */
+    static boolean isHeldElsewhere(Path lockFile) {
+        Path key = key(lockFile);
+        synchronized (LOCK) {
+            if (CHANNELS.containsKey(key)) {
+                // Held here, or, after an overlap, by this JVM outside the registry.
+                return false;
+            }
+            try {
+                if (!lock(key, false)) {
+                    // An overlap keeps its channel; another JVM's lock doesn't.
+                    return !CHANNELS.containsKey(key);
+                }
+            } catch (IOException e) {
+                // Missing or unreadable, so nobody holds it either.
+                return false;
+            }
+            unlock(key);
+            return false;
+        }
+    }
+
+    /**
      * Run {@code section} holding {@code poolDir}'s {@code grow.lock}, which
      * serializes slot claims across JVMs.
      */

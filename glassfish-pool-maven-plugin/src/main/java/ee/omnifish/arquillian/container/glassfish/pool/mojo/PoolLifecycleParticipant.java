@@ -128,7 +128,8 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         for (PoolConfig pool : pools) {
             LOG.info("Stopping the pool at {}", pool.poolDir());
             try {
-                PoolBootstrap.down(pool);
+                // A slot a run in another terminal holds keeps running, until that run ends.
+                PoolBootstrap.downAfterBuild(pool);
             } catch (IllegalStateException e) {
                 LOG.error(e.getMessage());
                 stillRunning = e;

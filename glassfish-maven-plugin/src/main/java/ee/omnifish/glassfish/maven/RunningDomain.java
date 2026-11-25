@@ -20,45 +20,51 @@ import ee.omnifish.glassfish.admin.ServerLogTailer;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 
 /**
- * The domain {@code glassfish:run} started, with its {@code server.log}
- * mirrored to the console, and the one stop that ends it, however the run
- * ends: from a shutdown hook on plain Maven's Ctrl+C, after mvnd's Ctrl+C
- * interrupts the wait, after a failed deploy, or once the domain stopped
- * otherwise, as with {@code glassfish:stop} from another terminal.
+ * The domain a run deploys to, with its {@code server.log} mirrored to the
+ * console, and the one ending of the run, however it ends: from a shutdown
+ * hook on plain Maven's Ctrl+C, after mvnd's Ctrl+C interrupts the wait,
+ * after a failed deploy, or once the domain stopped otherwise, as with
+ * {@code glassfish:stop} from another terminal. For {@code glassfish:run},
+ * the ending stops the domain; for {@code glassfish-pool:run}, it hands the
+ * domain back to the pool.
  */
-final class RunningDomain implements AutoCloseable {
+public final class RunningDomain implements AutoCloseable {
+
+    /** What ends the run, before the mirror stops. */
+    @FunctionalInterface
+    public interface Ending {
+        void end() throws IOException;
+    }
 
     private final GlassFishDomain domain;
     private final ServerLogTailer serverLog;
+    private final Ending ending;
     private final Log log;
-    private final Thread shutdownHook = new Thread(this::stop, "glassfish:run stop");
+    private final Thread shutdownHook;
 
-    private volatile int adminPort;
-    private boolean stopped;
+    private boolean ended;
 
     /**
      * Follows the domain's {@code server.log} from now on, printing each line
-     * after {@code prefix}, and stops the domain when the JVM exits.
+     * after {@code prefix}, and ends the run when the JVM exits.
+     *
+     * @param goal the goal that runs, which names the shutdown hook's thread
      */
-    RunningDomain(GlassFishDomain domain, int adminPort, String prefix, Log log) {
+    public RunningDomain(GlassFishDomain domain, String prefix, String goal, Log log, Ending ending) {
         this.domain = domain;
-        this.adminPort = adminPort;
+        this.ending = ending;
         this.log = log;
         serverLog = ServerLogTailer.follow(domain.serverLog(), line -> System.out.println(prefix + line));
+        shutdownHook = new Thread(this::end, goal + " ending");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
-    }
-
-    /** The admin port it answers on, which a restart may change. */
-    void adminPort(int adminPort) {
-        this.adminPort = adminPort;
     }
 
     /**
      * Wait until the domain's process exits, or this thread is interrupted,
-     * then stop it. The interrupt is restored once the domain has stopped:
+     * then end the run. The interrupt is restored once the run has ended:
      * {@code asadmin} would give up at once otherwise.
      */
-    void untilStopped() {
+    public void untilStopped() {
         boolean interrupted = false;
         try {
             Optional<ProcessHandle> process = domain.process();
@@ -79,20 +85,18 @@ final class RunningDomain implements AutoCloseable {
     }
 
     /**
-     * Stop the domain, then the mirror, so its shutdown still shows. A second
-     * call waits until the first has finished: during a shutdown, the JVM
-     * exits once its hooks return.
+     * Run the ending, then stop the mirror, so what the ending makes the
+     * domain log still shows. A second call waits until the first has
+     * finished: during a shutdown, the JVM exits once its hooks return.
      */
-    synchronized void stop() {
-        if (stopped) {
+    synchronized void end() {
+        if (ended) {
             return;
         }
 
-        stopped = true;
+        ended = true;
         try {
-            if (domain.stop(adminPort)) {
-                log.info("GlassFish at " + domain.home() + " stopped");
-            }
+            ending.end();
         } catch (IOException e) {
             log.warn(e.getMessage());
         } finally {
@@ -100,14 +104,14 @@ final class RunningDomain implements AutoCloseable {
         }
     }
 
-    /** {@link #stop}, and drop the shutdown hook, which has nothing left to do. */
+    /** {@link #end}, and drop the shutdown hook, which has nothing left to do. */
     @Override
     public void close() {
-        stop();
+        end();
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
         } catch (IllegalStateException e) {
-            // The JVM is shutting down, and the hook ran the same stop.
+            // The JVM is shutting down, and the hook ran the same ending.
         }
     }
 }
