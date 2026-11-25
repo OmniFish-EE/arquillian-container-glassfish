@@ -103,7 +103,7 @@ public final class LifecycleSupport {
      * Maven strips colour codes. Maven exports Jansi, which holds that state,
      * to plugins.
      */
-    static boolean isConsoleColored() {
+    public static boolean isConsoleColored() {
         try {
             return Ansi.isEnabled() && AnsiConsole.out().getMode() != AnsiMode.Strip;
         } catch (LinkageError e) {

@@ -12,7 +12,6 @@ package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.List;
 
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -33,8 +32,10 @@ abstract class AbstractPoolMojo extends AbstractMojo {
 
     /**
      * Where the pool of slots is laid out. Created if missing. Defaults to
-     * {@code pool} in the build directory of the project where Maven runs,
-     * or with {@link #multiModule} off in the project's own.
+     * {@code pool} in the build directory of the pool's root project: the
+     * topmost one around the project whose own pom configures this plugin,
+     * or the project where Maven runs, when that's higher. With
+     * {@link #multiModule} off, it's in the project's own.
      */
     @Parameter(property = "gf.pool.dir")
     protected File poolDir;
@@ -42,9 +43,10 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     /**
      * Whether the build has one pool, which all its modules share. On by
      * default, which suits a single-module build too. {@code poolDir} and
-     * {@code stageDir} default to the build directory of the project where
-     * Maven runs, and with {@code <extensions>true</extensions>}, the pool
-     * stops once, after the whole build.
+     * {@code stageDir} default to the build directory of the pool's root
+     * project, also when Maven runs in a module, and with
+     * {@code <extensions>true</extensions>}, the pool stops once, after the
+     * whole build.
      *
      * <p>Turn it off, in a multi-module build in the parent's configuration,
      * only when a later step needs GlassFish stopped, when long-running
@@ -150,9 +152,11 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     protected boolean failOnCommandError;
 
     /**
-     * Start each slot's domain in debug mode. Shares the {@code glassfish.debug}
-     * property with the managed container. Only valid for a single-slot pool
-     * ({@code gf.pool.size=1}) — all slot clones share one debug port.
+     * Start each slot's domain in debug mode, with its debugger on localhost,
+     * on its admin port + 9: 14857 for slot 1 with the default ports. Shares
+     * the {@code glassfish.debug} property with the managed container. With
+     * {@code <extensions>true</extensions>}, a build that runs
+     * {@code glassfish-pool:run} sets it, unless it's set already.
      */
     @Parameter(property = "glassfish.debug", defaultValue = "false")
     protected boolean debug;
@@ -160,8 +164,8 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     /**
      * Start each slot's domain suspended, waiting for a debugger to attach.
      * Shares the {@code glassfish.suspend} property with the managed container.
-     * Only valid for a single-slot pool ({@code gf.pool.size=1}) — suspend
-     * blocks the server JVM and all slot clones share one debug port.
+     * Only valid for a single-slot pool ({@code gf.pool.size=1}): suspend
+     * blocks each slot's server JVM until a debugger attaches to it.
      */
     @Parameter(property = "glassfish.suspend", defaultValue = "false")
     protected boolean suspend;
@@ -172,37 +176,19 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     }
 
     /**
-     * {@code name} in the build directory of the project where Maven runs,
-     * or with {@link #multiModule} off in the project's own. Maven's
-     * stand-in project for a run without a pom leaves its build directory
-     * unresolved, so then it's {@code target} where Maven runs.
+     * {@code name} in the build directory of the pool's root project (see
+     * {@link PoolRoot}), or with {@link #multiModule} off in the project's
+     * own. Maven's stand-in project for a run without a pom leaves its build
+     * directory unresolved, so then it's {@code target} where Maven runs.
      */
     protected File inBuildDirectory(String name) {
-        MavenProject buildProject = multiModule ? executionRoot() : project;
+        MavenProject buildProject = multiModule ? PoolRoot.of(project, session) : project;
         String buildDirectory = buildProject.getBuild().getDirectory();
         if (buildDirectory == null || buildDirectory.contains("${")) {
             return new File(new File(session.getExecutionRootDirectory(), "target"), name);
         }
 
         return new File(buildDirectory, name);
-    }
-
-    /**
-     * The project where Maven runs, also when {@code -pl} leaves it out of
-     * the build. {@code getTopLevelProject()} then falls back to the first
-     * module of the build.
-     */
-    private MavenProject executionRoot() {
-        List<MavenProject> allProjects = session.getAllProjects();
-        if (allProjects != null) {
-            for (MavenProject candidate : allProjects) {
-                if (candidate.isExecutionRoot()) {
-                    return candidate;
-                }
-            }
-        }
-
-        return session.getTopLevelProject();
     }
 
     protected PoolConfig poolConfig() {

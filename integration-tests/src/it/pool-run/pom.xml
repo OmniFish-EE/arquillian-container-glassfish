@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
+    </parent>
+
+    <groupId>ee.omnifish.arquillian.test</groupId>
+    <artifactId>pool-run-test</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Integration Test: GlassFish Server Pool, run</name>
+    <description>
+        Two WAR modules, run with glassfish-pool:run at the same time, on
+        their own slots of one pool: one from this project with -pl, the
+        other from its module's directory. Like the Jakarta Security TCK, the
+        pool starts at initialize, and so during the package run forks. Run
+        via integration-tests' maven-invoker harness.
+    </description>
+
+    <modules>
+        <module>module-a</module>
+        <module>module-b</module>
+    </modules>
+
+    <properties>
+        <container.version>@project.version@</container.version>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <configuration>
+                        <failOnMissingWebXml>false</failOnMissingWebXml>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <!--
+                The modules' pages show the system properties, to prove they run on a slot as the pool sets it
+                up, and that gf.pool.rootDirectory is this project's directory also when Maven runs in a module.
+            -->
+            <plugin>
+                <groupId>ee.omnifish.arquillian</groupId>
+                <artifactId>glassfish-pool-maven-plugin</artifactId>
+                <version>${container.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <distribution>
+                        <version>${glassfish.version}</version>
+                    </distribution>
+                    <systemProperties>
+                        run.marker=from-the-pool
+                        run.root=${gf.pool.rootDirectory}
+                    </systemProperties>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>pool-up</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>up</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

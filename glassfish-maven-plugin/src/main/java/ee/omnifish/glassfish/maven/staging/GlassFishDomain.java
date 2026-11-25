@@ -72,7 +72,6 @@ public final class GlassFishDomain {
     /** How GlassFish passes its server the domain's directory. */
     private static final String INSTANCE_ROOT = "-Dcom.sun.aas.instanceRoot=";
 
-    private static final Pattern DEBUG_ADDRESS = Pattern.compile("debug-options=\"[^\"]*address=([^,\" ]+)");
 
     /**
      * What GlassFish applies a change to only on a restart, without reporting that, by the name commands
@@ -240,10 +239,24 @@ public final class GlassFishDomain {
     /** Where the debugger attaches with {@code start-domain --debug}, from the domain's debug options. */
     public String debugAddress() {
         try {
-            Matcher address = DEBUG_ADDRESS.matcher(Files.readString(domainXml()));
-            return address.find() ? address.group(1) : "9009";
+            String address = DomainXmlEditor.debugAddress(domainXml());
+            return (address == null) ? "9009" : address;
         } catch (IOException e) {
             return "9009";
+        }
+    }
+
+    /**
+     * Have the debugger listen on localhost only, where the domain's debug
+     * options have it listen on every interface, as GlassFish's own
+     * {@code *:9009} does: a debugger can run any code in the server. An
+     * address with another host stays as it is.
+     */
+    public void keepDebuggerLocal() throws IOException {
+        Path domainXml = domainXml();
+        String address = DomainXmlEditor.debugAddress(domainXml);
+        if (address != null && (address.startsWith("*:") || address.startsWith("0.0.0.0:"))) {
+            DomainXmlEditor.setDebugAddress(domainXml, "localhost" + address.substring(address.indexOf(':')));
         }
     }
 

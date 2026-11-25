@@ -35,6 +35,9 @@ import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
  *   <li>{@code slot-N/ports.properties} — appears once the slot's setup
  *       completes, and is removed while it restarts. A slot dir without it is
  *       skipped by the scan.</li>
+ *   <li>{@code slot-N/run.lock} — also held while a {@code glassfish-pool:run}
+ *       has the slot. The pool's automatic stop in other JVMs leaves such a
+ *       slot running.</li>
  * </ul>
  *
  * <p>If every existing slot is busy the leaser tries to grow the pool: it
@@ -76,6 +79,21 @@ public final class SlotLeaser {
      *         leaser created, with {@code failOnCommandError} on
      */
     public SlotLease lease() throws IOException, InterruptedException {
+        return lease(false);
+    }
+
+    /**
+     * Lease a slot for a {@code glassfish-pool:run}: also hold the slot's
+     * {@code run.lock}, from the moment the slot is claimed, so before a slot
+     * the pool grows for it is set up. The pool's automatic stop in another
+     * JVM leaves such a slot running. A slot that fails to grow fails the
+     * lease, instead of being tried again until the timeout.
+     */
+    public SlotLease leaseForRun() throws IOException, InterruptedException {
+        return lease(true);
+    }
+
+    private SlotLease lease(boolean forRun) throws IOException, InterruptedException {
         Path poolDir = config.poolDir();
         if (!Files.isDirectory(poolDir)) {
             throw new IllegalStateException(
@@ -85,11 +103,11 @@ public final class SlotLeaser {
         long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L);
 
         while (System.currentTimeMillis() < deadline) {
-            SlotLease leased = scanAndTryAcquire(poolDir);
+            SlotLease leased = scanAndTryAcquire(poolDir, forRun);
             if (leased != null) {
                 return leased;
             }
-            SlotLease grown = tryGrow(poolDir);
+            SlotLease grown = tryGrow(poolDir, forRun);
             if (grown != null) {
                 return grown;
             }
@@ -108,7 +126,7 @@ public final class SlotLeaser {
      * the longest, which evens out load when tests have wildly different
      * durations.
      */
-    private SlotLease scanAndTryAcquire(Path poolDir) throws IOException {
+    private SlotLease scanAndTryAcquire(Path poolDir, boolean forRun) throws IOException {
         List<Integer> candidates = new ArrayList<>();
         try (var entries = Files.list(poolDir)) {
             for (Path entry : (Iterable<Path>) entries::iterator) {
@@ -124,7 +142,7 @@ public final class SlotLeaser {
         }
         candidates.sort(Comparator.comparingLong(slot -> lockMtime(poolDir, slot)));
         for (int slot : candidates) {
-            SlotLease leased = tryAcquire(poolDir, slot);
+            SlotLease leased = tryAcquire(poolDir, slot, forRun);
             if (leased != null) {
                 return leased;
             }
@@ -132,7 +150,7 @@ public final class SlotLeaser {
         return null;
     }
 
-    private SlotLease tryAcquire(Path poolDir, int slot) throws IOException {
+    private SlotLease tryAcquire(Path poolDir, int slot, boolean forRun) throws IOException {
         Path portsFile = PoolPaths.portsFile(poolDir, slot);
         if (!Files.exists(portsFile)) {
             return null;
@@ -153,16 +171,29 @@ public final class SlotLeaser {
                 lock.close();
                 return null;
             }
+            PoolLocks.Held runLock = null;
+            if (forRun) {
+                runLock = markRun(poolDir, slot);
+                if (runLock == null) {
+                    lock.close();
+                    return null;
+                }
+            }
             // A free lock file does not imply a live GF: previous owner's GF may
             // have OOM-crashed, been killed, or been mid-shutdown when we grabbed
-            // the lock. Probe before committing.
+            // the lock. Probe before committing. A run probes once it holds the
+            // run's mark: another JVM's stop after its build holds that mark
+            // while it stops the slot.
             if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
+                if (runLock != null) {
+                    runLock.close();
+                }
                 lock.close();
                 return null;
             }
             publishSlotProperty(slot);
             LOG.fine(() -> "Leased slot " + slot + " (adminPort=" + ports.adminPort() + ")");
-            return new SlotLease(slot, ports, lock);
+            return new SlotLease(slot, ports, lock, runLock);
         } catch (RuntimeException e) {
             // Always release the lock between tryLock() and successful return,
             // otherwise a transient failure leaks it.
@@ -189,7 +220,7 @@ public final class SlotLeaser {
      * install out from under such a server, and the slot out of {@code down}'s
      * reach.
      */
-    private SlotLease tryGrow(Path poolDir) throws IOException {
+    private SlotLease tryGrow(Path poolDir, boolean forRun) throws IOException {
         if (config.source() == null) {
             // Caller didn't supply a source install — typical for test-JVM
             // leasers when the build hasn't forwarded gf.pool.source. Skip
@@ -200,20 +231,55 @@ public final class SlotLeaser {
         if (claim == null) {
             return null;
         }
+        PoolLocks.Held runLock = null;
+        if (forRun) {
+            // Before the setup, which takes a while: until the run's mark is
+            // there, another JVM's automatic stop would stop the slot.
+            runLock = markRun(poolDir, claim.slot);
+            if (runLock == null) {
+                claim.release();
+                return null;
+            }
+        }
         try {
             SlotPorts ports = new PoolProvisioner(config).provisionClaimedSlot(claim.slot);
             publishSlotProperty(claim.slot);
-            return new SlotLease(claim.slot, ports, claim.lock);
+            return new SlotLease(claim.slot, ports, claim.lock, runLock);
         } catch (CommandFailedException e) {
             // failOnCommandError: the command would fail on every new slot,
             // so fail the lease rather than retry until the lease timeout.
-            claim.release();
+            release(runLock, claim);
             throw e;
         } catch (IOException | RuntimeException e) {
+            release(runLock, claim);
+            if (forRun) {
+                // A run waits for nobody: it would grow the same slot again.
+                throw e;
+            }
             LOG.warning(() -> "Slot " + claim.slot + " provisioning failed during grow: " + e.getMessage());
-            claim.release();
             return null;
         }
+    }
+
+    /**
+     * Mark slot {@code slot}, whose lock the caller holds, as a run's.
+     * {@code null} when it can't be: a run that ended keeps it only while it
+     * releases the slot, and a stop after a build while it stops the slot.
+     */
+    private static PoolLocks.Held markRun(Path poolDir, int slot) {
+        try {
+            return PoolLocks.tryLock(PoolPaths.runLockFile(poolDir, slot));
+        } catch (IOException e) {
+            LOG.fine(() -> "Slot " + slot + " can't be marked as a run's: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static void release(PoolLocks.Held runLock, ClaimedSlot claim) {
+        if (runLock != null) {
+            runLock.close();
+        }
+        claim.release();
     }
 
     /**

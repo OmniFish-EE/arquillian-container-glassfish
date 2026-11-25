@@ -10,17 +10,11 @@
  */
 package ee.omnifish.glassfish.maven;
 
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugins.annotations.Execute;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -28,11 +22,6 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
 import ee.omnifish.glassfish.admin.ServerLogTailer;
-import ee.omnifish.glassfish.admin.rest.AdminConnection;
-import ee.omnifish.glassfish.admin.rest.AdminRestClient;
-import ee.omnifish.glassfish.admin.rest.DeployOptions;
-import ee.omnifish.glassfish.admin.rest.GlassFishClientException;
-import ee.omnifish.glassfish.admin.rest.NodeAddress;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 
 /**
@@ -52,8 +41,7 @@ import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 @Execute(phase = LifecyclePhase.PACKAGE)
 public class RunMojo extends AbstractStartMojo {
 
-    /** The packagings GlassFish deploys. */
-    static final Set<String> DEPLOYABLE = Set.of("war", "ear", "ejb", "rar");
+    private static final String GOAL = "glassfish:run";
 
     /**
      * The application's name. GlassFish takes it from an EAR's
@@ -71,23 +59,34 @@ public class RunMojo extends AbstractStartMojo {
     @Parameter(property = "glassfish.run.contextRoot")
     private String contextRoot;
 
+    /**
+     * Whether the console shows only the messages of {@code server.log}'s
+     * records, without the header before each, with its time, level, logger
+     * and thread, and without the {@code ]]} after each. With {@code false},
+     * it shows the records whole, as the file has them.
+     */
+    @Parameter(property = "glassfish.run.logMessagesOnly", defaultValue = "true")
+    private boolean logMessagesOnly;
+
     /** The project as the {@code package} this goal runs left it, with its artifact. */
     @Parameter(defaultValue = "${executedProject}", readonly = true, required = true)
     private MavenProject executedProject;
 
     private RunningDomain running;
 
+    /** The admin port the domain answers on, which a restart may change. */
+    private volatile int adminPort;
+
     @Override
     public void execute() throws MojoExecutionException {
-        if (!DEPLOYABLE.contains(executedProject.getPackaging())) {
-            getLog().info("glassfish:run has nothing to deploy in a " + executedProject.getPackaging()
-                    + " project; it deploys war, ear, ejb and rar projects");
+        if (!RunDeployer.isDeployable(executedProject)) {
+            getLog().info(RunDeployer.nothingToDeploy(executedProject, GOAL));
             return;
         }
 
-        Path archive = artifact(executedProject);
+        Path archive = RunDeployer.artifact(executedProject, GOAL);
         try {
-            deploy(startDomain(), archive);
+            RunDeployer.deploy(startDomain(), archive, name, contextRoot, getLog());
         } catch (MojoExecutionException | RuntimeException e) {
             if (running != null) {
                 running.close();
@@ -95,8 +94,15 @@ public class RunMojo extends AbstractStartMojo {
             throw e;
         }
 
+        running.logWhere(debug());
         getLog().info("Ctrl+C stops GlassFish, as glassfish:stop does");
         running.untilStopped();
+    }
+
+    /** A run opens the debugger, unless {@code debug} is off. */
+    @Override
+    protected boolean debugByDefault() {
+        return true;
     }
 
     /**
@@ -106,49 +112,19 @@ public class RunMojo extends AbstractStartMojo {
      */
     @Override
     protected void starting(GlassFishDomain domain, int adminPort) {
+        this.adminPort = adminPort;
         if (running == null) {
             String prefix = ServerLogTailer.prefix("glassfish:" + GlassFishDomain.DOMAIN, 0,
                     LifecycleSupport.isConsoleColored());
-            running = new RunningDomain(domain, adminPort, prefix, getLog());
-        }
-        running.adminPort(adminPort);
-    }
-
-    /**
-     * The file {@code project}'s {@code package} made. Package-private for
-     * unit tests.
-     */
-    static Path artifact(MavenProject project) throws MojoExecutionException {
-        Artifact artifact = project.getArtifact();
-        File file = (artifact == null) ? null : artifact.getFile();
-        if (file == null || !file.isFile()) {
-            throw new MojoExecutionException("glassfish:run has nothing to deploy: the package phase made no "
-                    + project.getPackaging() + " for " + project.getArtifactId());
-        }
-
-        return file.toPath();
-    }
-
-    /** Deploy {@code archive} to the domain on {@code adminPort}, and log where it answers. */
-    private void deploy(int adminPort, Path archive) throws MojoExecutionException {
-        AdminRestClient client = new AdminRestClient(AdminConnection.local(adminPort));
-        try (InputStream in = Files.newInputStream(archive)) {
-            NodeAddress node = client.startUp();
-            String deployed = client.deploy(in, archive.getFileName().toString(),
-                    new DeployOptions().name(name).contextRoot(contextRoot).force(true));
-            List<String> urls = new ArrayList<>();
-            for (String webContextRoot : client.webContextRoots(deployed)) {
-                urls.add(url(node, webContextRoot));
-            }
-            getLog().info("Deployed " + deployed + (urls.isEmpty() ? "" : ", at " + String.join(", ", urls)));
-        } catch (GlassFishClientException | IOException e) {
-            throw new MojoExecutionException("Deploying " + archive + " failed: " + e.getMessage(), e);
+            running = new RunningDomain(domain, prefix, logMessagesOnly, GOAL, getLog(),
+                    () -> stop(domain, this.adminPort, getLog()));
         }
     }
 
-    /** The URL of {@code contextRoot} on {@code node}: over HTTP, or HTTPS when it has no HTTP port. */
-    static String url(NodeAddress node, String contextRoot) {
-        boolean secure = node.getHttpPort() <= 0 && node.getHttpsPort() > 0;
-        return node.getURI(secure) + (contextRoot.endsWith("/") ? contextRoot : contextRoot + "/");
+    /** Stop {@code domain}, through the admin port it answers on. Package-private for unit tests. */
+    static void stop(GlassFishDomain domain, int adminPort, Log log) throws IOException {
+        if (domain.stop(adminPort)) {
+            log.info("GlassFish at " + domain.home() + " stopped");
+        }
     }
 }

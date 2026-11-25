@@ -149,6 +149,22 @@ public final class PoolBootstrap {
     }
 
     /**
+     * The first half of {@link #up(PoolConfig, Runnable)}: create the pool
+     * dir, stop the pool when this JVM exits, and run {@code preStage}, but
+     * start no slot. For {@code glassfish-pool:run}, whose lease grows the
+     * pool by the one slot it needs, if no slot is free.
+     */
+    public static void prepare(PoolConfig config, Runnable preStage) throws IOException {
+        synchronized (UP_LOCK) {
+            Files.createDirectories(config.poolDir());
+            installShutdownHook(config);
+            if (preStage != null) {
+                preStage.run();
+            }
+        }
+    }
+
+    /**
      * Pool is "already provisioned" when every requested slot is owned by
      * another JVM, or has a {@code ports.properties} pointing at a live admin
      * port. Used by {@link #up} to fast-exit on a second concurrent (or
@@ -192,22 +208,54 @@ public final class PoolBootstrap {
      *         them as they are
      */
     public static void down(PoolConfig config) {
-        stopSlots(config);
+        down(config, false);
+    }
+
+    /**
+     * {@link #down}, once the build is done, or the JVM exits: a slot that a
+     * {@code glassfish-pool:run} in another JVM holds keeps running, for that
+     * run. Its own end, or that of the last run, stops it.
+     */
+    public static void downAfterBuild(PoolConfig config) {
+        down(config, true);
+    }
+
+    private static void down(PoolConfig config, boolean keepOtherRuns) {
+        stopSlots(config, keepOtherRuns);
         // Only now: if Maven exits while the stop runs, or after it failed, the shutdown hook stops the pool.
         STARTED_POOLS.remove(poolKey(config));
     }
 
-    private static void stopSlots(PoolConfig config) {
+    private static void stopSlots(PoolConfig config, boolean keepOtherRuns) {
         Path poolDir = config.poolDir();
         if (!isDirectory(poolDir)) {
             return;
         }
 
         List<Integer> slots = listSlotIndices(poolDir);
+        List<PoolLocks.Held> runMarks = new ArrayList<>();
+        try {
+            if (keepOtherRuns) {
+                slots.removeIf(slot -> !holdRunMark(poolDir, slot, runMarks));
+            }
+            stop(config, slots);
+        } finally {
+            runMarks.forEach(PoolLocks.Held::close);
+        }
+    }
+
+    /**
+     * Stop {@code slots} of {@code config}'s pool.
+     *
+     * @throws IllegalStateException naming the slots whose admin port still
+     *         answers afterwards
+     */
+    private static void stop(PoolConfig config, List<Integer> slots) {
         if (slots.isEmpty()) {
             return;
         }
 
+        Path poolDir = config.poolDir();
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(slots.size(), MAX_PROVISION_PARALLELISM));
         try {
             PoolProvisioner provisioner = new PoolProvisioner(config);
@@ -454,8 +502,8 @@ public final class PoolBootstrap {
     }
 
     /**
-     * Arm a JVM shutdown hook that calls {@link #down}. Set on the JVM that
-     * called {@link #up}, so a Ctrl+C of the Maven process — or a hard build
+     * Arm a JVM shutdown hook that calls {@link #downAfterBuild}. Set on the JVM that
+     * called {@link #up} or {@link #prepare}, so a Ctrl+C of the Maven process — or a hard build
      * failure — still releases GlassFish processes. No-op when called outside
      * a Maven JVM (e.g. inside a forked failsafe JVM, where the test JVM
      * doesn't own the pool).
@@ -476,7 +524,7 @@ public final class PoolBootstrap {
     static void stopStartedPools() {
         for (PoolConfig started : STARTED_POOLS.values()) {
             try {
-                down(started);
+                downAfterBuild(started);
             } catch (RuntimeException e) {
                 LOG.log(Level.WARNING, "Pool shutdown hook failed", e);
             }
@@ -501,6 +549,33 @@ public final class PoolBootstrap {
         }
         slots.sort(Comparator.naturalOrder());
         return slots;
+    }
+
+    /**
+     * Hold slot {@code slot}'s {@code run.lock} in {@code runMarks}, for its
+     * stop: a run in another JVM then can't lease the slot while it's being
+     * stopped, and one that leases it afterwards finds it stopped. False when
+     * a {@code glassfish-pool:run} in another JVM holds it: that slot keeps
+     * running. Neither a run of this JVM, whose own end runs side by side
+     * with this stop on Ctrl+C, nor a test JVM's lease keeps a slot running:
+     * on Ctrl+C, the build's own test JVMs may still hold theirs. This stop
+     * shares the mark of a run of this JVM, so the slot stays marked until
+     * it's stopped, also when that run hands it back first.
+     */
+    private static boolean holdRunMark(Path poolDir, int slot, List<PoolLocks.Held> runMarks) {
+        PoolLocks.Held runMark;
+        try {
+            runMark = PoolLocks.tryLockUnlessHeldElsewhere(PoolPaths.runLockFile(poolDir, slot));
+        } catch (IOException e) {
+            // Can't be locked, so it can't be a run's mark either.
+            return true;
+        }
+        if (runMark == null) {
+            return false;
+        }
+
+        runMarks.add(runMark);
+        return true;
     }
 
     /**

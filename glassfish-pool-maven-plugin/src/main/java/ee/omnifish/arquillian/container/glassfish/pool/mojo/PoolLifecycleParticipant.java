@@ -74,6 +74,8 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
     static final String GROUP_ID = "ee.omnifish.arquillian";
     static final String ARTIFACT_ID = "glassfish-pool-maven-plugin";
     static final String FAILSAFE_KEY = "org.apache.maven.plugins:maven-failsafe-plugin";
+    static final String GOAL_PREFIX = "glassfish-pool";
+    static final String DEBUG_PROPERTY = "glassfish.debug";
 
     private static final Logger LOG = LoggerFactory.getLogger(PoolLifecycleParticipant.class);
 
@@ -100,6 +102,8 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         for (MavenProject project : session.getProjects()) {
             Plugin plugin = project.getPlugin(GROUP_ID + ":" + ARTIFACT_ID);
             if (plugin != null) {
+                publishRootDirectory(project, session);
+                debugRun(project, session.getGoals());
                 bindGoals(plugin, properties(project, session));
                 Plugin failsafe = project.getPlugin(FAILSAFE_KEY);
                 if (failsafe != null) {
@@ -108,6 +112,47 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
                 }
             }
         }
+    }
+
+    /**
+     * Publish the directory of the pool's root project as
+     * {@value PoolRoot#PROPERTY}, for paths relative to it in the plugin's
+     * configuration, such as {@code ${gf.pool.rootDirectory}/certs/idp.pem}:
+     * Maven resolves such a reference when a goal runs, after this. Unlike
+     * {@code ${maven.multiModuleProjectDirectory}} without a {@code .mvn}
+     * directory, it's the same when Maven runs in a module. A value the
+     * user sets is left alone. Package-private for unit tests.
+     */
+    static void publishRootDirectory(MavenProject project, MavenSession session) {
+        MavenProject root = PoolRoot.of(project, session);
+        if (root != null && root.getBasedir() != null) {
+            project.getProperties().putIfAbsent(PoolRoot.PROPERTY, root.getBasedir().getAbsolutePath());
+        }
+    }
+
+    /**
+     * With {@code glassfish-pool:run} among the build's goals, start slots
+     * with a debugger: the ones an {@code up} starts in the {@code package}
+     * the run forks, before the run itself does anything, and the one the
+     * pool grows for the run. A {@code glassfish.debug} set elsewhere wins:
+     * in the pom, or with {@code -D}, which Maven reads before a project's
+     * properties. Package-private for unit tests.
+     */
+    static void debugRun(MavenProject project, List<String> goals) {
+        if (goals.stream().anyMatch(PoolLifecycleParticipant::isRunGoal)) {
+            project.getProperties().putIfAbsent(DEBUG_PROPERTY, "true");
+        }
+    }
+
+    /**
+     * Whether {@code goal}, as Maven takes it from the command line, is
+     * {@code glassfish-pool:run}: by its prefix, or by the plugin's
+     * coordinates, with or without a version or an execution id.
+     */
+    static boolean isRunGoal(String goal) {
+        String withoutId = goal.replaceFirst("@.*$", "");
+        return withoutId.equals(GOAL_PREFIX + ":run")
+                || (withoutId.startsWith(GROUP_ID + ":" + ARTIFACT_ID + ":") && withoutId.endsWith(":run"));
     }
 
     /**
@@ -128,7 +173,8 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         for (PoolConfig pool : pools) {
             LOG.info("Stopping the pool at {}", pool.poolDir());
             try {
-                PoolBootstrap.down(pool);
+                // A slot a run in another terminal holds keeps running, until that run ends.
+                PoolBootstrap.downAfterBuild(pool);
             } catch (IllegalStateException e) {
                 LOG.error(e.getMessage());
                 stillRunning = e;

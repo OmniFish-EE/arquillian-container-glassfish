@@ -26,13 +26,20 @@ public final class SlotLease implements AutoCloseable {
     private final int slotIndex;
     private final SlotPorts ports;
     private final PoolLocks.Held lock;
+    private final PoolLocks.Held runLock;
     private volatile boolean released;
     private ServerLogTailer serverLog;
 
     SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock) {
+        this(slotIndex, ports, lock, null);
+    }
+
+    /** With {@code runLock}, the slot's {@code run.lock}, for a {@code glassfish-pool:run}. */
+    SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock, PoolLocks.Held runLock) {
         this.slotIndex = slotIndex;
         this.ports = ports;
         this.lock = lock;
+        this.runLock = runLock;
     }
 
     public int slotIndex() {
@@ -63,6 +70,10 @@ public final class SlotLease implements AutoCloseable {
                 serverLog.close();
             }
         } finally {
+            // The run's mark goes first: whoever leases the slot next may mark it again.
+            if (runLock != null) {
+                runLock.close();
+            }
             lock.close();
         }
     }

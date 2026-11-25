@@ -52,6 +52,39 @@ class PoolLocksTest {
         }
     }
 
+    /**
+     * For the pool's automatic stop, which holds a slot's run lock while it
+     * stops the slot, and leaves alone what a run in another JVM holds, and
+     * only that.
+     */
+    @Test
+    void onlyAnotherJvmsLockKeepsItFromBeingLockedUnlessHeldElsewhere(@TempDir Path tmp) throws Exception {
+        Path file = tmp.resolve("lock");
+        try (PoolLocks.Held held = PoolLocks.tryLockUnlessHeldElsewhere(file)) {
+            assertThat(held, notNullValue());
+            assertThat(ForeignJvm.canLock(file), equalTo(false));
+        }
+        assertThat(ForeignJvm.canLock(file), equalTo(true));
+
+        // Held in this JVM: the result shares that lock, which stays held until both let go, in either order.
+        PoolLocks.Held held = PoolLocks.tryLock(file);
+        PoolLocks.Held shared = PoolLocks.tryLockUnlessHeldElsewhere(file);
+        assertThat(shared, notNullValue());
+        shared.close();
+        assertThat(ForeignJvm.canLock(file), equalTo(false));
+
+        shared = PoolLocks.tryLockUnlessHeldElsewhere(file);
+        held.close();
+        held.close();
+        assertThat(ForeignJvm.canLock(file), equalTo(false));
+        shared.close();
+        assertThat(ForeignJvm.canLock(file), equalTo(true));
+
+        try (AutoCloseable foreign = ForeignJvm.hold(file)) {
+            assertThat(PoolLocks.tryLockUnlessHeldElsewhere(file), nullValue());
+        }
+    }
+
     @Test
     void missingLockFileIsNotBusyAndIsNotCreated(@TempDir Path tmp) {
         Path file = tmp.resolve("lock");

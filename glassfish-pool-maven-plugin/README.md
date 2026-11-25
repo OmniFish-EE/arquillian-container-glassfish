@@ -23,6 +23,7 @@ and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 | `provision` | (none)                   | Provision a single extra slot at `-Dgf.pool.slot=N`. Mostly debugging — `SlotLeaser` grows the pool itself when test JVMs need it. |
 | `status`    | (none)                   | Print one row per slot: index, admin port, alive, leased. Live-refreshes on a TTY (like `top`); one-shot when piped or under `-B`. |
 | `nuke`      | (none)                   | Stop every slot AND remove the pool directory. Forceful reset before a clean `up`. |
+| `run`       | (none)                   | Package the project, lease a slot, deploy the project to it, and keep running, with the slot's `server.log` on the console, until Ctrl+C. See [Running an application](#running-an-application). |
 
 ## Quick start
 
@@ -112,10 +113,10 @@ note applies:
 
 | Parameter | Default | Override when… |
 | --------- | ------- | -------------- |
-| `poolDir` | `pool` in the build directory of the project where Maven runs, or with `multiModule` off in the project's own | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
+| `poolDir` | `pool` in the build directory of the pool's root project (see *One pool per build*), or with `multiModule` off in the project's own | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
-| `stageDir` | `dist` in the build directory of the project where Maven runs, or with `multiModule` off in the project's own | the unpacked dist should live elsewhere. |
+| `stageDir` | `dist` in the build directory of the pool's root project, or with `multiModule` off in the project's own | the unpacked dist should live elsewhere. |
 | `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`, or set that to `${gf.pool.size}`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
@@ -144,7 +145,7 @@ the *Staging* and *Slot setup* blocks.
 `up` additionally honours `-DskipTests` and `-Dmaven.test.skip` — if the
 build isn't running tests there's no reason to pay for a pool.
 
-### Staging (`up`, `provision`)
+### Staging (`up`, `provision`, `run`)
 
 | Parameter         | Property               | Default                          | Notes                                                                  |
 | ----------------- | ---------------------- | -------------------------------- | ---------------------------------------------------------------------- |
@@ -160,7 +161,7 @@ build isn't running tests there's no reason to pay for a pool.
 | `certsSkip`       | `gf.pool.certs.skip`   | `false`                          | Skip the certificate import.                                           |
 | `sourcePostBootCommands` | `gf.pool.sourcePostBootCommands` | (none)             | `asadmin` commands run once on the staged install, on a brief start, before slots are cloned from it. One per line. See *Commands on the source*. |
 
-### Slot setup (`up`, `provision`)
+### Slot setup (`up`, `provision`, `run`)
 
 What every slot gets besides its ports. See [Slot setup](#slot-setup).
 
@@ -172,7 +173,7 @@ What every slot gets besides its ports. See [Slot setup](#slot-setup).
 | `postBootCommands`   | `gf.pool.postBootCommands`   | (none)  | `asadmin` commands run once per slot, after its domain first starts. One per line. |
 | `postStartCommands`  | `gf.pool.postStartCommands`  | (none)  | `asadmin` commands run after every slot start and restart. One per line. |
 | `failOnCommandError` | `gf.pool.failOnCommandError` | `true`  | Whether a failed command fails the slot's setup, instead of being logged. |
-| `debug` / `suspend`  | `glassfish.debug` / `glassfish.suspend` | `false` | Start slots with `--debug` / `--suspend`. Single-slot pools only; see [Debugging a slot](../glassfish-pool/README.md#debugging-a-slot). |
+| `debug` / `suspend`  | `glassfish.debug` / `glassfish.suspend` | `false`; `debug` is on in a build that runs `run` | Start slots with `--debug` / `--suspend`, each with its debugger on localhost and its own port. `suspend` is for single-slot pools only; see [Debugging a slot](../glassfish-pool/README.md#debugging-a-slot). |
 
 `provision` additionally requires `-Dgf.pool.slot=N`.
 
@@ -294,6 +295,10 @@ external identity provider's server certificate for OpenID. Each
     </trustedCerts>
 </configuration>
 ```
+
+With the plugin in a multi-module project's parent, write a path from the
+root as `${gf.pool.rootDirectory}/...`, which stays the root's when Maven
+runs in a module; see [One pool per build](#one-pool-per-build).
 
 Staging imports them into the staged install's truststore before any slot
 is cloned from it, so the slots have them from their first start. That
@@ -422,12 +427,22 @@ all modules share it, so configure the plugin in the parent:
 </plugin>
 ```
 
-- `poolDir` and `stageDir` default to the build directory of the project
-  where Maven runs, also when `-pl` leaves that project out: `target/pool`
-  and `target/dist` there, instead of in each module. Explicit values win.
-  `up` publishes `gf.pool.dir` as always, so the test JVMs get the shared
-  directory. Run Maven in a module, and the pool is in that module's
-  `target`, as in a single-module build.
+- `poolDir` and `stageDir` default to the build directory of the pool's
+  root project: `target/pool` and `target/dist` there, instead of in each
+  module. The root is the topmost project around the one being built whose
+  own pom configures the plugin, like the parent above, or the project
+  where Maven runs, when that's higher. Only parents in a directory around
+  the module count, not one from a repository. So the pool is the same
+  whether Maven runs at the root, with `-pl`, or in a module's directory.
+  Explicit values win. `up` publishes `gf.pool.dir` as always, so the test
+  JVMs get the shared directory.
+- With `<extensions>true</extensions>`, the root's directory is available
+  as `${gf.pool.rootDirectory}`, for paths in the configuration that are
+  relative to it, such as a trusted certificate's:
+  `<file>${gf.pool.rootDirectory}/certs/idp.pem</file>`. Unlike
+  `${maven.multiModuleProjectDirectory}`, it doesn't need a `.mvn`
+  directory to stay the same when Maven runs in a module. A value you set
+  yourself wins.
 - The first `up` in the build starts the pool. The others find it running
   and return straight away. If it starts only partly, the slots that did
   start are stopped after the build all the same.
@@ -481,6 +496,90 @@ Each module then has its own pool in its own `target`, and the extension
 binds `down` to stop it in `post-integration-test`. Pools that run at the
 same time, as under `-T`, need their own `adminPortBase`, since every pool
 starts at 14848.
+
+## Running an application
+
+`mvn glassfish-pool:run` packages the project, leases a slot of the pool as
+a test does, deploys the project's WAR, EAR, EJB jar or RAR to it, and keeps
+running, with the slot's `server.log` on the console, until Ctrl+C. The slot
+is the GlassFish the tests run on: staged with the pool's overlays and
+certificates, and set up with its system properties and commands. The
+plugin needs no configuration beyond what the tests use.
+
+```
+$ mvn glassfish-pool:run
+...
+[INFO] Leased slot 1 of the pool at .../target/pool
+[INFO] Deployed app-mem-basic, at http://localhost:14849/app-mem-basic/
+[INFO] Debugger at localhost:14857
+[INFO] Server log at .../target/pool/slot-1/glassfish/glassfish/domains/domain1/logs/server.log
+[INFO] Ctrl+C ends the run, and hands slot 1 back to the pool
+```
+
+- **The slot:** a free one, or else one the pool grows by. Each slot has
+  its own ports: with the defaults, slot 1 serves HTTP on 14849, the port
+  after `adminPortBase`, and slot 2 on 14949. When the build binds `up`
+  before `package`, as the Jakarta Security TCK does at `initialize`, the
+  pool already runs by the time `run` leases. Otherwise `run` stages
+  GlassFish, and the pool grows by the one slot it needs.
+- **The debugger:** with `<extensions>true</extensions>`, the slot has a
+  debugger, on localhost, at the slot's admin port + 9: 14857 for slot 1,
+  14957 for slot 2. The extension sets `glassfish.debug` for a build that
+  runs `run`, unless it's set already, so that an `up` in the `package`
+  that `run` forks starts its slots with one too.
+  `-Dglassfish.debug=false` runs without one. A slot that a build without
+  `glassfish.debug` started, such as a `mvn verify` at the same time, has
+  none, and `run` says so.
+- **Names:** `-Dglassfish.run.name` sets the application's name, and
+  `-Dglassfish.run.contextRoot` a WAR's context root, as for
+  `glassfish:run`. The artifact replaces an application of the same name.
+- **The log's messages:** the console shows only the messages of the
+  slot's `server.log` records, without the header before each, with its
+  time, level, logger and thread, and without the `]]` after each, as for
+  `glassfish:run`:
+
+  ```
+  [glassfish:slot-1] Initializing Soteria 5.0.0 for context '/app-mem-basic'
+  ```
+
+  `-Dglassfish.run.logMessagesOnly=false`, or
+  `<logMessagesOnly>false</logMessagesOnly>`, shows the records whole, as
+  the file has them.
+- **Ending it:** Ctrl+C undeploys the application and hands the slot back.
+  The pool then stops, as it does after tests, except for the slots that
+  runs in other terminals hold. `mvn glassfish-pool:down` from another
+  terminal stops every slot, and so ends every run.
+- **Two modules at once:** each run leases its own slot of one pool, in
+  the root's `target/pool`. From the reactor root:
+
+  ```
+  mvn -pl :app-mem-basic glassfish-pool:run
+  mvn -pl :app-db-basic glassfish-pool:run
+  ```
+
+  When one ends, the slot the other holds keeps running, and the last run
+  to end stops the pool. Staging isn't coordinated between Maven processes,
+  so on a fresh checkout, start the second run once the first has staged
+  GlassFish. Runs started in their modules' directories share the pool
+  too.
+
+  A slot's GlassFish shares the terminal of the Maven that started it, so
+  that terminal's Ctrl+C reaches it too. With a pool size of 1, the
+  default, each run's slot is its own: the second run grows the pool by the
+  slot it leases. With a larger pool, the first run's `up` starts slots the
+  second run may lease, and Ctrl+C in the first terminal then ends both.
+- **From a module's directory:** `cd app-mem-basic` and
+  `mvn glassfish-pool:run` work the same: the pool is the root's, as above.
+  Paths in the configuration that belong to the root, such as a trusted
+  certificate's, need `${gf.pool.rootDirectory}`, since
+  `${maven.multiModuleProjectDirectory}` is the module's directory there,
+  without a `.mvn` directory at the root.
+- **Sibling modules:** a module that depends on others needs them installed
+  first, with `mvn install`: the `package` that `run` forks builds only that
+  module.
+- **`-DskipTests`** skips the tests of the `package` that `run` forks, and
+  an `up` bound in it, but not `run`. Projects other than `war`, `ear`,
+  `ejb` and `rar` have nothing to deploy, and `run` does nothing there.
 
 ## Recipes
 
@@ -574,11 +673,15 @@ Locks inside `poolDir` (`grow.lock`, per-slot `lock`) coordinate JVMs that
 share the same `poolDir`. They do **not** coordinate two `mvn` invocations
 that target the same `poolDir` at once — the second `up` will collide with
 the first on cloning. Run parallel `mvn` invocations against distinct
-`poolDir`s (or distinct `adminPortBase` values).
+`poolDir`s (or distinct `adminPortBase` values). `glassfish-pool:run` is
+the exception: runs in separate terminals share one pool, each on a slot of
+its own. See [Running an application](#running-an-application).
 
-A JVM shutdown hook installed by `up` calls `down` if the Maven process is
-killed (Ctrl+C, hard build failure), so slots don't get orphaned. It stops
-every pool `up` started in that JVM and `down` didn't stop yet.
+A JVM shutdown hook installed by `up` or `run` stops the pool if the Maven
+process is killed (Ctrl+C, hard build failure), so slots don't get
+orphaned. It stops every pool `up` or `run` started in that JVM and `down`
+didn't stop yet. Like the stop after the build, it leaves running the slots
+that a `run` in another process holds.
 
 ## Troubleshooting
 

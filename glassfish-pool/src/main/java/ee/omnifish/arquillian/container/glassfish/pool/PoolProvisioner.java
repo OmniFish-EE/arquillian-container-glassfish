@@ -149,6 +149,9 @@ public final class PoolProvisioner {
 
         Path domainXml = domainXml(slotInstall);
         DomainXmlEditor.setPorts(domainXml, adminPort, httpPort, httpsPort);
+        // A port of its own, so slots with a debugger don't clash, and on localhost only: a debugger runs any code
+        // it likes in the server.
+        DomainXmlEditor.setDebugAddress(domainXml, "localhost:" + config.debugPort(idx));
         DomainXmlEditor.setSystemProperties(domainXml, config.setup().systemProperties());
         DomainXmlEditor.setJvmOptions(domainXml, config.setup().jvmOptions());
 
@@ -160,7 +163,9 @@ public final class PoolProvisioner {
             throw new IOException("Slot " + idx + " start-domain failed: " + e.getMessage(), e);
         }
 
-        SlotPorts ports = new SlotPorts(adminPort, httpPort, httpsPort, slotInstall.toString());
+        // --suspend starts a debugger too.
+        int debugPort = (config.debug() || config.suspend()) ? config.debugPort(idx) : 0;
+        SlotPorts ports = new SlotPorts(adminPort, httpPort, httpsPort, slotInstall.toString(), debugPort);
         try {
             runCommands(idx, ports, true);
             ports.writeTo(portsFile);

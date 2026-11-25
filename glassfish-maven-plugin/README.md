@@ -130,7 +130,7 @@ first and `stop` works out where the install is from them. `start` adds:
 | ------------------ | ---------------------------- | --------------------------------- | ----- |
 | `postStartCommands` | (none)                      | (none)                            | `asadmin` commands run after every start. One per line. |
 | `postBootRestart`  | `glassfish.postBootRestart`  | `auto`                            | Whether to restart GlassFish after the post-boot commands ran on this start: `auto`, `always` or `never`. See *Starting and stopping GlassFish*. |
-| `debug`            | `glassfish.start.debug`      | `false`                           | Start with `start-domain --debug`. |
+| `debug`            | `glassfish.start.debug`      | `false`; `true` for `run`         | Start with `start-domain --debug`, with the debugger on localhost. |
 | `suspend`          | `glassfish.start.suspend`    | `false`                           | Start with `start-domain --suspend`, waiting for a debugger. |
 | `startTimeout`     | `glassfish.start.timeout`    | `300`                             | Seconds `start-domain` may take, including the wait for a debugger. |
 | `skip`             | `glassfish.start.skip`       | `false`                           | Skip `start`; `stop` has `glassfish.stop.skip`. |
@@ -395,7 +395,11 @@ the same, also from a clean checkout.
   and `--suspend`. With `suspend`, the server waits for a debugger before it
   starts, and `start` waits with it, printing where to attach, up to
   `startTimeout` (`-Dglassfish.start.timeout`, 300 seconds). After that,
-  `start` ends what it started, and fails.
+  `start` ends what it started, and fails. The debugger listens on
+  localhost: where the domain's debug options have it listen on every
+  interface, as GlassFish's own `*:9009` does, the plugin changes the host
+  to `localhost`, since a debugger can run any code in the server. An
+  address with another host stays as it is.
 - **`stop`** runs `stop-domain`, and `stop-domain --kill` if the domain's
   own process still runs after that; it fails when it still runs after
   both. A domain that doesn't run is fine, also when another server answers
@@ -421,12 +425,18 @@ prints where it answers:
 
 ```
 [INFO] Deployed shop-1.0, at http://localhost:8080/shop/
+[INFO] Debugger at localhost:9009
+[INFO] Server log at /work/shop/target/dist/glassfish8/glassfish/domains/domain1/logs/server.log
 [INFO] Ctrl+C stops GlassFish, as glassfish:stop does
 ```
 
 It needs no more than the plugin with a `<distribution>`. Until Ctrl+C, Maven
 stays attached, and GlassFish's `server.log` appears on the console. Then
 GlassFish stops.
+
+- **The debugger:** `run` starts GlassFish with its debugger, on localhost,
+  so an IDE can attach at the address it prints. `-Dglassfish.start.debug=false`
+  starts it without one.
 
 - **Running again**, after a change, needs no `clean`: the artifact replaces
   the application deployed under the same name, as `asadmin deploy --force`
@@ -441,6 +451,17 @@ GlassFish stops.
 - **`contextRoot`** (`-Dglassfish.run.contextRoot`) sets a WAR's context
   root. GlassFish otherwise takes it from its `glassfish-web.xml`, or from
   its name.
+- **The log's messages:** the console shows only the messages of
+  `server.log`'s records, without the header before each, with its time,
+  level, logger and thread, and without the `]]` after each. Of a stack
+  trace, the lines after the message stay. The log file itself keeps its
+  records whole, and `logMessagesOnly` set to `false`
+  (`-Dglassfish.run.logMessagesOnly=false`) shows them so on the console
+  too.
+
+  ```
+  [glassfish:domain1] Initializing Soteria 5.0.0 for context '/shop'
+  ```
 - **Ending it:** Ctrl+C stops GlassFish, with Maven, as does mvnd's Ctrl+C,
   which interrupts the goal. When GlassFish stops otherwise, as after
   `mvn glassfish:stop` in another terminal, `run` returns.

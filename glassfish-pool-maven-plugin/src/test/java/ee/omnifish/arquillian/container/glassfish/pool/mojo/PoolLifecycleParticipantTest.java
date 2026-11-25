@@ -5,6 +5,7 @@ package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -134,6 +135,46 @@ class PoolLifecycleParticipantTest {
         PoolLifecycleParticipant.bindGoals(plugin, userProperties);
 
         assertEquals(List.of("pool-up", "pool-down"), executionIds(plugin));
+    }
+
+    /** So that the up in the package the run forks starts its slots with a debugger. */
+    @Test
+    void aRunTurnsOnTheDebugger() {
+        MavenProject project = new MavenProject();
+
+        PoolLifecycleParticipant.debugRun(project, List.of("-pl", ":app", "glassfish-pool:run"));
+
+        assertEquals("true", project.getProperties().getProperty("glassfish.debug"));
+    }
+
+    @Test
+    void aBuildWithoutARunLeavesTheDebuggerOff() {
+        MavenProject project = new MavenProject();
+
+        PoolLifecycleParticipant.debugRun(project, List.of("verify"));
+
+        assertNull(project.getProperties().getProperty("glassfish.debug"));
+    }
+
+    @Test
+    void aRunLeavesTheDebugSettingOfThePom() {
+        MavenProject project = new MavenProject();
+        project.getProperties().setProperty("glassfish.debug", "false");
+
+        PoolLifecycleParticipant.debugRun(project, List.of("glassfish-pool:run"));
+
+        assertEquals("false", project.getProperties().getProperty("glassfish.debug"));
+    }
+
+    @Test
+    void aRunIsTheGoalByPrefixOrByCoordinates() {
+        assertTrue(PoolLifecycleParticipant.isRunGoal("glassfish-pool:run"));
+        assertTrue(PoolLifecycleParticipant.isRunGoal("glassfish-pool:run@app"));
+        assertTrue(PoolLifecycleParticipant.isRunGoal("ee.omnifish.arquillian:glassfish-pool-maven-plugin:run"));
+        assertTrue(PoolLifecycleParticipant.isRunGoal("ee.omnifish.arquillian:glassfish-pool-maven-plugin:2.0:run"));
+        assertFalse(PoolLifecycleParticipant.isRunGoal("glassfish-pool:up"));
+        assertFalse(PoolLifecycleParticipant.isRunGoal("glassfish:run"));
+        assertFalse(PoolLifecycleParticipant.isRunGoal("org.example:glassfish-pool-maven-plugin:run"));
     }
 
     /** The mojos then fall back to their default, so the participant does too. */

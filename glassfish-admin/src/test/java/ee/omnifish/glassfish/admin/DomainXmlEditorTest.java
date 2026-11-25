@@ -145,6 +145,60 @@ class DomainXmlEditorTest {
         assertTrue(e.getMessage().contains("server-config"), e.getMessage());
     }
 
+    /** GlassFish's own debug options, as in a stock {@code server-config}. */
+    private static final String DEBUG_OPTIONS = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:9009";
+
+    @Test
+    void readsTheServersDebugAddress(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">"
+                + "<java-config debug-options=\"" + DEBUG_OPTIONS + "\"/></config>"
+                + "<config name=\"default-config\"><java-config debug-options=\""
+                + DEBUG_OPTIONS.replace("9009", "${JAVA_DEBUGGER_PORT}") + "\"/></config></configs></domain>");
+
+        assertEquals("*:9009", DomainXmlEditor.debugAddress(domainXml));
+    }
+
+    @Test
+    void resolvesAPlaceholderInTheDebugAddress(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">"
+                + "<system-property name=\"JAVA_DEBUGGER_PORT\" value=\"29009\"/>"
+                + "<java-config debug-options=\"" + DEBUG_OPTIONS.replace("9009", "${JAVA_DEBUGGER_PORT}") + "\"/>"
+                + "</config></configs></domain>");
+
+        assertEquals("*:29009", DomainXmlEditor.debugAddress(domainXml));
+    }
+
+    @Test
+    void setsTheDebugAddressOfTheServersConfigOnly(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">"
+                + "<java-config debug-options=\"" + DEBUG_OPTIONS + "\"/></config>"
+                + "<config name=\"default-config\"><java-config debug-options=\"" + DEBUG_OPTIONS + "\"/></config>"
+                + "</configs></domain>");
+
+        DomainXmlEditor.setDebugAddress(domainXml, "localhost:14857");
+
+        String content = Files.readString(domainXml);
+        assertTrue(content.contains("debug-options=\"" + DEBUG_OPTIONS.replace("*:9009", "localhost:14857") + "\""),
+                content);
+        assertTrue(content.substring(content.indexOf("default-config")).contains(DEBUG_OPTIONS), content);
+        assertEquals("localhost:14857", DomainXmlEditor.debugAddress(domainXml));
+    }
+
+    @Test
+    void setsTheDebugAddressWithoutDebugOptions(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">"
+                + "<java-config><jvm-options>-Xmx512m</jvm-options></java-config></config></configs></domain>");
+
+        DomainXmlEditor.setDebugAddress(domainXml, "localhost:14857");
+
+        assertEquals("localhost:14857", DomainXmlEditor.debugAddress(domainXml));
+        assertTrue(Files.readString(domainXml).contains(DEBUG_OPTIONS.replace("*:9009", "localhost:14857")));
+    }
+
     private static final String JAVA_CONFIG_FRAGMENT =
             "<java-config>"
             + "<jvm-options>-Xmx512m</jvm-options>"

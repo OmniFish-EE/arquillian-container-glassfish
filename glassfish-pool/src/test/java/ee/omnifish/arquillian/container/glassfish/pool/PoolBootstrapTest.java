@@ -196,6 +196,139 @@ class PoolBootstrapTest {
     }
 
     /**
+     * A slot that a run in another terminal holds keeps running when this
+     * build's pool stops, and doesn't fail the stop, though it answers.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theStopAfterTheBuildLeavesASlotOfARunInAnotherJvm(@TempDir Path tmp) throws Exception {
+        PoolConfig config = fakePool(tmp, "exit 0\n", SlotSetup.NONE, 2);
+        PoolBootstrap.up(config);
+        fakes.add(FakeGlassFish.answerOn(config.adminPort(2)));
+
+        try (ForeignJvm.Holder run = ForeignJvm.hold(PoolPaths.runLockFile(config.poolDir(), 2))) {
+            PoolBootstrap.downAfterBuild(config);
+        }
+
+        assertThat(FakeGlassFish.calls(slotInstall(config, 1)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+        assertThat(FakeGlassFish.calls(slotInstall(config, 2)), contains("--terse start-domain domain1"));
+    }
+
+    /**
+     * So that a run in another JVM can't lease the slot while it's being
+     * stopped, and then lose it to the stop.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theStopAfterTheBuildHoldsTheRunLockWhileItStopsASlot(@TempDir Path tmp) throws Exception {
+        Path stopping = tmp.resolve("stopping");
+        Path release = tmp.resolve("release");
+        PoolConfig config = fakePool(tmp, "case \"$*\" in *stop-domain*)\n"
+                + "  touch '" + stopping + "'\n"
+                + "  while [ ! -f '" + release + "' ]; do sleep 0.1; done ;;\n"
+                + "esac\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+        Path runLock = PoolPaths.runLockFile(config.poolDir(), 1);
+
+        CompletableFuture<Void> down = CompletableFuture.runAsync(() -> PoolBootstrap.downAfterBuild(config));
+        try {
+            for (int i = 0; i < 200 && !Files.exists(stopping); i++) {
+                Thread.sleep(50);
+            }
+
+            assertThat(Files.exists(stopping), equalTo(true));
+            assertThat(ForeignJvm.canLock(runLock), equalTo(false));
+        } finally {
+            Files.createFile(release);
+            down.get(30, TimeUnit.SECONDS);
+        }
+        assertThat(ForeignJvm.canLock(runLock), equalTo(true));
+    }
+
+    /**
+     * On Ctrl+C, a run of this JVM hands its slot back while the stop after
+     * the build stops that slot. A run in another JVM must not lease the slot
+     * meanwhile, and then lose it to the stop.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theStopAfterTheBuildKeepsTheRunLockOfThisJvmsRunThatHandsItsSlotBack(@TempDir Path tmp)
+            throws Exception {
+        Path stopping = tmp.resolve("stopping");
+        Path release = tmp.resolve("release");
+        PoolConfig config = fakePool(tmp, "case \"$*\" in *stop-domain*)\n"
+                + "  touch '" + stopping + "'\n"
+                + "  while [ ! -f '" + release + "' ]; do sleep 0.1; done ;;\n"
+                + "esac\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+        Path runLock = PoolPaths.runLockFile(config.poolDir(), 1);
+        PoolLocks.Held run = PoolLocks.tryLock(runLock);
+
+        CompletableFuture<Void> down = CompletableFuture.runAsync(() -> PoolBootstrap.downAfterBuild(config));
+        try {
+            for (int i = 0; i < 200 && !Files.exists(stopping); i++) {
+                Thread.sleep(50);
+            }
+
+            assertThat(Files.exists(stopping), equalTo(true));
+            run.close();
+            assertThat(ForeignJvm.canLock(runLock), equalTo(false));
+        } finally {
+            run.close();
+            Files.createFile(release);
+            down.get(30, TimeUnit.SECONDS);
+        }
+        assertThat(ForeignJvm.canLock(runLock), equalTo(true));
+    }
+
+    /** On Ctrl+C, also with the build's own test JVMs still holding their slots. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theShutdownHookLeavesOnlyASlotOfARunInAnotherJvm(@TempDir Path tmp) throws Exception {
+        PoolConfig config = fakePool(tmp, "exit 0\n", SlotSetup.NONE, 2);
+        PoolBootstrap.up(config);
+
+        try (ForeignJvm.Holder test = ForeignJvm.hold(PoolPaths.lockFile(config.poolDir(), 1));
+             ForeignJvm.Holder run = ForeignJvm.hold(PoolPaths.runLockFile(config.poolDir(), 2))) {
+            PoolBootstrap.stopStartedPools();
+        }
+
+        assertThat(FakeGlassFish.calls(slotInstall(config, 1)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+        assertThat(FakeGlassFish.calls(slotInstall(config, 2)), contains("--terse start-domain domain1"));
+    }
+
+    /** As glassfish:stop ends glassfish:run, an explicit down ends every run. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void downStopsASlotOfARunInAnotherJvm(@TempDir Path tmp) throws Exception {
+        PoolConfig config = fakePool(tmp, "exit 0\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+
+        try (ForeignJvm.Holder run = ForeignJvm.hold(PoolPaths.runLockFile(config.poolDir(), 1))) {
+            PoolBootstrap.down(config);
+        }
+
+        assertThat(FakeGlassFish.calls(slotInstall(config)),
+                contains("--terse start-domain domain1", "--terse stop-domain domain1"));
+    }
+
+    /** The first half of up: a run's lease grows the pool by the slot it needs. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void prepareStagesAndStartsNoSlot(@TempDir Path tmp) throws Exception {
+        PoolConfig config = fakePool(tmp, "exit 0\n", SlotSetup.NONE);
+        List<String> staged = new ArrayList<>();
+
+        PoolBootstrap.prepare(config, () -> staged.add("staged"));
+
+        assertThat(staged, contains("staged"));
+        assertThat(Files.isDirectory(config.poolDir()), equalTo(true));
+        assertThat(Files.exists(PoolPaths.slotDir(config.poolDir(), 1)), equalTo(false));
+    }
+
+    /**
      * One JVM can start several pools: one per module, or one per build
      * under mvnd, whose JVM outlives the build. The shutdown hook stops each
      * one {@code down} didn't stop, not just the first.
@@ -293,12 +426,20 @@ class PoolBootstrapTest {
 
     /** A one-slot pool cloned from a {@link FakeGlassFish}. */
     private static PoolConfig fakePool(Path tmp, String script, SlotSetup setup) throws IOException {
+        return fakePool(tmp, script, setup, 1);
+    }
+
+    private static PoolConfig fakePool(Path tmp, String script, SlotSetup setup, int size) throws IOException {
         Path source = FakeGlassFish.install(tmp.resolve("source"), script);
-        return new PoolConfig(tmp.resolve("pool"), source, 1, FakeGlassFish.freePort(),
+        return new PoolConfig(tmp.resolve("pool"), source, size, FakeGlassFish.freePort(),
                 PoolConfig.DEFAULT_PORT_STRIDE, setup, false, false);
     }
 
     private static Path slotInstall(PoolConfig config) {
-        return PoolPaths.slotDir(config.poolDir(), 1).resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME);
+        return slotInstall(config, 1);
+    }
+
+    private static Path slotInstall(PoolConfig config, int slot) {
+        return PoolPaths.slotDir(config.poolDir(), slot).resolve(PoolProvisioner.SLOT_INSTALL_DIRNAME);
     }
 }

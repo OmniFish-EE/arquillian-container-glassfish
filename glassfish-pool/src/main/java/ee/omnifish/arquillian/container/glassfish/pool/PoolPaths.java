@@ -21,6 +21,7 @@ final class PoolPaths {
 
     static final String SLOT_PREFIX = "slot-";
     static final String LOCK_FILE = "lock";
+    static final String RUN_LOCK_FILE = "run.lock";
     static final String PORTS_FILE = "ports.properties";
     static final String GROW_LOCK = "grow.lock";
 
@@ -33,6 +34,14 @@ final class PoolPaths {
 
     static Path lockFile(Path poolDir, int slot) {
         return slotDir(poolDir, slot).resolve(LOCK_FILE);
+    }
+
+    /**
+     * Held, with the slot's lock, by a {@code glassfish-pool:run}, whose slot
+     * the pool's automatic stop in another JVM leaves running.
+     */
+    static Path runLockFile(Path poolDir, int slot) {
+        return slotDir(poolDir, slot).resolve(RUN_LOCK_FILE);
     }
 
     static Path portsFile(Path poolDir, int slot) {

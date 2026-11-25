@@ -503,6 +503,88 @@ class SlotLeaserTest {
         assertThat(Files.exists(PoolPaths.portsFile(poolDir, 1)), equalTo(false));
     }
 
+    /** By its run.lock, which the pool's automatic stop in another JVM leaves running. */
+    @Test
+    void aRunsLeaseMarksItsSlotUntilItIsClosed(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+        Path runLock = PoolPaths.runLockFile(tmp, 1);
+
+        try (SlotLease lease = leaserFor(tmp).leaseForRun()) {
+            assertThat(lease.slotIndex(), equalTo(1));
+            assertThat(ForeignJvm.canLock(runLock), equalTo(false));
+        }
+        assertThat(ForeignJvm.canLock(runLock), equalTo(true));
+        assertThat(ForeignJvm.canLock(PoolPaths.lockFile(tmp, 1)), equalTo(true));
+    }
+
+    /** As another JVM's stop after its build does while it stops the slot. */
+    @Test
+    void aRunLeasesNoSlotWhoseRunLockAnotherJvmHolds(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+
+        try (ForeignJvm.Holder stop = ForeignJvm.hold(PoolPaths.runLockFile(tmp, 1))) {
+            assertThrows(IllegalStateException.class, () -> leaserFor(tmp).leaseForRun());
+        }
+        assertThat(ForeignJvm.canLock(PoolPaths.lockFile(tmp, 1)), equalTo(true));
+    }
+
+    @Test
+    void aTestJvmsLeaseDoesNotMarkItsSlot(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+
+        try (SlotLease lease = leaserFor(tmp).lease()) {
+            assertThat(ForeignJvm.canLock(PoolPaths.runLockFile(tmp, 1)), equalTo(true));
+        }
+    }
+
+    /** Setting a slot up takes a while, and another JVM's automatic stop must leave it alone meanwhile. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void aRunMarksASlotItGrowsBeforeSettingItUp(@TempDir Path tmp) throws Exception {
+        Path poolDir = Files.createDirectories(tmp.resolve("pool"));
+        Path starting = tmp.resolve("starting");
+        Path release = tmp.resolve("release");
+        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"),
+                "case \"$*\" in *start-domain*)\n"
+                + "  touch '" + starting + "'\n"
+                + "  while [ ! -f '" + release + "' ]; do sleep 0.1; done ;;\n"
+                + "esac\n")), 60L);
+        CompletableFuture<SlotLease> leasing = CompletableFuture.supplyAsync(() -> {
+            try {
+                return leaser.leaseForRun();
+            } catch (IOException | InterruptedException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        try {
+            for (int i = 0; i < 200 && !Files.exists(starting); i++) {
+                Thread.sleep(50);
+            }
+
+            assertThat(Files.exists(starting), equalTo(true));
+            assertThat(ForeignJvm.canLock(PoolPaths.runLockFile(poolDir, 1)), equalTo(false));
+        } finally {
+            Files.createFile(release);
+            leasing.get(30, TimeUnit.SECONDS).close();
+        }
+    }
+
+    /** A run waits for nobody: trying again would only set up the same slot again. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void aRunsFailedGrowFailsTheLease(@TempDir Path tmp) throws Exception {
+        Path poolDir = Files.createDirectories(tmp.resolve("pool"));
+        SlotLeaser leaser = new SlotLeaser(growingConfig(poolDir, FakeGlassFish.install(tmp.resolve("source"), 1)), 60L);
+
+        long start = System.nanoTime();
+        IOException e = assertThrows(IOException.class, leaser::leaseForRun);
+
+        assertThat(e.getMessage(), containsString("start-domain failed"));
+        assertThat(TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - start), lessThan(30L));
+        assertThat(ForeignJvm.canLock(PoolPaths.runLockFile(poolDir, 1)), equalTo(true));
+        assertThat(ForeignJvm.canLock(PoolPaths.lockFile(poolDir, 1)), equalTo(true));
+    }
+
     private static void finalizeAndClose(LeaseHandle handle) {
         SlotLease toFinalize = handle.release();
         if (toFinalize != null) {

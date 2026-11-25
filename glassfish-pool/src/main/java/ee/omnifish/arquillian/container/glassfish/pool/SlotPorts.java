@@ -33,17 +33,26 @@ public final class SlotPorts {
     public static final String HTTP_PORT = "glassfish.httpPort";
     public static final String HTTPS_PORT = "glassfish.httpsPort";
     public static final String GLASSFISH_HOME = "glassfish.home";
+    /** The port a debugger attaches on; only there when the slot started with one. */
+    public static final String DEBUG_PORT = "glassfish.debugPort";
 
     private final int adminPort;
     private final int httpPort;
     private final int httpsPort;
     private final String glassFishHome;
+    private final int debugPort;
 
     public SlotPorts(int adminPort, int httpPort, int httpsPort, String glassFishHome) {
+        this(adminPort, httpPort, httpsPort, glassFishHome, 0);
+    }
+
+    /** @param debugPort the port a debugger attaches on, or 0 for a slot that started without one */
+    public SlotPorts(int adminPort, int httpPort, int httpsPort, String glassFishHome, int debugPort) {
         this.adminPort = adminPort;
         this.httpPort = httpPort;
         this.httpsPort = httpsPort;
         this.glassFishHome = glassFishHome;
+        this.debugPort = debugPort;
     }
 
     public int adminPort() {
@@ -62,12 +71,20 @@ public final class SlotPorts {
         return glassFishHome;
     }
 
+    /** The port a debugger attaches on, on localhost, or 0 when the slot started without one. */
+    public int debugPort() {
+        return debugPort;
+    }
+
     public void writeTo(Path file) throws IOException {
         Properties props = new Properties();
         props.setProperty(ADMIN_PORT, String.valueOf(adminPort));
         props.setProperty(HTTP_PORT, String.valueOf(httpPort));
         props.setProperty(HTTPS_PORT, String.valueOf(httpsPort));
         props.setProperty(GLASSFISH_HOME, glassFishHome);
+        if (debugPort > 0) {
+            props.setProperty(DEBUG_PORT, String.valueOf(debugPort));
+        }
         // Atomic publish: write to sibling tmp + move. A test JVM scanning
         // mid-write would otherwise see a half-formed properties file and
         // skip the slot until the next poll.
@@ -89,7 +106,8 @@ public final class SlotPorts {
                 requireInt(props, ADMIN_PORT),
                 requireInt(props, HTTP_PORT),
                 requireInt(props, HTTPS_PORT),
-                require(props, GLASSFISH_HOME));
+                require(props, GLASSFISH_HOME),
+                props.containsKey(DEBUG_PORT) ? requireInt(props, DEBUG_PORT) : 0);
     }
 
     private static String require(Properties p, String key) {

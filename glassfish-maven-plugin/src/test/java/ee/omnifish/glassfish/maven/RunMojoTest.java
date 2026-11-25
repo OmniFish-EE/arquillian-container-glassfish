@@ -64,12 +64,12 @@ class RunMojoTest {
     void aSecondStopReturnsOnceTheFirstHasStoppedTheDomain() throws Exception {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, 4848, SLOW_STOP));
         FakeDomain.startServer(home);
-        try (RunningDomain running = new RunningDomain(domain, 4848, "", log)) {
-            Thread first = new Thread(running::stop);
+        try (RunningDomain running = running(domain)) {
+            Thread first = new Thread(running::end);
             first.start();
             awaitCall("stop-domain");
 
-            running.stop();
+            running.end();
 
             assertThat(domain.isRunning(), is(false));
             assertThat(stops(), is(1L));
@@ -83,7 +83,7 @@ class RunMojoTest {
     void theRunEndsWhenTheDomainStopsOtherwise() throws Exception {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, 4848, FakeDomain.STOP));
         Process server = FakeDomain.startServer(home);
-        RunningDomain running = new RunningDomain(domain, 4848, "", log);
+        RunningDomain running = running(domain);
         Thread run = new Thread(running::untilStopped);
         run.start();
 
@@ -100,7 +100,7 @@ class RunMojoTest {
     void anInterruptedRunStopsTheDomainAndKeepsTheInterrupt() throws Exception {
         GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, 4848, FakeDomain.STOP));
         FakeDomain.startServer(home);
-        RunningDomain running = new RunningDomain(domain, 4848, "", log);
+        RunningDomain running = running(domain);
         AtomicBoolean interruptedAfter = new AtomicBoolean();
         Thread run = new Thread(() -> {
             running.untilStopped();
@@ -170,11 +170,26 @@ class RunMojoTest {
     }
 
     @Test
+    void aRunHasADebuggerUnlessDebugIsOff() throws ReflectiveOperationException {
+        RunMojo run = runMojo("war");
+        assertThat(run.debug(), is(true));
+
+        set(run, AbstractStartMojo.class, "debug", false);
+
+        assertThat(run.debug(), is(false));
+    }
+
+    @Test
     void theUrlIsHttpsWithoutAnHttpPort() {
-        assertThat(RunMojo.url(new NodeAddress("server", "localhost", 8080, 8181), "/run-it"),
+        assertThat(RunDeployer.url(new NodeAddress("server", "localhost", 8080, 8181), "/run-it"),
                 is("http://localhost:8080/run-it/"));
-        assertThat(RunMojo.url(new NodeAddress("server", "localhost", -1, 8181), "/run-it"),
+        assertThat(RunDeployer.url(new NodeAddress("server", "localhost", -1, 8181), "/run-it"),
                 is("https://localhost:8181/run-it/"));
+    }
+
+    /** As glassfish:run ends it: by stopping the domain. */
+    private RunningDomain running(GlassFishDomain domain) {
+        return new RunningDomain(domain, "", false, "glassfish:run", log, () -> RunMojo.stop(domain, 4848, log));
     }
 
     private RunMojo runMojo(String packaging) throws ReflectiveOperationException {
