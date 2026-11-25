@@ -109,9 +109,9 @@ public class RunMojo extends AbstractStagingPoolMojo {
 
         Path archive = RunDeployer.artifact(executedProject, GOAL);
         // An up in the package this goal forks has staged the pool, as the build configured it by then: the
-        // Jakarta Security TCK, for one, sets which overlays to skip during that build. That up published the
-        // source it staged.
-        String stagedSource = publishedByUp(PoolConfig.SYS_SOURCE);
+        // Jakarta Security TCK, for one, sets which overlays to skip during that build. That up recorded the
+        // source it staged, also where the pom sets gf.pool.source.
+        String stagedSource = stagedByUp(executedProject);
         Runnable preStage = null;
         if (stagedSource != null) {
             poolSource = new File(stagedSource);
@@ -149,11 +149,13 @@ public class RunMojo extends AbstractStagingPoolMojo {
         running.untilStopped();
     }
 
-    /** The value of {@code key} that an {@code up} in the {@code package} this goal forks published, or null. */
-    private String publishedByUp(String key) {
-        return (project.getProperties().getProperty(key) == null)
-                ? executedProject.getProperties().getProperty(key)
-                : null;
+    /**
+     * The source an {@code up} of this build staged, as {@code executedProject}
+     * has it after the {@code package} this goal forks, or null. Package-private
+     * for unit tests.
+     */
+    static String stagedByUp(MavenProject executedProject) {
+        return executedProject.getProperties().getProperty(UpMojo.STAGED_SOURCE);
     }
 
     /**

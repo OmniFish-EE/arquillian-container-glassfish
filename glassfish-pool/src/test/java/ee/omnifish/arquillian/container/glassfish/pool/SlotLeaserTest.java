@@ -517,6 +517,17 @@ class SlotLeaserTest {
         assertThat(ForeignJvm.canLock(PoolPaths.lockFile(tmp, 1)), equalTo(true));
     }
 
+    /** As another JVM's stop after its build does while it stops the slot. */
+    @Test
+    void aRunLeasesNoSlotWhoseRunLockAnotherJvmHolds(@TempDir Path tmp) throws Exception {
+        seedSlot(tmp, 1, openFake());
+
+        try (ForeignJvm.Holder stop = ForeignJvm.hold(PoolPaths.runLockFile(tmp, 1))) {
+            assertThrows(IllegalStateException.class, () -> leaserFor(tmp).leaseForRun());
+        }
+        assertThat(ForeignJvm.canLock(PoolPaths.lockFile(tmp, 1)), equalTo(true));
+    }
+
     @Test
     void aTestJvmsLeaseDoesNotMarkItsSlot(@TempDir Path tmp) throws Exception {
         seedSlot(tmp, 1, openFake());

@@ -215,6 +215,37 @@ class PoolBootstrapTest {
         assertThat(FakeGlassFish.calls(slotInstall(config, 2)), contains("--terse start-domain domain1"));
     }
 
+    /**
+     * So that a run in another JVM can't lease the slot while it's being
+     * stopped, and then lose it to the stop.
+     */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")
+    void theStopAfterTheBuildHoldsTheRunLockWhileItStopsASlot(@TempDir Path tmp) throws Exception {
+        Path stopping = tmp.resolve("stopping");
+        Path release = tmp.resolve("release");
+        PoolConfig config = fakePool(tmp, "case \"$*\" in *stop-domain*)\n"
+                + "  touch '" + stopping + "'\n"
+                + "  while [ ! -f '" + release + "' ]; do sleep 0.1; done ;;\n"
+                + "esac\n", SlotSetup.NONE);
+        PoolBootstrap.up(config);
+        Path runLock = PoolPaths.runLockFile(config.poolDir(), 1);
+
+        CompletableFuture<Void> down = CompletableFuture.runAsync(() -> PoolBootstrap.downAfterBuild(config));
+        try {
+            for (int i = 0; i < 200 && !Files.exists(stopping); i++) {
+                Thread.sleep(50);
+            }
+
+            assertThat(Files.exists(stopping), equalTo(true));
+            assertThat(ForeignJvm.canLock(runLock), equalTo(false));
+        } finally {
+            Files.createFile(release);
+            down.get(30, TimeUnit.SECONDS);
+        }
+        assertThat(ForeignJvm.canLock(runLock), equalTo(true));
+    }
+
     /** On Ctrl+C, also with the build's own test JVMs still holding their slots. */
     @Test
     @DisabledOnOs(value = OS.WINDOWS, disabledReason = "the fake asadmin is a shell script")

@@ -233,13 +233,29 @@ public final class PoolBootstrap {
         }
 
         List<Integer> slots = listSlotIndices(poolDir);
-        if (keepOtherRuns) {
-            slots.removeIf(slot -> isOtherRun(poolDir, slot));
+        List<PoolLocks.Held> runMarks = new ArrayList<>();
+        try {
+            if (keepOtherRuns) {
+                slots.removeIf(slot -> !holdRunMark(poolDir, slot, runMarks));
+            }
+            stop(config, slots);
+        } finally {
+            runMarks.forEach(PoolLocks.Held::close);
         }
+    }
+
+    /**
+     * Stop {@code slots} of {@code config}'s pool.
+     *
+     * @throws IllegalStateException naming the slots whose admin port still
+     *         answers afterwards
+     */
+    private static void stop(PoolConfig config, List<Integer> slots) {
         if (slots.isEmpty()) {
             return;
         }
 
+        Path poolDir = config.poolDir();
         ExecutorService pool = Executors.newFixedThreadPool(Math.min(slots.size(), MAX_PROVISION_PARALLELISM));
         try {
             PoolProvisioner provisioner = new PoolProvisioner(config);
@@ -536,12 +552,28 @@ public final class PoolBootstrap {
     }
 
     /**
-     * Whether a {@code glassfish-pool:run} in another JVM holds the slot. A
-     * test JVM's lease doesn't count: on Ctrl+C, the build's own test JVMs
-     * may still hold theirs while the shutdown hook stops the pool.
+     * Hold slot {@code slot}'s {@code run.lock} in {@code runMarks}, for its
+     * stop: a run in another JVM then can't lease the slot while it's being
+     * stopped, and one that leases it afterwards finds it stopped. False when
+     * a {@code glassfish-pool:run} in another JVM holds it: that slot keeps
+     * running. Neither a run of this JVM, whose own end runs side by side
+     * with this stop on Ctrl+C, nor a test JVM's lease keeps a slot running:
+     * on Ctrl+C, the build's own test JVMs may still hold theirs.
      */
-    private static boolean isOtherRun(Path poolDir, int slot) {
-        return PoolLocks.isHeldElsewhere(PoolPaths.runLockFile(poolDir, slot));
+    private static boolean holdRunMark(Path poolDir, int slot, List<PoolLocks.Held> runMarks) {
+        PoolLocks.Held runMark;
+        try {
+            runMark = PoolLocks.tryLockUnlessHeldElsewhere(PoolPaths.runLockFile(poolDir, slot));
+        } catch (IOException e) {
+            // Can't be locked, so it can't be a run's mark either.
+            return true;
+        }
+        if (runMark == null) {
+            return false;
+        }
+
+        runMarks.add(runMark);
+        return true;
     }
 
     /**

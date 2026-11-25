@@ -57,9 +57,19 @@ import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SYS
  * for the pom itself: with {@code <forkCount>${gf.pool.size}</forkCount>},
  * failsafe follows the pool size, which may come from {@code -T}. The test
  * JVMs don't read it, so it isn't forwarded.
+ *
+ * <p>And it records the source it staged as {@value #STAGED_SOURCE}, for a
+ * {@code glassfish-pool:run} whose {@code package} it ran in.
  */
 @Mojo(name = "up", defaultPhase = LifecyclePhase.PRE_INTEGRATION_TEST, threadSafe = true)
 public class UpMojo extends AbstractStagingPoolMojo {
+
+    /**
+     * The source an {@code up} of this build staged and started the pool
+     * from. Unlike {@code gf.pool.source}, which a pom may set itself, only
+     * {@code up} sets it.
+     */
+    static final String STAGED_SOURCE = "gf.pool.stagedSource";
 
     /**
      * Pool layout and slot setup the test JVMs read: published as project
@@ -112,6 +122,17 @@ public class UpMojo extends AbstractStagingPoolMojo {
         }
 
         publish(project.getProperties(), poolConfig, getLog());
+        recordStaging(project.getProperties(), poolConfig);
+    }
+
+    /**
+     * Record the source {@code config} staged in {@code projectProperties},
+     * as {@value #STAGED_SOURCE}. Package-private for unit tests.
+     */
+    static void recordStaging(Properties projectProperties, PoolConfig config) {
+        if (config.source() != null) {
+            projectProperties.setProperty(STAGED_SOURCE, config.source().toAbsolutePath().toString());
+        }
     }
 
     /** Package-private for unit tests, which make it fail. */

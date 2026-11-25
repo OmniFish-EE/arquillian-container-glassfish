@@ -171,13 +171,6 @@ public final class SlotLeaser {
                 lock.close();
                 return null;
             }
-            // A free lock file does not imply a live GF: previous owner's GF may
-            // have OOM-crashed, been killed, or been mid-shutdown when we grabbed
-            // the lock. Probe before committing.
-            if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
-                lock.close();
-                return null;
-            }
             PoolLocks.Held runLock = null;
             if (forRun) {
                 runLock = markRun(poolDir, slot);
@@ -185,6 +178,18 @@ public final class SlotLeaser {
                     lock.close();
                     return null;
                 }
+            }
+            // A free lock file does not imply a live GF: previous owner's GF may
+            // have OOM-crashed, been killed, or been mid-shutdown when we grabbed
+            // the lock. Probe before committing. A run probes once it holds the
+            // run's mark: another JVM's stop after its build holds that mark
+            // while it stops the slot.
+            if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
+                if (runLock != null) {
+                    runLock.close();
+                }
+                lock.close();
+                return null;
             }
             publishSlotProperty(slot);
             LOG.fine(() -> "Leased slot " + slot + " (adminPort=" + ports.adminPort() + ")");
@@ -259,7 +264,8 @@ public final class SlotLeaser {
     /**
      * Mark slot {@code slot}, whose lock the caller holds, as a run's.
      * {@code null} when it can't be: a run that ended keeps it only while it
-     * releases the slot.
+     * releases the slot, and another JVM's stop after its build while it
+     * stops the slot.
      */
     private static PoolLocks.Held markRun(Path poolDir, int slot) {
         try {

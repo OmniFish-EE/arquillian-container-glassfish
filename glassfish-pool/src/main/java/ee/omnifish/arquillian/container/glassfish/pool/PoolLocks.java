@@ -103,27 +103,27 @@ final class PoolLocks {
     }
 
     /**
-     * Whether another JVM holds {@code lockFile}'s lock. Read-only, like
-     * {@link #isBusy}; a lock this JVM holds doesn't count.
+     * Lock {@code lockFile} unless another JVM holds it, creating it if
+     * needed. Returns {@code null} when another JVM holds it. When this JVM
+     * holds it already, or the file's directory is gone, the result holds
+     * nothing, and closing it releases nothing.
      */
-    static boolean isHeldElsewhere(Path lockFile) {
+    static Held tryLockUnlessHeldElsewhere(Path lockFile) throws IOException {
         Path key = key(lockFile);
         synchronized (LOCK) {
             if (CHANNELS.containsKey(key)) {
                 // Held here, or, after an overlap, by this JVM outside the registry.
-                return false;
+                return Held.nothing();
             }
             try {
-                if (!lock(key, false)) {
-                    // An overlap keeps its channel; another JVM's lock doesn't.
-                    return !CHANNELS.containsKey(key);
+                if (lock(key, true)) {
+                    return new Held(key);
                 }
-            } catch (IOException e) {
-                // Missing or unreadable, so nobody holds it either.
-                return false;
+            } catch (NoSuchFileException e) {
+                return Held.nothing();
             }
-            unlock(key);
-            return false;
+            // An overlap keeps its channel; another JVM's lock doesn't.
+            return CHANNELS.containsKey(key) ? Held.nothing() : null;
         }
     }
 
@@ -216,6 +216,13 @@ final class PoolLocks {
 
         private Held(Path key) {
             this.key = key;
+        }
+
+        /** A lock this JVM doesn't hold through it, so closing it releases nothing. */
+        private static Held nothing() {
+            Held nothing = new Held(null);
+            nothing.released = true;
+            return nothing;
         }
 
         @Override

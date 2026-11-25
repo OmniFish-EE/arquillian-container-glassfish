@@ -3,7 +3,9 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,6 +20,8 @@ import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 
 /** What {@code run} does before it leases a slot. Leasing and the run itself are covered by the pool-run IT. */
 class RunMojoTest {
@@ -54,6 +58,25 @@ class RunMojoTest {
         run.execute();
 
         assertTrue(infos.contains("glassfish-pool:run skipped (gf.pool.skip=true)"), infos::toString);
+    }
+
+    /**
+     * As in the Jakarta Security TCK, whose pom sets gf.pool.source, and whose
+     * build sets during initialize which overlays to skip: the run uses what
+     * the up in its package staged, instead of staging again, with the
+     * overlays that up skipped.
+     */
+    @Test
+    void aRunUsesTheSourceAnUpInItsPackageStagedAlsoWhereThePomSetsIt() {
+        Path source = tmp.resolve("dist").resolve("glassfish9");
+        MavenProject executedProject = new MavenProject();
+        executedProject.getProperties().setProperty("gf.pool.source", source.toString());
+        assertNull(RunMojo.stagedByUp(executedProject));
+
+        UpMojo.recordStaging(executedProject.getProperties(),
+                new PoolConfig(tmp.resolve("pool"), source, 1, 14848, 100, List.of()));
+
+        assertEquals(source.toString(), RunMojo.stagedByUp(executedProject));
     }
 
     private RunMojo runMojo(String packaging) throws ReflectiveOperationException {
