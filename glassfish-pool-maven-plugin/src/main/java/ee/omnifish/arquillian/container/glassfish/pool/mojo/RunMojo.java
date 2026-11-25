@@ -49,6 +49,11 @@ import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
  * {@code glassfish-pool:down} from another terminal stops every slot, and so
  * ends every run.
  *
+ * <p>With {@code <extensions>true</extensions>}, the slot has a debugger, on
+ * localhost and a port of its own, unless {@code glassfish.debug} is off:
+ * the extension turns it on for a build that runs this goal, so that an
+ * {@code up} in the {@code package} this goal runs starts slots with one.
+ *
  * <p>The artifact replaces an application deployed with the same name. Only
  * {@code war}, {@code ear}, {@code ejb} and {@code rar} projects are
  * deployed; for others, this goal does nothing. {@code -DskipTests} skips the
@@ -135,6 +140,11 @@ public class RunMojo extends AbstractStagingPoolMojo {
             throw e;
         }
 
+        int debugPort = lease.ports().debugPort();
+        if (debug && debugPort == 0) {
+            getLog().info("Slot " + slot + " runs without a debugger: a build without glassfish.debug started it");
+        }
+        running.logWhere(debugPort > 0);
         getLog().info("Ctrl+C ends the run, and hands slot " + slot + " back to the pool");
         running.untilStopped();
     }

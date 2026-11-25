@@ -35,6 +35,9 @@ public final class PoolConfig {
 
     private static final int MIN_PORT_STRIDE = 10;
 
+    /** Where a slot's debug port is in its window: the last of its first ten ports. */
+    private static final int DEBUG_PORT_OFFSET = 9;
+
     public static final String SYS_POOL_DIR = "gf.pool.dir";
     public static final String SYS_SOURCE = "gf.pool.source";
     public static final String SYS_SIZE = "gf.pool.size";
@@ -90,14 +93,8 @@ public final class PoolConfig {
         if (suspend && size > 1) {
             throw new IllegalArgumentException(
                     "glassfish.suspend requires a single-slot pool (gf.pool.size=1); got size=" + size
-                    + ". Suspend blocks the server JVM until a debugger attaches and all slot clones "
-                    + "share one debug port — run the suspended pool with -T1.");
-        }
-        if (debug && size > 1) {
-            throw new IllegalArgumentException(
-                    "glassfish.debug requires a single-slot pool (gf.pool.size=1); got size=" + size
-                    + ". All slot clones share one debug port, so only one of them could start "
-                    + "— run the debugged pool with -T1.");
+                    + ". Suspend blocks each slot's server JVM until a debugger attaches to it "
+                    + "— run the suspended pool with -T1.");
         }
         this.poolDir = Objects.requireNonNull(poolDir, "poolDir");
         this.source = source;
@@ -143,6 +140,11 @@ public final class PoolConfig {
         return adminPort(idx) + 2;
     }
 
+    /** The port slot {@code idx}'s debugger listens on, on localhost, when it starts with one. */
+    public int debugPort(int idx) {
+        return adminPort(idx) + DEBUG_PORT_OFFSET;
+    }
+
     /**
      * Extra {@code -D…} jvm-options to bake into each slot's {@code domain.xml}.
      * Each entry is a bare {@code key=value} pair (no leading {@code -D}).
@@ -157,10 +159,9 @@ public final class PoolConfig {
     }
 
     /**
-     * Start each slot's domain in debug mode ({@code start-domain --debug}).
-     * Sourced from the {@code glassfish.debug} property, shared with the
-     * managed container. Only valid for a single-slot pool (enforced in the
-     * constructor), since all slot clones share one debug port.
+     * Start each slot's domain in debug mode ({@code start-domain --debug}),
+     * with its debugger on its own {@link #debugPort}. Sourced from the
+     * {@code glassfish.debug} property, shared with the managed container.
      */
     public boolean debug() {
         return debug;

@@ -64,9 +64,12 @@ abstract class AbstractStartMojo extends AbstractStagingMojo {
     @Parameter(property = "glassfish.postBootRestart", defaultValue = "auto")
     private String postBootRestart;
 
-    /** Start with the debugger enabled, as {@code start-domain --debug}. */
-    @Parameter(property = "glassfish.start.debug", defaultValue = "false")
-    private boolean debug;
+    /**
+     * Start with the debugger enabled, as {@code start-domain --debug}, on
+     * localhost only. Off for {@code start}, on for {@code run}.
+     */
+    @Parameter(property = "glassfish.start.debug")
+    private Boolean debug;
 
     /**
      * Start suspended, as {@code start-domain --suspend}: the server waits for
@@ -91,6 +94,7 @@ abstract class AbstractStartMojo extends AbstractStagingMojo {
      * @return the admin port it answers on
      */
     protected int startDomain() throws MojoExecutionException {
+        boolean debug = debug();
         PostBootRestart restart = PostBootRestart.of(postBootRestart);
         StagingCommands commands = new StagingCommands(postStartCommands, failOnCommandError);
         requireReadable(commands);
@@ -117,6 +121,16 @@ abstract class AbstractStartMojo extends AbstractStagingMojo {
         }
         runPostStartCommands(domain, adminPort, commands, getLog());
         return adminPort;
+    }
+
+    /** Whether the domain starts with the debugger enabled: {@code debug}, or else {@link #debugByDefault}. */
+    protected boolean debug() {
+        return (debug != null) ? debug : debugByDefault();
+    }
+
+    /** Whether the domain starts with the debugger enabled when {@code debug} isn't set: not by default. */
+    protected boolean debugByDefault() {
+        return false;
     }
 
     /**
@@ -158,7 +172,8 @@ abstract class AbstractStartMojo extends AbstractStagingMojo {
      * when it has them to run. Then restart it when {@code restart} says so,
      * so that what they configured is active. A debugger attaches to the
      * start that stays: when a restart may follow, the first start isn't
-     * suspended, and with {@code AUTO}, {@code suspend} then restarts it.
+     * suspended, and with {@code AUTO}, {@code suspend} then restarts it. A
+     * debugger that would listen on every interface listens on localhost.
      * Fails before starting anything when its admin port already answers,
      * and stops the domain again when a command fails with
      * {@code failOnError}. {@code starting} gets the domain and its admin
@@ -184,6 +199,14 @@ abstract class AbstractStartMojo extends AbstractStagingMojo {
 
         boolean mayRestart = postBootCommands.hasWork() && restart != PostBootRestart.NEVER;
         boolean suspendNow = suspend && !mayRestart;
+        if (debug || suspend) {
+            try {
+                domain.keepDebuggerLocal();
+            } catch (IOException e) {
+                throw new MojoExecutionException("Can't keep the debugger of " + domain.home() + " on localhost: "
+                        + e.getMessage(), e);
+            }
+        }
         if (suspendNow) {
             log.info("Waiting up to " + timeout.toSeconds() + " seconds for a debugger to attach on "
                     + domain.debugAddress());

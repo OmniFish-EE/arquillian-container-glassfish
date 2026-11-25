@@ -66,6 +66,18 @@ public final class RunningDomain implements AutoCloseable {
     }
 
     /**
+     * Log where a debugger attaches, with {@code debugger}, and where the
+     * domain's whole {@code server.log} is, as the console may show only its
+     * messages.
+     */
+    public void logWhere(boolean debugger) {
+        if (debugger) {
+            log.info("Debugger at " + domain.debugAddress());
+        }
+        log.info("Server log at " + domain.serverLog());
+    }
+
+    /**
      * Wait until the domain's process exits, or this thread is interrupted,
      * then end the run. The interrupt is restored once the run has ended:
      * {@code asadmin} would give up at once otherwise.

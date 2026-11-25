@@ -41,6 +41,26 @@ def page = { String url ->
     connection.inputStream.text
 }
 
+// What run prints after the URL: where a debugger attaches, and where the whole server log is.
+def printed = { String logName, String what ->
+    def value = (new File(basedir, logName).text =~ /${what} at (\S+)/).with { it.find() ? it.group(1) : null }
+    assert value : "No '${what} at' in ${logName}"
+    value
+}
+
+// A debugger's handshake, with which an IDE's attach starts: JDWP answers with the same 14 bytes.
+def debuggerAnswers = { String address ->
+    int colon = address.lastIndexOf(':')
+    new Socket(address.substring(0, colon), address.substring(colon + 1) as int).withCloseable { socket ->
+        socket.soTimeout = 10_000
+        socket.outputStream.write('JDWP-Handshake'.bytes)
+        socket.outputStream.flush()
+        def reply = new byte[14]
+        new DataInputStream(socket.inputStream).readFully(reply)
+        new String(reply) == 'JDWP-Handshake'
+    }
+}
+
 def answers = { int port ->
     try {
         new Socket('localhost', port).close()
@@ -57,6 +77,10 @@ try {
     def url = deployedAt(first, 'run-1.log')
     assert url == 'http://localhost:8080/run-it/'
     assert page(url).contains('marker one')
+    // GlassFish's own *:9009, on localhost only.
+    assert printed('run-1.log', 'Debugger') == 'localhost:9009'
+    assert debuggerAnswers('localhost:9009')
+    assert new File(printed('run-1.log', 'Server log')).text.contains('run-it')
 
     // A second run fails on the occupied admin port, and leaves the domain of the first running.
     def second = maven('glassfish:run', 'run-2.log')

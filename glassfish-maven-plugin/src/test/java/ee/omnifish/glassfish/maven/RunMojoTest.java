@@ -170,6 +170,16 @@ class RunMojoTest {
     }
 
     @Test
+    void aRunHasADebuggerUnlessDebugIsOff() throws ReflectiveOperationException {
+        RunMojo run = runMojo("war");
+        assertThat(run.debug(), is(true));
+
+        set(run, AbstractStartMojo.class, "debug", false);
+
+        assertThat(run.debug(), is(false));
+    }
+
+    @Test
     void theUrlIsHttpsWithoutAnHttpPort() {
         assertThat(RunDeployer.url(new NodeAddress("server", "localhost", 8080, 8181), "/run-it"),
                 is("http://localhost:8080/run-it/"));

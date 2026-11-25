@@ -50,6 +50,26 @@ def page = { String url ->
     connection.inputStream.text
 }
 
+// What a run prints after the URL: where a debugger attaches, and where the whole server log is.
+def printed = { String module, String what ->
+    def value = (new File(basedir, "run-${module}.log").text =~ /${what} at (\S+)/).with { it.find() ? it.group(1) : null }
+    assert value : "No '${what} at' in run-${module}.log"
+    value
+}
+
+// A debugger's handshake, with which an IDE's attach starts: JDWP answers with the same 14 bytes.
+def debuggerAnswers = { String address ->
+    int colon = address.lastIndexOf(':')
+    new Socket(address.substring(0, colon), address.substring(colon + 1) as int).withCloseable { socket ->
+        socket.soTimeout = 10_000
+        socket.outputStream.write('JDWP-Handshake'.bytes)
+        socket.outputStream.flush()
+        def reply = new byte[14]
+        new DataInputStream(socket.inputStream).readFully(reply)
+        new String(reply) == 'JDWP-Handshake'
+    }
+}
+
 def answers = { int port ->
     try {
         new Socket('localhost', port).close()
@@ -69,6 +89,10 @@ try {
     assert aUrl == 'http://localhost:14849/a/'
     assert page(aUrl).contains('module a, from-the-pool')
     assert rootOn(page(aUrl)) == basedir.canonicalFile
+    // The up in the package A forks started slot 1, with a debugger on its own port: the extension turned it on.
+    assert printed('module-a', 'Debugger') == 'localhost:14857'
+    assert debuggerAnswers('localhost:14857')
+    assert new File(printed('module-a', 'Server log')).with { it.path.contains('slot-1') && it.text.contains('/a') }
 
     // Slot 1 is A's, so B's lease grows the pool by slot 2, set up as slot 1 is. B runs in its module's directory,
     // and still finds the pool in this project, and this project as the root.
@@ -79,6 +103,9 @@ try {
     assert page(bUrl).contains('module b, from-the-pool')
     assert rootOn(page(bUrl)) == basedir.canonicalFile
     assert page(aUrl).contains('module a, from-the-pool')
+    assert printed('module-b', 'Debugger') == 'localhost:14957'
+    assert debuggerAnswers('localhost:14957')
+    assert new File(printed('module-b', 'Server log')).text.contains('/b')
 
     // Ctrl+C on A: a SIGTERM runs the JVM's shutdown hooks, as Ctrl+C's SIGINT does, and bin/mvn execs that JVM.
     // A's pool stops, except for B's slot.

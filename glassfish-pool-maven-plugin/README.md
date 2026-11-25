@@ -173,7 +173,7 @@ What every slot gets besides its ports. See [Slot setup](#slot-setup).
 | `postBootCommands`   | `gf.pool.postBootCommands`   | (none)  | `asadmin` commands run once per slot, after its domain first starts. One per line. |
 | `postStartCommands`  | `gf.pool.postStartCommands`  | (none)  | `asadmin` commands run after every slot start and restart. One per line. |
 | `failOnCommandError` | `gf.pool.failOnCommandError` | `true`  | Whether a failed command fails the slot's setup, instead of being logged. |
-| `debug` / `suspend`  | `glassfish.debug` / `glassfish.suspend` | `false` | Start slots with `--debug` / `--suspend`. Single-slot pools only; see [Debugging a slot](../glassfish-pool/README.md#debugging-a-slot). |
+| `debug` / `suspend`  | `glassfish.debug` / `glassfish.suspend` | `false`; `debug` is on in a build that runs `run` | Start slots with `--debug` / `--suspend`, each with its debugger on localhost and its own port. `suspend` is for single-slot pools only; see [Debugging a slot](../glassfish-pool/README.md#debugging-a-slot). |
 
 `provision` additionally requires `-Dgf.pool.slot=N`.
 
@@ -511,6 +511,8 @@ $ mvn glassfish-pool:run
 ...
 [INFO] Leased slot 1 of the pool at .../target/pool
 [INFO] Deployed app-mem-basic, at http://localhost:14849/app-mem-basic/
+[INFO] Debugger at localhost:14857
+[INFO] Server log at .../target/pool/slot-1/glassfish/glassfish/domains/domain1/logs/server.log
 [INFO] Ctrl+C ends the run, and hands slot 1 back to the pool
 ```
 
@@ -520,6 +522,14 @@ $ mvn glassfish-pool:run
   before `package`, as the Jakarta Security TCK does at `initialize`, the
   pool already runs by the time `run` leases. Otherwise `run` stages
   GlassFish, and the pool grows by the one slot it needs.
+- **The debugger:** with `<extensions>true</extensions>`, the slot has a
+  debugger, on localhost, at the slot's admin port + 9: 14857 for slot 1,
+  14957 for slot 2. The extension sets `glassfish.debug` for a build that
+  runs `run`, unless it's set already, so that an `up` in the `package`
+  that `run` forks starts its slots with one too.
+  `-Dglassfish.debug=false` runs without one. A slot that a build without
+  `glassfish.debug` started, such as a `mvn verify` at the same time, has
+  none, and `run` says so.
 - **Names:** `-Dglassfish.run.name` sets the application's name, and
   `-Dglassfish.run.contextRoot` a WAR's context root, as for
   `glassfish:run`. The artifact replaces an application of the same name.

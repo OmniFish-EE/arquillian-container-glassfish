@@ -304,7 +304,7 @@ shell script.
 | `gf.pool.failOnCommandError` | `true` | Whether a failed command fails the slot's setup. |
 | `gf.pool.restartOnRelease` | `false` | Seeds `restartOnRelease` for every test JVM the build forks. |
 | `gf.pool.shareGroupSlot`   | `false` | When `true`, members of a `<group>` share one slot (http+https idiom). Default keeps a slot per member. |
-| `glassfish.debug`          | `false` | Start each slot's domain in debug mode (`start-domain --debug`). Requires `gf.pool.size=1` (see below). Same property name as the managed container. |
+| `glassfish.debug`          | `false` | Start each slot's domain in debug mode (`start-domain --debug`), with its debugger on localhost and its own port (see below). Same property name as the managed container. |
 | `glassfish.suspend`        | `false` | Start the domain suspended, waiting for a debugger (`start-domain --suspend`). Requires `gf.pool.size=1` (see below). Same property name as the managed container. |
 
 Slot N's admin port = `adminBase + (N-1) * portStride`; HTTP/HTTPS land at
@@ -350,12 +350,14 @@ each slot's `start-domain`, using the same property names as the managed
 container. `--suspend` blocks the server JVM at startup until a debugger
 attaches, so `glassfish-pool:up` will not return until you connect.
 
-Because every slot clone shares one JDWP debug port, both are only valid for a
-**single-slot pool**: a second slot started with `--debug` could not bind the
-port. The plugin throws `IllegalArgumentException` when `glassfish.debug` or
-`glassfish.suspend` is set with `gf.pool.size` > 1 — run a debugged pool with
-`-T1` (and `gf.pool.size=1`). Slots that test JVMs add when they grow the pool
-start without debugging.
+Each slot's debugger listens on localhost, on the slot's admin port + 9:
+14857 for slot 1 and 14957 for slot 2 with the default ports. A slot started
+with a debugger has that port in its `ports.properties`, as
+`glassfish.debugPort`. `glassfish.suspend` is only valid for a **single-slot
+pool**, since every slot would wait for a debugger: the plugin throws
+`IllegalArgumentException` when it's set with `gf.pool.size` > 1 — run a
+suspended pool with `-T1` (and `gf.pool.size=1`). Slots that test JVMs add
+when they grow the pool start without debugging.
 
 ## Growing on demand
 

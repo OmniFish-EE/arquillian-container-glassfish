@@ -152,9 +152,11 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     protected boolean failOnCommandError;
 
     /**
-     * Start each slot's domain in debug mode. Shares the {@code glassfish.debug}
-     * property with the managed container. Only valid for a single-slot pool
-     * ({@code gf.pool.size=1}) — all slot clones share one debug port.
+     * Start each slot's domain in debug mode, with its debugger on localhost,
+     * on its admin port + 9: 14857 for slot 1 with the default ports. Shares
+     * the {@code glassfish.debug} property with the managed container. With
+     * {@code <extensions>true</extensions>}, a build that runs
+     * {@code glassfish-pool:run} sets it, unless it's set already.
      */
     @Parameter(property = "glassfish.debug", defaultValue = "false")
     protected boolean debug;
@@ -162,8 +164,8 @@ abstract class AbstractPoolMojo extends AbstractMojo {
     /**
      * Start each slot's domain suspended, waiting for a debugger to attach.
      * Shares the {@code glassfish.suspend} property with the managed container.
-     * Only valid for a single-slot pool ({@code gf.pool.size=1}) — suspend
-     * blocks the server JVM and all slot clones share one debug port.
+     * Only valid for a single-slot pool ({@code gf.pool.size=1}): suspend
+     * blocks each slot's server JVM until a debugger attaches to it.
      */
     @Parameter(property = "glassfish.suspend", defaultValue = "false")
     protected boolean suspend;

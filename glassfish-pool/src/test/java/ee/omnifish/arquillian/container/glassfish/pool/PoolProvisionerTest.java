@@ -175,10 +175,38 @@ class PoolProvisionerTest {
         assertThat(Files.exists(slotInstall(config)), equalTo(false));
     }
 
+    /** A slot without a debugger still gets a debug port of its own, which ports.properties leaves out. */
+    @Test
+    void aSlotsDebuggerWouldListenOnItsOwnPortOnLocalhost(@TempDir Path tmp) throws Exception {
+        PoolConfig config = config(tmp, "exit 0\n", SlotSetup.NONE);
+
+        SlotPorts ports = new PoolProvisioner(config).provisionSlot(1);
+
+        assertThat(DomainXmlEditor.debugAddress(PoolProvisioner.domainXml(slotInstall(config))),
+                equalTo("localhost:" + config.debugPort(1)));
+        assertThat(ports.debugPort(), equalTo(0));
+        assertThat(SlotPorts.readFrom(PoolPaths.portsFile(config.poolDir(), 1)).debugPort(), equalTo(0));
+    }
+
+    @Test
+    void aSlotStartedWithADebuggerPublishesItsPort(@TempDir Path tmp) throws Exception {
+        PoolConfig config = config(tmp, "exit 0\n", SlotSetup.NONE, true);
+
+        new PoolProvisioner(config).provisionSlot(1);
+
+        assertThat(FakeGlassFish.calls(slotInstall(config)), contains("--terse start-domain --debug domain1"));
+        assertThat(SlotPorts.readFrom(PoolPaths.portsFile(config.poolDir(), 1)).debugPort(),
+                equalTo(config.debugPort(1)));
+    }
+
     private static PoolConfig config(Path tmp, String script, SlotSetup setup) throws IOException {
+        return config(tmp, script, setup, false);
+    }
+
+    private static PoolConfig config(Path tmp, String script, SlotSetup setup, boolean debug) throws IOException {
         Path source = FakeGlassFish.install(tmp.resolve("source"), script);
         return new PoolConfig(tmp.resolve("pool"), source, 1, FakeGlassFish.freePort(),
-                PoolConfig.DEFAULT_PORT_STRIDE, setup, false, false);
+                PoolConfig.DEFAULT_PORT_STRIDE, setup, debug, false);
     }
 
     private static Path slotInstall(PoolConfig config) {

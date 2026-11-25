@@ -94,8 +94,15 @@ public class RunMojo extends AbstractStartMojo {
             throw e;
         }
 
+        running.logWhere(debug());
         getLog().info("Ctrl+C stops GlassFish, as glassfish:stop does");
         running.untilStopped();
+    }
+
+    /** A run opens the debugger, unless {@code debug} is off. */
+    @Override
+    protected boolean debugByDefault() {
+        return true;
     }
 
     /**

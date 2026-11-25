@@ -298,6 +298,36 @@ class StartMojoTest {
         assertThat(log.infos, hasItem("Waiting up to 30 seconds for a debugger to attach on 9009"));
     }
 
+    /** GlassFish's own *:9009 would let a debugger in from any machine that reaches this one. */
+    @Test
+    void aDebuggerListensOnLocalhost() throws Exception {
+        Path domainXml = FakeDomain.install(home, freePort(), FakeDomain.START)
+                .resolve("glassfish/domains/domain1/config/domain.xml");
+        Files.writeString(domainXml, Files.readString(domainXml).replace("address=9009", "address=*:9009"));
+        GlassFishDomain domain = new GlassFishDomain(home);
+
+        StartMojo.start(domain, StagingCommands.NONE, AUTO, true, false, TIMEOUT, log);
+
+        assertThat(domain.debugAddress(), equalTo("localhost:9009"));
+    }
+
+    @Test
+    void aDebuggerKeepsTheHostItWasGiven() throws Exception {
+        Path domainXml = FakeDomain.install(home, freePort(), FakeDomain.START)
+                .resolve("glassfish/domains/domain1/config/domain.xml");
+        Files.writeString(domainXml, Files.readString(domainXml).replace("address=9009", "address=10.0.0.5:9009"));
+        GlassFishDomain domain = new GlassFishDomain(home);
+
+        StartMojo.start(domain, StagingCommands.NONE, AUTO, true, false, TIMEOUT, log);
+
+        assertThat(domain.debugAddress(), equalTo("10.0.0.5:9009"));
+    }
+
+    @Test
+    void startHasNoDebuggerByDefault() {
+        assertThat(new StartMojo().debug(), is(false));
+    }
+
     /**
      * Like a server suspended until a debugger attaches, which nobody does:
      * start-domain waits, and the server it started has no pid file yet, so

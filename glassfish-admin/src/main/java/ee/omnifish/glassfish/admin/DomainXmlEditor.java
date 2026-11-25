@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -62,6 +64,14 @@ public final class DomainXmlEditor {
 
     /** The config the DAS runs with when its {@code <server>} element doesn't say. */
     private static final String DEFAULT_SERVER_CONFIG = "server-config";
+
+    private static final String DEBUG_OPTIONS = "debug-options";
+
+    /** JDWP's options in a stock {@code domain.xml}, up to the address. */
+    private static final String DEFAULT_DEBUG_OPTIONS = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=";
+
+    /** The {@code address} option among the debug options, in group 2. */
+    private static final Pattern DEBUG_ADDRESS = Pattern.compile("(^|[=,:])address=([^,\\s]*)");
 
     private static final Logger LOG = Logger.getLogger(DomainXmlEditor.class.getName());
 
@@ -139,8 +149,70 @@ public final class DomainXmlEditor {
             return value;
         }
 
-        String name = value.substring(2, value.length() - 1);
+        return resolve(parse(domainXml), value);
+    }
+
+    /**
+     * Where the server's debugger listens when it starts with
+     * {@code --debug}: the {@code address} in the {@code debug-options} of
+     * its config's {@code <java-config>}, such as {@code *:9009}, with a
+     * {@code ${...}} placeholder for the port resolved as {@link #resolve}
+     * does. {@code null} when the options have no address.
+     */
+    public static String debugAddress(Path domainXml) throws IOException {
         Document doc = parse(domainXml);
+        Element javaConfig = javaConfig(doc, domainXml);
+        Matcher address = DEBUG_ADDRESS.matcher(javaConfig == null ? "" : javaConfig.getAttribute(DEBUG_OPTIONS));
+        if (!address.find()) {
+            return null;
+        }
+
+        String value = address.group(2);
+        int colon = value.lastIndexOf(':');
+        return value.substring(0, colon + 1) + resolve(doc, value.substring(colon + 1));
+    }
+
+    /**
+     * Set the {@code address} in the {@code debug-options} of the server's
+     * config, so its debugger listens there when it starts with
+     * {@code --debug}: in place of the address there, after the options
+     * there, or with JDWP's usual options when there are none. Other configs
+     * stay as they are, as with {@link #setPorts(Path, int, int, int)}.
+     *
+     * @throws IOException also when the server's config has no {@code <java-config>}
+     */
+    public static void setDebugAddress(Path domainXml, String address) throws IOException {
+        Document doc = parse(domainXml);
+        Element javaConfig = javaConfig(doc, domainXml);
+        if (javaConfig == null) {
+            throw new IOException(domainXml + " has no <java-config> for the server");
+        }
+
+        String options = javaConfig.getAttribute(DEBUG_OPTIONS);
+        Matcher current = DEBUG_ADDRESS.matcher(options);
+        String wanted;
+        if (current.find()) {
+            wanted = options.substring(0, current.start(2)) + address + options.substring(current.end(2));
+        } else if (options.isBlank()) {
+            wanted = DEFAULT_DEBUG_OPTIONS + address;
+        } else {
+            wanted = options + ",address=" + address;
+        }
+        if (wanted.equals(options)) {
+            return;
+        }
+
+        javaConfig.setAttribute(DEBUG_OPTIONS, wanted);
+        atomicWrite(domainXml, doc);
+    }
+
+    /** {@code value}'s system property, as {@link #resolve(Path, String)} looks it up, or {@code value}. */
+    private static String resolve(Document doc, String value) {
+        if (!value.matches("\\$\\{[^}]+}")) {
+            return value;
+        }
+
+        String name = value.substring(2, value.length() - 1);
         for (Element scope : dasScopes(doc)) {
             for (Element property : directChildren(scope, "system-property")) {
                 if (name.equals(property.getAttribute("name"))) {
@@ -293,6 +365,23 @@ public final class DomainXmlEditor {
     }
 
     private static List<Element> serverListeners(Document doc, Path domainXml) throws IOException {
+        List<Element> listeners = new ArrayList<>();
+        NodeList found = serverConfig(doc, domainXml).getElementsByTagName("network-listener");
+        for (int i = 0; i < found.getLength(); i++) {
+            listeners.add((Element) found.item(i));
+        }
+
+        return listeners;
+    }
+
+    /** The {@code <java-config>} of the config the DAS runs with, or null. */
+    private static Element javaConfig(Document doc, Path domainXml) throws IOException {
+        List<Element> javaConfigs = directChildren(serverConfig(doc, domainXml), "java-config");
+        return javaConfigs.isEmpty() ? null : javaConfigs.get(0);
+    }
+
+    /** The config the DAS runs with: the one its {@code config-ref} names, else {@code server-config}. */
+    private static Element serverConfig(Document doc, Path domainXml) throws IOException {
         String configRef = DEFAULT_SERVER_CONFIG;
         NodeList servers = doc.getElementsByTagName("server");
         for (int i = 0; i < servers.getLength(); i++) {
@@ -306,12 +395,7 @@ public final class DomainXmlEditor {
         for (int i = 0; i < configs.getLength(); i++) {
             Element config = (Element) configs.item(i);
             if (configRef.equals(config.getAttribute("name"))) {
-                List<Element> listeners = new ArrayList<>();
-                NodeList found = config.getElementsByTagName("network-listener");
-                for (int j = 0; j < found.getLength(); j++) {
-                    listeners.add((Element) found.item(j));
-                }
-                return listeners;
+                return config;
             }
         }
         throw new IOException(domainXml + " has no <config name=\"" + configRef + "\">");

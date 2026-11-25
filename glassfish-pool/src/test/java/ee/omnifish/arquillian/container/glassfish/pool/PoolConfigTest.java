@@ -71,11 +71,14 @@ class PoolConfigTest {
                         java.util.List.of(), false, true));
     }
 
+    /** Each slot has a debug port of its own. */
     @Test
-    void debugRejectsMultiSlotPool() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new PoolConfig(Paths.get("/x"), null, 2, 14848, 100,
-                        java.util.List.of(), true, false));
+    void debugAllowsMultiSlotPool() {
+        PoolConfig c = new PoolConfig(Paths.get("/x"), null, 2, 14848, 100,
+                java.util.List.of(), true, false);
+        assertThat(c.debug(), equalTo(true));
+        assertThat(c.debugPort(1), equalTo(14857));
+        assertThat(c.debugPort(2), equalTo(14957));
     }
 
     @Test
