@@ -29,10 +29,11 @@
 
     <name>Integration Test: GlassFish Server Pool, run</name>
     <description>
-        Two WAR modules, each run with glassfish-pool:run from this project,
-        at the same time, on their own slots of one pool. Like the Jakarta
-        Security TCK, the pool starts at initialize, and so during the package
-        run forks. Run via integration-tests' maven-invoker harness.
+        Two WAR modules, run with glassfish-pool:run at the same time, on
+        their own slots of one pool: one from this project with -pl, the
+        other from its module's directory. Like the Jakarta Security TCK, the
+        pool starts at initialize, and so during the package run forks. Run
+        via integration-tests' maven-invoker harness.
     </description>
 
     <modules>
@@ -58,7 +59,10 @@
         </pluginManagement>
 
         <plugins>
-            <!-- The modules' pages show the system property, to prove they run on a slot as the pool sets it up. -->
+            <!--
+                The modules' pages show the system properties, to prove they run on a slot as the pool sets it
+                up, and that gf.pool.rootDirectory is this project's directory also when Maven runs in a module.
+            -->
             <plugin>
                 <groupId>ee.omnifish.arquillian</groupId>
                 <artifactId>glassfish-pool-maven-plugin</artifactId>
@@ -70,6 +74,7 @@
                     </distribution>
                     <systemProperties>
                         run.marker=from-the-pool
+                        run.root=${gf.pool.rootDirectory}
                     </systemProperties>
                 </configuration>
                 <executions>

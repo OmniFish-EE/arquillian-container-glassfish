@@ -4,16 +4,25 @@
 
 import java.util.concurrent.TimeUnit
 
-// glassfish-pool:run keeps its Maven running, so each run is a Maven of its own here, in the background, run from
-// this project for one module, as from a reactor root.
+// glassfish-pool:run keeps its Maven running, so each run is a Maven of its own here, in the background: A from
+// this project with -pl, as from a reactor root, and B from its module's directory.
 def mvn = new File(System.getProperty('maven.home'), 'bin/mvn').path
 
-def run = { String module ->
-    new ProcessBuilder(mvn, '-B', "-Dmaven.repo.local=${localRepositoryPath}", '-pl', module, 'glassfish-pool:run')
-            .directory(basedir)
+def run = { String module, boolean inModule ->
+    def command = [mvn, '-B', "-Dmaven.repo.local=${localRepositoryPath}".toString()]
+    command += inModule ? ['glassfish-pool:run'] : ['-pl', module, 'glassfish-pool:run']
+    new ProcessBuilder(command)
+            .directory(inModule ? new File(basedir, module) : basedir)
             .redirectErrorStream(true)
             .redirectOutput(new File(basedir, "run-${module}.log"))
             .start()
+}
+
+// The pool's root directory, as gf.pool.rootDirectory, which a page shows.
+def rootOn = { String text ->
+    def root = (text =~ /root (\S+)/).with { it.find() ? it.group(1) : null }
+    assert root : "No root in ${text}"
+    new File(root).canonicalFile
 }
 
 def ended = { Process process, String what ->
@@ -54,18 +63,21 @@ def answers = { int port ->
 def runs = []
 try {
     // The pool starts slot 1 in the package that run forks, and A leases it.
-    def a = run('module-a')
+    def a = run('module-a', false)
     runs << a
     def aUrl = deployedAt(a, 'module-a')
     assert aUrl == 'http://localhost:14849/a/'
     assert page(aUrl).contains('module a, from-the-pool')
+    assert rootOn(page(aUrl)) == basedir.canonicalFile
 
-    // Slot 1 is A's, so B's lease grows the pool by slot 2, set up as slot 1 is.
-    def b = run('module-b')
+    // Slot 1 is A's, so B's lease grows the pool by slot 2, set up as slot 1 is. B runs in its module's directory,
+    // and still finds the pool in this project, and this project as the root.
+    def b = run('module-b', true)
     runs << b
     def bUrl = deployedAt(b, 'module-b')
     assert bUrl == 'http://localhost:14949/b/'
     assert page(bUrl).contains('module b, from-the-pool')
+    assert rootOn(page(bUrl)) == basedir.canonicalFile
     assert page(aUrl).contains('module a, from-the-pool')
 
     // Ctrl+C on A: a SIGTERM runs the JVM's shutdown hooks, as Ctrl+C's SIGINT does, and bin/mvn execs that JVM.

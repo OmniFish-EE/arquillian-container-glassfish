@@ -113,10 +113,10 @@ note applies:
 
 | Parameter | Default | Override when… |
 | --------- | ------- | -------------- |
-| `poolDir` | `pool` in the build directory of the project where Maven runs, or with `multiModule` off in the project's own | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
+| `poolDir` | `pool` in the build directory of the pool's root project (see *One pool per build*), or with `multiModule` off in the project's own | two `mvn` runs on one machine need separate pools. Failsafe picks up the new value automatically. |
 | `poolSource` | the distribution zip's top-level directory under `stageDir` (e.g. `target/dist/glassfish9`) | you skip the unpack or bring your own (no `<distribution>`), or the zip has more than one top-level entry. |
 | `distribution` `groupId` / `artifactId` / `type` | `org.glassfish.main.distributions` / `glassfish` / `zip` | you target Payara, a fork, or any other non-canonical artifact. Set the full coordinates. |
-| `stageDir` | `dist` in the build directory of the project where Maven runs, or with `multiModule` off in the project's own | the unpacked dist should live elsewhere. |
+| `stageDir` | `dist` in the build directory of the pool's root project, or with `multiModule` off in the project's own | the unpacked dist should live elsewhere. |
 | `poolSize` | `1` | you run tests in parallel forks. Match failsafe's `forkCount`, or set that to `${gf.pool.size}`. |
 | `adminPortBase` / `portStride` | `14848` / `100` | the default port window clashes with something else on the machine. |
 
@@ -296,6 +296,10 @@ external identity provider's server certificate for OpenID. Each
 </configuration>
 ```
 
+With the plugin in a multi-module project's parent, write a path from the
+root as `${gf.pool.rootDirectory}/...`, which stays the root's when Maven
+runs in a module; see [One pool per build](#one-pool-per-build).
+
 Staging imports them into the staged install's truststore before any slot
 is cloned from it, so the slots have them from their first start. That
 matters: GlassFish reads its truststore once, when it first opens a TLS
@@ -423,12 +427,22 @@ all modules share it, so configure the plugin in the parent:
 </plugin>
 ```
 
-- `poolDir` and `stageDir` default to the build directory of the project
-  where Maven runs, also when `-pl` leaves that project out: `target/pool`
-  and `target/dist` there, instead of in each module. Explicit values win.
-  `up` publishes `gf.pool.dir` as always, so the test JVMs get the shared
-  directory. Run Maven in a module, and the pool is in that module's
-  `target`, as in a single-module build.
+- `poolDir` and `stageDir` default to the build directory of the pool's
+  root project: `target/pool` and `target/dist` there, instead of in each
+  module. The root is the topmost project around the one being built whose
+  own pom configures the plugin, like the parent above, or the project
+  where Maven runs, when that's higher. Only parents in a directory around
+  the module count, not one from a repository. So the pool is the same
+  whether Maven runs at the root, with `-pl`, or in a module's directory.
+  Explicit values win. `up` publishes `gf.pool.dir` as always, so the test
+  JVMs get the shared directory.
+- With `<extensions>true</extensions>`, the root's directory is available
+  as `${gf.pool.rootDirectory}`, for paths in the configuration that are
+  relative to it, such as a trusted certificate's:
+  `<file>${gf.pool.rootDirectory}/certs/idp.pem</file>`. Unlike
+  `${maven.multiModuleProjectDirectory}`, it doesn't need a `.mvn`
+  directory to stay the same when Maven runs in a module. A value you set
+  yourself wins.
 - The first `up` in the build starts the pool. The others find it running
   and return straight away. If it starts only partly, the slots that did
   start are stopped after the build all the same.
@@ -513,8 +527,8 @@ $ mvn glassfish-pool:run
   The pool then stops, as it does after tests, except for the slots that
   runs in other terminals hold. `mvn glassfish-pool:down` from another
   terminal stops every slot, and so ends every run.
-- **Two modules at once:** each run leases its own slot of one pool. Start
-  both from the reactor root, so both use its `target/pool`:
+- **Two modules at once:** each run leases its own slot of one pool, in
+  the root's `target/pool`. From the reactor root:
 
   ```
   mvn -pl :app-mem-basic glassfish-pool:run
@@ -524,19 +538,20 @@ $ mvn glassfish-pool:run
   When one ends, the slot the other holds keeps running, and the last run
   to end stops the pool. Staging isn't coordinated between Maven processes,
   so on a fresh checkout, start the second run once the first has staged
-  GlassFish.
+  GlassFish. Runs started in their modules' directories share the pool
+  too.
 
   A slot's GlassFish shares the terminal of the Maven that started it, so
   that terminal's Ctrl+C reaches it too. With a pool size of 1, the
   default, each run's slot is its own: the second run grows the pool by the
   slot it leases. With a larger pool, the first run's `up` starts slots the
   second run may lease, and Ctrl+C in the first terminal then ends both.
-- **From a module's directory:** there, the pool defaults to that module's
-  `target`. To share one pool among modules started from their own
-  directories, set `poolDir` and `stageDir` to the root's, for example
-  `${maven.multiModuleProjectDirectory}/target/pool`. Give the root a
-  `.mvn` directory too, since without one, that property is the directory
-  Maven starts in.
+- **From a module's directory:** `cd app-mem-basic` and
+  `mvn glassfish-pool:run` work the same: the pool is the root's, as above.
+  Paths in the configuration that belong to the root, such as a trusted
+  certificate's, need `${gf.pool.rootDirectory}`, since
+  `${maven.multiModuleProjectDirectory}` is the module's directory there,
+  without a `.mvn` directory at the root.
 - **Sibling modules:** a module that depends on others needs them installed
   first, with `mvn install`: the `package` that `run` forks builds only that
   module.

@@ -100,6 +100,7 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         for (MavenProject project : session.getProjects()) {
             Plugin plugin = project.getPlugin(GROUP_ID + ":" + ARTIFACT_ID);
             if (plugin != null) {
+                publishRootDirectory(project, session);
                 bindGoals(plugin, properties(project, session));
                 Plugin failsafe = project.getPlugin(FAILSAFE_KEY);
                 if (failsafe != null) {
@@ -107,6 +108,22 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
                     forwardServerLogColor(project, failsafe);
                 }
             }
+        }
+    }
+
+    /**
+     * Publish the directory of the pool's root project as
+     * {@value PoolRoot#PROPERTY}, for paths relative to it in the plugin's
+     * configuration, such as {@code ${gf.pool.rootDirectory}/certs/idp.pem}:
+     * Maven resolves such a reference when a goal runs, after this. Unlike
+     * {@code ${maven.multiModuleProjectDirectory}} without a {@code .mvn}
+     * directory, it's the same when Maven runs in a module. A value the
+     * user sets is left alone. Package-private for unit tests.
+     */
+    static void publishRootDirectory(MavenProject project, MavenSession session) {
+        MavenProject root = PoolRoot.of(project, session);
+        if (root != null && root.getBasedir() != null) {
+            project.getProperties().putIfAbsent(PoolRoot.PROPERTY, root.getBasedir().getAbsolutePath());
         }
     }
 
