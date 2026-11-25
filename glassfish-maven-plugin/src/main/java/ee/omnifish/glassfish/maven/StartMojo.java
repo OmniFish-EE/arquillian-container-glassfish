@@ -42,6 +42,7 @@ public class StartMojo extends AbstractStartMojo {
             return;
         }
 
+        requireDomainEdition("start");
         startDomain();
     }
 }

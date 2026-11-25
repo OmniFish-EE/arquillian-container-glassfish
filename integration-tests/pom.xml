@@ -75,6 +75,7 @@
                     <filterProperties>
                         <glassfish.version>${version.glassfish}</glassfish.version>
                         <arquillian.version>${version.arquillian}</arquillian.version>
+                        <mojarra.overlay>${version.mojarra.overlay}</mojarra.overlay>
                         <project.version>${project.version}</project.version>
                     </filterProperties>
                     <streamLogs>true</streamLogs>

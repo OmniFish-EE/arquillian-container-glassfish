@@ -12,6 +12,9 @@ package ee.omnifish.glassfish.maven;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
@@ -22,6 +25,10 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
 import ee.omnifish.glassfish.admin.ServerLogTailer;
+import ee.omnifish.glassfish.maven.staging.EarWebModules;
+import ee.omnifish.glassfish.maven.staging.EmbeddedCommand;
+import ee.omnifish.glassfish.maven.staging.EmbeddedGlassFish;
+import ee.omnifish.glassfish.maven.staging.EmbeddedWorkDir;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 
 /**
@@ -36,12 +43,19 @@ import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
  * {@code ejb} and {@code rar} projects are deployed; for others, this goal
  * does nothing. {@code -DskipTests} skips the tests of the {@code package}
  * this goal runs, not this goal.
+ *
+ * <p>On an Embedded {@code <edition>}, it runs the artifact on GlassFish
+ * Embedded instead, in a JVM of its own, the way GlassFish Embedded runs an
+ * application from the command line, until Ctrl+C stops it.
  */
 @Mojo(name = "run", threadSafe = true)
 @Execute(phase = LifecyclePhase.PACKAGE)
 public class RunMojo extends AbstractStartMojo {
 
     private static final String GOAL = "glassfish:run";
+
+    /** Where GlassFish Embedded children get their working directories, under the build directory. */
+    static final String WORK_DIR = "glassfish-embedded";
 
     /**
      * The application's name. GlassFish takes it from an EAR's
@@ -85,6 +99,11 @@ public class RunMojo extends AbstractStartMojo {
         }
 
         Path archive = RunDeployer.artifact(executedProject, GOAL);
+        if (edition().isEmbedded()) {
+            runEmbedded(archive);
+            return;
+        }
+
         try {
             RunDeployer.deploy(startDomain(), archive, name, contextRoot, getLog());
         } catch (MojoExecutionException | RuntimeException e) {
@@ -97,6 +116,69 @@ public class RunMojo extends AbstractStartMojo {
         running.logWhere(debug());
         getLog().info("Ctrl+C stops GlassFish, as glassfish:stop does");
         running.untilStopped();
+    }
+
+    /**
+     * Run {@code archive} on GlassFish Embedded: provision it, start a child
+     * JVM that runs it with the archive, in a working directory of its own,
+     * and keep running, with the child's output on the console, until
+     * Ctrl+C stops the child, or it ends otherwise.
+     */
+    private void runEmbedded(Path archive) throws MojoExecutionException {
+        // Before provisioning, so a second run leaves what the first one runs from alone.
+        requireFree(EmbeddedCommand.HTTP_PORT);
+        List<String> commands = embeddedCommands();
+        EmbeddedGlassFish glassfish = provisionEmbedded();
+        String packaging = executedProject.getPackaging();
+        boolean war = "war".equals(packaging);
+        EmbeddedCommand command = new EmbeddedCommand(glassfish, archive.getFileName().toString(), war)
+                .debug(debug(), suspend())
+                .messagesOnly(logMessagesOnly)
+                .commands(commands)
+                .name(name)
+                .contextRoot(contextRoot);
+        for (int port : command.ports()) {
+            requireFree(port);
+        }
+
+        List<String> line;
+        List<String> earContextRoots;
+        EmbeddedWorkDir workDir;
+        try {
+            glassfish.requireMainClass();
+            line = command.build();
+            earContextRoots = "ear".equals(packaging) ? EarWebModules.contextRoots(archive) : List.of();
+            workDir = EmbeddedWorkDir.create(Paths.get(executedProject.getBuild().getDirectory(), WORK_DIR), archive,
+                    glassfish);
+        } catch (IOException | IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+
+        if (suspend()) {
+            getLog().info("Waiting up to " + startTimeout().toSeconds() + " seconds for a debugger to attach on "
+                    + EmbeddedCommand.DEBUG_ADDRESS);
+        }
+        String prefix = ServerLogTailer.prefix("glassfish:embedded", 0, LifecycleSupport.isConsoleColored());
+        EmbeddedRun run = EmbeddedRun.start(line, workDir, new EmbeddedStartup(war), prefix, GOAL, getLog());
+        run.awaitStarted(startTimeout());
+        List<String> urls = new ArrayList<>();
+        for (String root : war ? run.contextRoots() : earContextRoots) {
+            urls.add(RunDeployer.url(EmbeddedCommand.HTTP_PORT, root));
+        }
+        getLog().info(RunDeployer.deployed(run.name(), urls));
+        if (debug() || suspend()) {
+            getLog().info("Debugger at " + EmbeddedCommand.DEBUG_ADDRESS);
+        }
+        getLog().info("Ctrl+C stops GlassFish Embedded");
+        run.untilStopped();
+    }
+
+    /** Fail when something already answers on {@code port}, which GlassFish Embedded would open. */
+    private static void requireFree(int port) throws MojoExecutionException {
+        if (GlassFishDomain.isAnswering(port)) {
+            throw new MojoExecutionException("Something already answers on port " + port + ": another server, or a "
+                    + "glassfish:run that runs still. Stop it first.");
+        }
     }
 
     /** A run opens the debugger, unless {@code debug} is off. */

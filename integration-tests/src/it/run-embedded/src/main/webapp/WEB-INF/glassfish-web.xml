@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE glassfish-web-app PUBLIC "-//GlassFish.org//DTD GlassFish Application Server 3.1 Servlet 3.0//EN"
+    "http://glassfish.org/dtds/glassfish-web-app_3_0-1.dtd">
+<!-- Not the default, the WAR's name: run prints the context root GlassFish reports. -->
+<glassfish-web-app>
+    <context-root>/run-embedded-it</context-root>
+</glassfish-web-app>

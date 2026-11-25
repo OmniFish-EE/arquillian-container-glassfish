@@ -87,6 +87,8 @@
         <version.gjule>${version.glassfish}</version.gjule>
         <version.jakartaee>10</version.jakartaee>
         <version.jakartaee.api>10.0.0</version.jakartaee.api>
+        <!-- The next Mojarra after the one GlassFish ships, which an IT overlays. -->
+        <version.mojarra.overlay>4.0.13</version.mojarra.overlay>
         <version.jackson>2.21</version.jackson>
         <version.jackson.xmlbind>2.21.2</version.jackson.xmlbind>
         <version.shrinkwrap>1.2.6</version.shrinkwrap>
@@ -434,6 +436,7 @@
                 <version.glassfish>8.0.5</version.glassfish>
                 <version.gjule>8.0.5</version.gjule>
                 <version.jakartaee>11</version.jakartaee>
+                <version.mojarra.overlay>4.1.18</version.mojarra.overlay>
             </properties>
         </profile>
 

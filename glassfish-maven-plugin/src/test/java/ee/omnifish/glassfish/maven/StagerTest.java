@@ -24,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.Edition;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
@@ -178,6 +179,21 @@ class StagerTest {
                 "<poolSource> (gf.pool.source)"));
 
         assertThat(e.getMessage(), containsString("set <poolSource> (gf.pool.source)"));
+    }
+
+    /** A GlassFish Embedded JAR is copied, not unpacked, and its certificates go into a truststore of its own. */
+    @Test
+    void anEmbeddedJarHasNoInstallRootAndATruststoreOfItsOwn() throws Exception {
+        CertImport certImport = new CertImport(List.of(new TrustedCert("idp", tmp.resolve("idp.pem").toFile())),
+                null, null, false);
+
+        StageSpec spec = new Stager(coord -> {
+            throw new AssertionError("resolved " + coord.toGav());
+        }, log).spec(Edition.EMBEDDED.distribution("8.0.5", null, false), tmp.toFile(), false, null, null, null,
+                false, certImport, HOME);
+
+        assertEquals(null, spec.home());
+        assertEquals(certImport, spec.certImport());
     }
 
     private static DistributionCoord distribution(String version) {

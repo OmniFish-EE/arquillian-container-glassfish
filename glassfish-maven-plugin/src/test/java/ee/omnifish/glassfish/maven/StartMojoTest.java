@@ -17,6 +17,7 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -359,6 +360,26 @@ class StartMojoTest {
         StopMojo.stop(domain, log);
 
         assertThat(domain.isRunning(), is(false));
+    }
+
+    /** GlassFish Embedded starts with its application, which only glassfish:run gives it. */
+    @Test
+    void startAndStopDontRunGlassFishEmbedded() throws Exception {
+        StartMojo start = new StartMojo();
+        StopMojo stop = new StopMojo();
+        for (AbstractStagingMojo mojo : List.of(start, stop)) {
+            Field edition = AbstractStagingMojo.class.getDeclaredField("edition");
+            edition.setAccessible(true);
+            edition.set(mojo, "embedded");
+        }
+
+        MojoExecutionException startFails = assertThrows(MojoExecutionException.class, start::execute);
+        MojoExecutionException stopFails = assertThrows(MojoExecutionException.class, stop::execute);
+
+        assertThat(startFails.getMessage(), equalTo("glassfish:start works with the full and web editions; for "
+                + "GlassFish Embedded, use glassfish:run"));
+        assertThat(stopFails.getMessage(), equalTo("glassfish:stop works with the full and web editions; for "
+                + "GlassFish Embedded, use glassfish:run"));
     }
 
     private static int freePort() throws IOException {

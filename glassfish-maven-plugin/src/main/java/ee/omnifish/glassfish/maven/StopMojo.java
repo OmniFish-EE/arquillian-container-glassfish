@@ -46,6 +46,7 @@ public class StopMojo extends AbstractStagingMojo {
             return;
         }
 
+        requireDomainEdition("stop");
         Path home = installRoot();
         if (home == null) {
             throw new MojoExecutionException("Can't stop GlassFish: its install root isn't known. Set <home>.");

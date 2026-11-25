@@ -1,0 +1,41 @@
+GlassFish will start now. Welcome!
+Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Loaded embedded server named: server
+Authorization Service has successfully initialized.
+HV000001: Hibernate Validator 9.1.4.Final
+Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Grizzly Framework 5.0.3 started in: 14 ms - bound to [/0.0.0.0:19301]
+Network listener https-listener on port 0 disabled per domain.xml
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+GlassFish  (commit: null) startup time: Embedded (557 ms), startup services (217 ms), total (774 ms)
+No JMS RA installation RAR found on path /tmp/gfembed1845561454965896737/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+JMXStartupService has disabled JMXConnector system
+SUCCESS: PlainTextActionReporterSUCCESSNo monitoring data to report.
+
+Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Entering Security Startup Service.
+Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Security Service(s) started successfully.
+The GlassFishLogHandler was not found, returning null
+Created HTTP listener http-listener on host/port 0.0.0.0:19301
+Error adding HttpProbes. NetworkListener https-listeners GrizzlyProxy is NULL
+Created virtual server server
+Setting JAAS app name glassfish-web
+Virtual server server loaded default web module 
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@597f0937[name=shop], urls=[
+file:/tmp/gfembed1845561454965896737/applications/shop/WEB-INF/classes
+file:/tmp/gfembed1845561454965896737/generated/ejb/shop/
+][delegate=true, context=shop, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=35, pathTimestamps.size=0, resourceEntryCache.size=0]
+Loading application [shop] at [/descriptor-shop]
+shop was successfully deployed in 477 milliseconds.
+SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name shop.
+    [name=shop
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    applications.application.shop.context-root=/descriptor-shop
+

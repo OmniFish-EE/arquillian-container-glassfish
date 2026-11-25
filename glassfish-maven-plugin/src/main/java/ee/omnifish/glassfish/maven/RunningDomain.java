@@ -11,8 +11,6 @@
 package ee.omnifish.glassfish.maven;
 
 import java.io.IOException;
-import java.util.Optional;
-import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
 import org.apache.maven.plugin.logging.Log;
@@ -39,12 +37,8 @@ public final class RunningDomain implements AutoCloseable {
     }
 
     private final GlassFishDomain domain;
-    private final ServerLogTailer serverLog;
-    private final Ending ending;
     private final Log log;
-    private final Thread shutdownHook;
-
-    private boolean ended;
+    private final RunEnding ending;
 
     /**
      * Follows the domain's {@code server.log} from now on, printing each line
@@ -57,12 +51,12 @@ public final class RunningDomain implements AutoCloseable {
     public RunningDomain(GlassFishDomain domain, String prefix, boolean messagesOnly, String goal, Log log,
             Ending ending) {
         this.domain = domain;
-        this.ending = ending;
         this.log = log;
         Consumer<String> console = line -> System.out.println(prefix + line);
-        serverLog = ServerLogTailer.follow(domain.serverLog(), messagesOnly ? new ServerLogMessages(console) : console);
-        shutdownHook = new Thread(this::end, goal + " ending");
-        Runtime.getRuntime().addShutdownHook(shutdownHook);
+        ServerLogTailer serverLog = ServerLogTailer.follow(domain.serverLog(),
+                messagesOnly ? new ServerLogMessages(console) : console);
+        // The mirror stops after the ending, so what the ending makes the domain log still shows.
+        this.ending = new RunEnding(goal, log, ending, serverLog::close);
     }
 
     /**
@@ -83,23 +77,7 @@ public final class RunningDomain implements AutoCloseable {
      * {@code asadmin} would give up at once otherwise.
      */
     public void untilStopped() {
-        boolean interrupted = false;
-        try {
-            Optional<ProcessHandle> process = domain.process();
-            if (process.isPresent()) {
-                process.get().onExit().get();
-            }
-        } catch (InterruptedException e) {
-            interrupted = true;
-        } catch (ExecutionException e) {
-            // onExit() doesn't fail.
-            throw new IllegalStateException(e);
-        } finally {
-            close();
-            if (interrupted) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        ending.untilExit(domain.process());
     }
 
     /**
@@ -107,29 +85,13 @@ public final class RunningDomain implements AutoCloseable {
      * domain log still shows. A second call waits until the first has
      * finished: during a shutdown, the JVM exits once its hooks return.
      */
-    synchronized void end() {
-        if (ended) {
-            return;
-        }
-
-        ended = true;
-        try {
-            ending.end();
-        } catch (IOException e) {
-            log.warn(e.getMessage());
-        } finally {
-            serverLog.close();
-        }
+    void end() {
+        ending.end();
     }
 
     /** {@link #end}, and drop the shutdown hook, which has nothing left to do. */
     @Override
     public void close() {
-        end();
-        try {
-            Runtime.getRuntime().removeShutdownHook(shutdownHook);
-        } catch (IllegalStateException e) {
-            // The JVM is shutting down, and the hook ran the same ending.
-        }
+        ending.close();
     }
 }

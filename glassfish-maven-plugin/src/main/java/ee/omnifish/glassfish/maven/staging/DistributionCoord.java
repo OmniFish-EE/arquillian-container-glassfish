@@ -32,6 +32,9 @@ public class DistributionCoord extends ArtifactCoord {
     public static final String DEFAULT_ARTIFACT_ID = "glassfish";
     public static final String DEFAULT_TYPE = "zip";
 
+    /** Whether a groupId, artifactId, type or classifier was given, not only a version. */
+    private boolean coordinates;
+
     public DistributionCoord() {
         setGroupId(null);
         setArtifactId(null);
@@ -49,17 +52,34 @@ public class DistributionCoord extends ArtifactCoord {
 
     @Override
     public void setGroupId(String groupId) {
-        super.setGroupId(orDefault(groupId, DEFAULT_GROUP_ID));
+        super.setGroupId(coordinate(groupId, DEFAULT_GROUP_ID));
     }
 
     @Override
     public void setArtifactId(String artifactId) {
-        super.setArtifactId(orDefault(artifactId, DEFAULT_ARTIFACT_ID));
+        super.setArtifactId(coordinate(artifactId, DEFAULT_ARTIFACT_ID));
     }
 
     @Override
     public void setType(String type) {
-        super.setType(orDefault(type, DEFAULT_TYPE));
+        super.setType(coordinate(type, DEFAULT_TYPE));
+    }
+
+    @Override
+    public void setClassifier(String classifier) {
+        coordinates |= !isBlank(classifier);
+        super.setClassifier(classifier);
+    }
+
+    /**
+     * Whether a groupId, artifactId, type or classifier was given, also when
+     * it's the default's: {@code <distribution>9.0.0</distribution>} gives
+     * only a version, which {@code <edition>} completes, while
+     * {@code org.glassfish.main.distributions:glassfish:9.0.0:zip} names the
+     * Full ZIP explicitly. The defaults the constructor sets don't count.
+     */
+    public boolean hasCoordinates() {
+        return coordinates;
     }
 
     /**
@@ -99,8 +119,14 @@ public class DistributionCoord extends ArtifactCoord {
                 && DEFAULT_TYPE.equals(getType());
     }
 
-    private static String orDefault(String value, String defaultValue) {
-        return isBlank(value) ? defaultValue : value;
+    /** {@code value}, recorded as a given coordinate, or {@code defaultValue} when it's blank. */
+    private String coordinate(String value, String defaultValue) {
+        if (isBlank(value)) {
+            return defaultValue;
+        }
+
+        coordinates = true;
+        return value;
     }
 
     private static boolean isBlank(String value) {

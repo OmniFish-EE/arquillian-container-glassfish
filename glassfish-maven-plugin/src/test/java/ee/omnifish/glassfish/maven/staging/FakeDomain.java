@@ -87,6 +87,11 @@ public final class FakeDomain {
         return server;
     }
 
+    /** A stand-in GlassFish Embedded child, which idles with {@code -jar <jar>} on its command line, as one does. */
+    public static Process startEmbeddedChild(Path jar) throws IOException {
+        return new ProcessBuilder("sh", "-c", IDLE, "-jar", jar.toAbsolutePath().toString()).start();
+    }
+
     /** End the stand-in server a test left running. */
     public static void killServer(Path home) {
         server(home).ifPresent(ProcessHandle::destroyForcibly);

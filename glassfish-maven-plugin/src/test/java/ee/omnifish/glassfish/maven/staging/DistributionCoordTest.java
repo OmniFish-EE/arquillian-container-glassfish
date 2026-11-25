@@ -67,6 +67,26 @@ class DistributionCoordTest {
     }
 
     @Test
+    void onlyGivenCoordinatesCount() {
+        DistributionCoord versionOnly = new DistributionCoord();
+        versionOnly.set("9.0.0");
+        DistributionCoord text = new DistributionCoord();
+        text.set("org.glassfish.main.distributions:glassfish:9.0.0");
+        DistributionCoord nested = new DistributionCoord();
+        nested.setType("zip");
+        DistributionCoord classified = new DistributionCoord();
+        classified.setClassifier("linux");
+        DistributionCoord blanks = new DistributionCoord(" ", "", "9.0.0", null, "");
+
+        assertThat(new DistributionCoord().hasCoordinates(), equalTo(false));
+        assertThat(versionOnly.hasCoordinates(), equalTo(false));
+        assertThat(text.hasCoordinates(), equalTo(true));
+        assertThat(nested.hasCoordinates(), equalTo(true));
+        assertThat(classified.hasCoordinates(), equalTo(true));
+        assertThat(blanks.hasCoordinates(), equalTo(false));
+    }
+
+    @Test
     void onlyDefaultsCountAsEmpty() {
         DistributionCoord versioned = new DistributionCoord();
         versioned.setVersion("9.0.0");

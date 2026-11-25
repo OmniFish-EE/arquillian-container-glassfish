@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian.test</groupId>
+        <artifactId>run-embedded-ear-test</artifactId>
+        <version>@project.version@</version>
+    </parent>
+
+    <artifactId>run-embedded-ear-ear</artifactId>
+    <packaging>ear</packaging>
+
+    <dependencies>
+        <dependency>
+            <groupId>ee.omnifish.arquillian.test</groupId>
+            <artifactId>run-embedded-ear-alpha</artifactId>
+            <version>${project.version}</version>
+            <type>war</type>
+        </dependency>
+        <dependency>
+            <groupId>ee.omnifish.arquillian.test</groupId>
+            <artifactId>run-embedded-ear-beta</artifactId>
+            <version>${project.version}</version>
+            <type>war</type>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-ear-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <version>10</version>
+                    <modules>
+                        <webModule>
+                            <groupId>ee.omnifish.arquillian.test</groupId>
+                            <artifactId>run-embedded-ear-alpha</artifactId>
+                            <contextRoot>/alpha-site</contextRoot>
+                        </webModule>
+                        <webModule>
+                            <groupId>ee.omnifish.arquillian.test</groupId>
+                            <artifactId>run-embedded-ear-beta</artifactId>
+                            <contextRoot>/beta-site</contextRoot>
+                        </webModule>
+                    </modules>
+                </configuration>
+            </plugin>
+            <!-- No extension, and no executions: verify.groovy runs the goal itself. -->
+            <plugin>
+                <groupId>ee.omnifish.glassfish</groupId>
+                <artifactId>glassfish-maven-plugin</artifactId>
+                <version>${container.version}</version>
+                <configuration>
+                    <edition>embedded</edition>
+                    <version>${glassfish.version}</version>
+                    <debug>false</debug>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

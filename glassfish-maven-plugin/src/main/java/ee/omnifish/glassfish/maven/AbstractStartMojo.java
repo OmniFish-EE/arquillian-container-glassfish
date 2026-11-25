@@ -13,6 +13,7 @@ package ee.omnifish.glassfish.maven;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -126,6 +127,31 @@ abstract class AbstractStartMojo extends AbstractStagingMojo {
     /** Whether the domain starts with the debugger enabled: {@code debug}, or else {@link #debugByDefault}. */
     protected boolean debug() {
         return (debug != null) ? debug : debugByDefault();
+    }
+
+    /** Whether the server waits for a debugger before it starts. */
+    protected boolean suspend() {
+        return suspend;
+    }
+
+    /** How long the start may take, including the wait for a debugger with {@code suspend}. */
+    protected Duration startTimeout() {
+        return Duration.ofSeconds(startTimeout);
+    }
+
+    /**
+     * The post-boot, then the post-start commands, which GlassFish Embedded
+     * runs on every start, before the deploy: it keeps no domain between
+     * starts. A failed one ends its start, whatever {@code failOnCommandError} says.
+     */
+    protected List<String> embeddedCommands() {
+        List<String> commands = new ArrayList<>(postBootCommands().lines());
+        commands.addAll(new StagingCommands(postStartCommands, failOnCommandError).lines());
+        if (!failOnCommandError && !commands.isEmpty()) {
+            getLog().warn("On GlassFish Embedded, a failed command ends the start, though failOnCommandError is false");
+        }
+
+        return commands;
     }
 
     /** Whether the domain starts with the debugger enabled when {@code debug} isn't set: not by default. */

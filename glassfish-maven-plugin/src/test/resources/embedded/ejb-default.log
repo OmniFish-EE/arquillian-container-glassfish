@@ -1,0 +1,71 @@
+GlassFish will start now. Welcome!
+Nov 25, 2026 9:11:31 PM com.sun.enterprise.v3.server.CommonClassLoaderServiceImpl findDerbyJars
+INFO: Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Nov 25, 2026 9:11:31 PM org.glassfish.security.services.impl.authorization.AuthorizationServiceImpl initialize
+INFO: Authorization Service has successfully initialized.
+Nov 25, 2026 9:11:31 PM com.sun.enterprise.v3.server.SystemTasksImpl postConstruct
+INFO: Loaded embedded server named: server
+Nov 25, 2026 9:11:31 PM org.hibernate.validator.internal.util.Version <clinit>
+INFO: HV000001: Hibernate Validator 9.1.4.Final
+Nov 25, 2026 9:11:32 PM org.glassfish.main.boot.embedded.AutoDisposableGlassFish <init>
+INFO: Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.v3.services.impl.GrizzlyProxy start0
+INFO: Grizzly Framework 5.0.3 started in: 14 ms - bound to [/0.0.0.0:19301]
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.v3.services.impl.GrizzlyService createNetworkProxy
+INFO: Network listener https-listener on port 0 disabled per domain.xml
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.v3.admin.adapter.AdminEndpointDecider setGuiContextRoot
+INFO: Admin Console Adapter: context root: /admin
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.v3.admin.adapter.AdminEndpointDecider setGuiContextRoot
+INFO: Admin Console Adapter: context root: /admin
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.v3.admin.adapter.AdminEndpointDecider setGuiContextRoot
+INFO: Admin Console Adapter: context root: /admin
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.v3.server.AppServerStartup postStartupJob
+INFO: GlassFish  (commit: null) startup time: Embedded (505 ms), startup services (214 ms), total (719 ms)
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.connectors.jms.util.JmsRaUtil upgradeIfNecessary
+INFO: No JMS RA installation RAR found on path /tmp/gfembed10141890303709342309/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+Nov 25, 2026 9:11:32 PM org.glassfish.admin.mbeanserver.JMXStartupService$JMXConnectorsStarterThread run
+INFO: JMXStartupService has disabled JMXConnector system
+Nov 25, 2026 9:11:32 PM org.glassfish.enterprise.iiop.api.GlassFishORBLocator postConstruct
+INFO: GlassFishORBLocator created.
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.security.ee.authorization.PolicyLoader loadPolicy
+INFO: Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.security.SecurityLifecycle onInitialization
+INFO: Entering Security Startup Service.
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.security.auth.realm.Realm doInstantiate
+INFO: Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.security.auth.realm.Realm doInstantiate
+INFO: Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.security.auth.realm.Realm doInstantiate
+INFO: Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Nov 25, 2026 9:11:32 PM com.sun.enterprise.security.SecurityLifecycle onInitialization
+INFO: Security Service(s) started successfully.
+Nov 25, 2026 9:11:32 PM com.sun.ejb.containers.BaseContainer initializeHome
+INFO: Portable JNDI names for EJB Hello: [java:global/bean/Hello, java:global/bean/Hello!hello.Hello]
+Nov 25, 2026 9:11:32 PM org.jboss.weld.bootstrap.WeldStartup <clinit>
+INFO: WELD-000900: 6.0.4 (Final)
+Nov 25, 2026 9:11:32 PM org.glassfish.weld.WeldDeployer enable
+INFO: Enabling Weld for ApplicationInfo[name=bean]
+Nov 25, 2026 9:11:32 PM org.jboss.weld.event.ExtensionObserverMethodImpl checkRequiredTypeAnnotations
+INFO: WELD-000411: Observer method [BackedAnnotatedMethod] public org.glassfish.jersey.ext.cdi1x.internal.ProcessAllAnnotatedTypes.processAnnotatedType(@Observes ProcessAnnotatedType<?>, BeanManager) receives events for all annotated types. Consider restricting events using @WithAnnotations or a generic type with bounds.
+Nov 25, 2026 9:11:33 PM org.glassfish.deployment.admin.DeployCommand execute
+INFO: bean was successfully deployed in 687 milliseconds.
+Nov 25, 2026 9:11:33 PM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name bean.
+    [name=bean
+
+Nov 25, 2026 9:11:33 PM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: list-applications AdminCommandnull
+    [bean=ejb
+    NAME  TYPE   STATUS   
+    bean  <ejb>  enabled  
+          Hello  <StatelessSessionBean>  
+
+Description: list-sub-components AdminCommandnull
+    [Hello=StatelessSessionBean
+    Hello  <StatelessSessionBean>  
+
+java.lang.IllegalStateException: Already disposed.
+	at org.glassfish.main.boot.impl.GlassFishImpl.dispose(GlassFishImpl.java:71)
+	at org.glassfish.main.boot.embedded.AutoDisposableGlassFish.dispose(AutoDisposableGlassFish.java:143)
+	at org.glassfish.runnablejar.UberMain.close(UberMain.java:268)
+	at org.glassfish.runnablejar.UberMain$1.run(UberMain.java:249)
