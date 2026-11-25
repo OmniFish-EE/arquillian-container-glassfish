@@ -523,6 +523,18 @@ $ mvn glassfish-pool:run
 - **Names:** `-Dglassfish.run.name` sets the application's name, and
   `-Dglassfish.run.contextRoot` a WAR's context root, as for
   `glassfish:run`. The artifact replaces an application of the same name.
+- **The log's messages:** the console shows only the messages of the
+  slot's `server.log` records, without the header before each, with its
+  time, level, logger and thread, and without the `]]` after each, as for
+  `glassfish:run`:
+
+  ```
+  [glassfish:slot-1] Initializing Soteria 5.0.0 for context '/app-mem-basic'
+  ```
+
+  `-Dglassfish.run.logMessagesOnly=false`, or
+  `<logMessagesOnly>false</logMessagesOnly>`, shows the records whole, as
+  the file has them.
 - **Ending it:** Ctrl+C undeploys the application and hands the slot back.
   The pool then stops, as it does after tests, except for the slots that
   runs in other terminals hold. `mvn glassfish-pool:down` from another

@@ -179,7 +179,7 @@ class RunMojoTest {
 
     /** As glassfish:run ends it: by stopping the domain. */
     private RunningDomain running(GlassFishDomain domain) {
-        return new RunningDomain(domain, "", "glassfish:run", log, () -> RunMojo.stop(domain, 4848, log));
+        return new RunningDomain(domain, "", false, "glassfish:run", log, () -> RunMojo.stop(domain, 4848, log));
     }
 
     private RunMojo runMojo(String packaging) throws ReflectiveOperationException {

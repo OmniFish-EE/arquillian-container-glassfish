@@ -13,9 +13,11 @@ package ee.omnifish.glassfish.maven;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 
 import org.apache.maven.plugin.logging.Log;
 
+import ee.omnifish.glassfish.admin.ServerLogMessages;
 import ee.omnifish.glassfish.admin.ServerLogTailer;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 
@@ -48,13 +50,17 @@ public final class RunningDomain implements AutoCloseable {
      * Follows the domain's {@code server.log} from now on, printing each line
      * after {@code prefix}, and ends the run when the JVM exits.
      *
+     * @param messagesOnly whether to print only the messages of the log's
+     *        records, without their headers, as {@link ServerLogMessages} does
      * @param goal the goal that runs, which names the shutdown hook's thread
      */
-    public RunningDomain(GlassFishDomain domain, String prefix, String goal, Log log, Ending ending) {
+    public RunningDomain(GlassFishDomain domain, String prefix, boolean messagesOnly, String goal, Log log,
+            Ending ending) {
         this.domain = domain;
         this.ending = ending;
         this.log = log;
-        serverLog = ServerLogTailer.follow(domain.serverLog(), line -> System.out.println(prefix + line));
+        Consumer<String> console = line -> System.out.println(prefix + line);
+        serverLog = ServerLogTailer.follow(domain.serverLog(), messagesOnly ? new ServerLogMessages(console) : console);
         shutdownHook = new Thread(this::end, goal + " ending");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
     }

@@ -75,6 +75,15 @@ public class RunMojo extends AbstractStagingPoolMojo {
     @Parameter(property = "glassfish.run.contextRoot")
     private String contextRoot;
 
+    /**
+     * Whether the console shows only the messages of the slot's
+     * {@code server.log} records, without the header before each, with its
+     * time, level, logger and thread, and without the {@code ]]} after each.
+     * With {@code false}, it shows the records whole, as the file has them.
+     */
+    @Parameter(property = "glassfish.run.logMessagesOnly", defaultValue = "true")
+    private boolean logMessagesOnly;
+
     /** The project as the {@code package} this goal runs left it, with its artifact. */
     @Parameter(defaultValue = "${executedProject}", readonly = true, required = true)
     private MavenProject executedProject;
@@ -118,7 +127,7 @@ public class RunMojo extends AbstractStagingPoolMojo {
         int adminPort = lease.ports().adminPort();
         String prefix = ServerLogTailer.prefix("glassfish:slot-" + slot, slot - 1, LifecycleSupport.isConsoleColored());
         RunningDomain running = new RunningDomain(new GlassFishDomain(Paths.get(lease.ports().glassFishHome())),
-                prefix, GOAL, getLog(), () -> handBack(lease));
+                prefix, logMessagesOnly, GOAL, getLog(), () -> handBack(lease));
         try {
             deployed = RunDeployer.deploy(adminPort, archive, name, contextRoot, getLog());
         } catch (MojoExecutionException | RuntimeException e) {

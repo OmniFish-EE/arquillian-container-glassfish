@@ -441,6 +441,17 @@ GlassFish stops.
 - **`contextRoot`** (`-Dglassfish.run.contextRoot`) sets a WAR's context
   root. GlassFish otherwise takes it from its `glassfish-web.xml`, or from
   its name.
+- **The log's messages:** the console shows only the messages of
+  `server.log`'s records, without the header before each, with its time,
+  level, logger and thread, and without the `]]` after each. Of a stack
+  trace, the lines after the message stay. The log file itself keeps its
+  records whole, and `logMessagesOnly` set to `false`
+  (`-Dglassfish.run.logMessagesOnly=false`) shows them so on the console
+  too.
+
+  ```
+  [glassfish:domain1] Initializing Soteria 5.0.0 for context '/shop'
+  ```
 - **Ending it:** Ctrl+C stops GlassFish, with Maven, as does mvnd's Ctrl+C,
   which interrupts the goal. When GlassFish stops otherwise, as after
   `mvn glassfish:stop` in another terminal, `run` returns.
