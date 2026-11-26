@@ -120,6 +120,28 @@ try {
     ended(b, 'Run B')
     assert !answers(14948)
     assert !answers(14848)
+} catch (Throwable e) {
+    // CI keeps only this script's output, so print what says who ended what, before the cleanup below ends the
+    // runs: whether each run still runs, whether each slot's admin port answers, the end of what each run
+    // printed, and the end of each slot's server.log, which a run no longer mirrors once it ended.
+    runs.eachWithIndex { process, i ->
+        println "Run ${['A', 'B'][i]}: ${process.alive ? 'runs' : 'ended, with exit code ' + process.exitValue()}"
+    }
+    [1, 2].each { slot ->
+        int adminPort = 14848 + (slot - 1) * 100
+        println "Slot ${slot}'s admin port ${adminPort}: ${answers(adminPort) ? 'answers' : 'closed'}"
+    }
+    def printEnd = { File file ->
+        if (file.exists()) {
+            println "----- The end of ${file} -----"
+            println file.readLines().takeRight(100).join('\n')
+        }
+    }
+    ['module-a', 'module-b'].each { printEnd(new File(basedir, "run-${it}.log")) }
+    [1, 2].each { slot ->
+        printEnd(new File(basedir, "target/pool/slot-${slot}/glassfish/glassfish/domains/domain1/logs/server.log"))
+    }
+    throw e
 } finally {
     // Whatever failed, leave no server behind.
     runs.findAll { it.alive }.each { it.destroy() }
