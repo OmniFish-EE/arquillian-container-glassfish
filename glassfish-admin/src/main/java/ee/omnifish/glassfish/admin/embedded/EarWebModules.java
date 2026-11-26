@@ -8,14 +8,17 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.glassfish.maven.staging;
+package ee.omnifish.glassfish.admin.embedded;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -28,11 +31,11 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 /**
- * The context roots of an EAR's web modules, as its
+ * The web modules of an EAR, and their context roots, as its
  * {@code META-INF/application.xml} gives them: a module without one, or an
- * EAR without that descriptor, has its file name without {@code .war}.
- * GlassFish Embedded's own listing of an application doesn't show them, and
- * its banner fails for EARs.
+ * EAR without that descriptor, has its file name without {@code .war}. Its
+ * {@code list-applications} doesn't show them, and GlassFish Embedded's
+ * banner fails for EARs.
  */
 public final class EarWebModules {
 
@@ -43,33 +46,68 @@ public final class EarWebModules {
 
     /** The context roots of {@code ear}'s web modules, each starting with {@code /}. */
     public static List<String> contextRoots(Path ear) throws IOException {
-        List<String> contextRoots = new ArrayList<>();
+        return new ArrayList<>(webModules(ear).values());
+    }
+
+    /**
+     * {@code ear}'s web modules, by URI, as GlassFish takes them: from its
+     * descriptor, or without one, each WAR in its root. Each has the context
+     * root its descriptor gives, starting with {@code /}, or else its file
+     * name without {@code .war}.
+     */
+    public static Map<String, String> webModules(Path ear) throws IOException {
+        Map<String, String> webModules = new LinkedHashMap<>();
         try (ZipFile zip = new ZipFile(ear.toFile())) {
             ZipEntry descriptor = zip.getEntry(APPLICATION_XML);
             if (descriptor == null) {
                 for (ZipEntry entry : Collections.list(zip.entries())) {
                     if (!entry.isDirectory() && entry.getName().endsWith(".war") && !entry.getName().contains("/")) {
-                        contextRoots.add("/" + moduleName(entry.getName()));
+                        webModules.put(entry.getName(), "/" + moduleName(entry.getName()));
                     }
                 }
-                return contextRoots;
+                return webModules;
             }
             try (InputStream in = zip.getInputStream(descriptor)) {
-                NodeList webModules = parse(in).getElementsByTagNameNS("*", "web");
-                for (int i = 0; i < webModules.getLength(); i++) {
-                    Element web = (Element) webModules.item(i);
+                NodeList webs = parse(in).getElementsByTagNameNS("*", "web");
+                for (int i = 0; i < webs.getLength(); i++) {
+                    Element web = (Element) webs.item(i);
                     String contextRoot = text(web, "context-root");
                     String uri = text(web, "web-uri");
-                    if (contextRoot == null && uri == null) {
+                    if (uri == null) {
                         continue;
                     }
                     String root = (contextRoot != null) ? contextRoot : moduleName(uri);
-                    contextRoots.add(root.startsWith("/") ? root : "/" + root);
+                    webModules.put(uri, root.startsWith("/") ? root : "/" + root);
                 }
             }
         }
 
-        return contextRoots;
+        return webModules;
+    }
+
+    /**
+     * The {@code <application-name>} of {@code ear}'s descriptor, which
+     * GlassFish names the application after when it isn't given a name.
+     */
+    public static Optional<String> applicationName(Path ear) throws IOException {
+        try (ZipFile zip = new ZipFile(ear.toFile())) {
+            ZipEntry descriptor = zip.getEntry(APPLICATION_XML);
+            if (descriptor == null) {
+                return Optional.empty();
+            }
+            try (InputStream in = zip.getInputStream(descriptor)) {
+                Element application = parse(in);
+                NodeList names = application.getElementsByTagNameNS("*", "application-name");
+                for (int i = 0; i < names.getLength(); i++) {
+                    // Only the application's own, not one a nested element might have.
+                    if (names.item(i).getParentNode() == application) {
+                        String name = names.item(i).getTextContent().trim();
+                        return name.isEmpty() ? Optional.empty() : Optional.of(name);
+                    }
+                }
+                return Optional.empty();
+            }
+        }
     }
 
     /** {@code uri}'s file name without {@code .war}. */

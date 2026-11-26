@@ -1,0 +1,50 @@
+GlassFish will start now. Welcome!
+Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Authorization Service has successfully initialized.
+Loaded embedded server named: server
+HV000001: Hibernate Validator 9.1.4.Final
+Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Grizzly Framework 5.0.3 started in: 14 ms - bound to [/0.0.0.0:18080]
+Network listener https-listener on port 0 disabled per domain.xml
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+GlassFish  (commit: null) startup time: Embedded (464 ms), startup services (205 ms), total (669 ms)
+No JMS RA installation RAR found on path /tmp/gfembed11349044030247574755/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+JMXStartupService has disabled JMXConnector system
+Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Entering Security Startup Service.
+Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Security Service(s) started successfully.
+The GlassFishLogHandler was not found, returning null
+Created HTTP listener http-listener on host/port 0.0.0.0:18080
+Error adding HttpProbes. NetworkListener https-listeners GrizzlyProxy is NULL
+Created virtual server server
+Setting JAAS app name glassfish-web
+Virtual server server loaded default web module 
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@60d40ff4[name=shop], urls=[
+file:/tmp/gfembed11349044030247574755/applications/shop/WEB-INF/classes/
+file:/tmp/gfembed11349044030247574755/applications/shop/WEB-INF/lib/fragment.jar
+file:/tmp/gfembed11349044030247574755/generated/ejb/shop/
+][delegate=true, context=shop, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=36, pathTimestamps.size=2, resourceEntryCache.size=1]
+Loading application [shop] at [/shop]
+shop was successfully deployed in 455 milliseconds.
+SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name shop.
+    [name=shop
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    applications.application.shop.context-root=/shop
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [default=Servlet
+    [probe.ShopServlet=Servlet
+    [jsp=Servlet
+    [FragmentRunner=Servlet
+    probe.ShopServlet  <Servlet>  
+    FragmentRunner     <Servlet>  
+    default            <Servlet>  
+    jsp                <Servlet>  
+

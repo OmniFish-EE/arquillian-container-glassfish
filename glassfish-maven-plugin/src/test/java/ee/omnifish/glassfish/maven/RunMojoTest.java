@@ -40,8 +40,8 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import ee.omnifish.glassfish.admin.embedded.EmbeddedPorts;
 import ee.omnifish.glassfish.admin.rest.NodeAddress;
-import ee.omnifish.glassfish.maven.staging.EmbeddedCommand;
 import ee.omnifish.glassfish.maven.staging.FakeDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
@@ -185,7 +185,7 @@ class RunMojoTest {
     void anEmbeddedRunFailsOnAnOccupiedPortBeforeItProvisions() throws Exception {
         RunMojo run = embeddedRun();
 
-        assertFailsOnOccupied(EmbeddedCommand.HTTP_PORT, run);
+        assertFailsOnOccupied(EmbeddedPorts.standard().http(), run);
     }
 
     /** With an overlay, the child runs from an install's static shell, which serves HTTPS too. */
@@ -195,7 +195,7 @@ class RunMojoTest {
         set(run, AbstractStagingMojo.class, "overlays", List.of(new OverlayCoord("org.glassfish", "jakarta.faces",
                 "4.1.18", "jar", null, "jakarta.faces.jar")));
 
-        assertFailsOnOccupied(EmbeddedCommand.HTTPS_PORT, run);
+        assertFailsOnOccupied(EmbeddedPorts.standard().https(), run);
     }
 
     private static void assertFailsOnOccupied(int port, RunMojo run) throws IOException {

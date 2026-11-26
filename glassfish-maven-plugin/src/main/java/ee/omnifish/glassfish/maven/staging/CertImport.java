@@ -15,6 +15,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
+import ee.omnifish.glassfish.admin.TrustStores;
+
 /**
  * Certificates for {@link GlassFishStaging} to import into the staged
  * install's truststore, so GlassFish trusts them from its first start: an
@@ -26,7 +28,7 @@ import java.util.Objects;
 public final class CertImport {
 
     /** The password of GlassFish's default truststore. */
-    public static final String DEFAULT_PASSWORD = "changeit";
+    public static final String DEFAULT_PASSWORD = TrustStores.MASTER_PASSWORD;
 
     /** No certificates. */
     public static final CertImport NONE = new CertImport(List.of(), null, DEFAULT_PASSWORD, false);

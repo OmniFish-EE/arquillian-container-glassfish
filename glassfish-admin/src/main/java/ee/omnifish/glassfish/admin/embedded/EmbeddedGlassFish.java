@@ -8,11 +8,12 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.glassfish.maven.staging;
+package ee.omnifish.glassfish.admin.embedded;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
@@ -26,6 +27,9 @@ public final class EmbeddedGlassFish {
 
     /** The static shell of an install, relative to its root. */
     static final String STATIC_SHELL = "glassfish/lib/embedded/glassfish-embedded-static-shell.jar";
+
+    /** Where {@code domain1}'s configuration lives, relative to an install's root. */
+    static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
 
     private final Path stageDir;
     private final Path jar;
@@ -93,6 +97,11 @@ public final class EmbeddedGlassFish {
     /** The password that opens {@link #trustStore}. */
     public String trustStorePassword() {
         return trustStorePassword;
+    }
+
+    /** The configuration directory of the install's {@code domain1}, with its keystore and module options. */
+    public Path domainConfig() {
+        return home.resolve(DOMAIN_CONFIG);
     }
 
     /** The JAR whose main class runs GlassFish Embedded: the self-contained JAR, or the install's static shell. */

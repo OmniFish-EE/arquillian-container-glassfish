@@ -373,6 +373,33 @@ class DomainXmlEditorTest {
         assertFalse(sourceContent.equals(slotContent));
     }
 
+    /** As in GlassFish Embedded's own domain.xml, for a child of a pool slot; the template stays as it is. */
+    @Test
+    void setsTheIiopAndJmsPortsOfTheServersConfig(@TempDir Path tmp) throws IOException {
+        String services = "<iiop-service>"
+                + "<iiop-listener address=\"0.0.0.0\" id=\"orb-listener-1\" port=\"3700\"/>"
+                + "<iiop-listener security-enabled=\"true\" id=\"SSL\" port=\"3820\"><ssl cert-nickname=\"s1as\"/>"
+                + "</iiop-listener>"
+                + "<iiop-listener security-enabled=\"true\" id=\"SSL_MUTUALAUTH\" port=\"3920\"/>"
+                + "</iiop-service>"
+                + "<jms-service default-jms-host=\"default_JMS_host\">"
+                + "<jms-host name=\"default_JMS_host\" host=\"localhost\" port=\"7676\"/></jms-service>";
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">" + services + "</config>"
+                + "<config name=\"default-config\">" + services + "</config></configs></domain>");
+
+        DomainXmlEditor.setIiopAndJmsPorts(domainXml, 14851, 14852, 14853, 14854);
+
+        String content = Files.readString(domainXml);
+        String server = content.substring(0, content.indexOf("default-config"));
+        String template = content.substring(content.indexOf("default-config"));
+        assertTrue(server.contains("id=\"orb-listener-1\" port=\"14851\""), content);
+        assertTrue(server.contains("id=\"SSL\" port=\"14852\""), content);
+        assertTrue(server.contains("id=\"SSL_MUTUALAUTH\" port=\"14853\""), content);
+        assertTrue(server.contains("port=\"14854\""), content);
+        assertTrue(template.contains("port=\"3700\"") && template.contains("port=\"7676\""), content);
+    }
+
     /** A {@code domain.xml} with one config, {@code configName}, holding {@code listeners}. */
     private static String domain(String configName, String listeners) {
         return "<domain><configs><config name=\"" + configName + "\"><network-config>" + listeners

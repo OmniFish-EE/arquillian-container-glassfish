@@ -29,8 +29,9 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import ee.omnifish.glassfish.maven.staging.EmbeddedGlassFish;
-import ee.omnifish.glassfish.maven.staging.EmbeddedWorkDir;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedStartup;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedWorkDir;
 
 /**
  * {@link EmbeddedRun} with a stand-in child, which prints the recorded output
@@ -55,7 +56,7 @@ class EmbeddedRunTest {
         assertThat(run.contextRoots(), contains("/descriptor-shop"));
         run.close();
 
-        assertThat(run.process().isAlive(), is(false));
+        assertThat(run.handle().isAlive(), is(false));
         assertThat(Files.exists(workDir.dir()), is(false));
         assertThat(log.infos, hasItem("GlassFish Embedded stopped"));
     }
@@ -75,13 +76,12 @@ class EmbeddedRunTest {
                     () -> start(workDir("work-2"), "war-messages.log", "idle", true));
 
             assertThat(e.getMessage(), containsString("GlassFish Embedded already runs from " + tmp));
-            assertThat(Files.readString(tmp.resolve("glassfish-embedded.pid")).split(" ")[0],
-                    equalTo(String.valueOf(first.process().pid())));
+            assertThat(Files.exists(record(first)), is(true));
             assertThat(Files.exists(tmp.resolve("work-2/run-" + ProcessHandle.current().pid())), is(false));
         } finally {
             first.close();
         }
-        assertThat(Files.exists(tmp.resolve("glassfish-embedded.pid")), is(false));
+        assertThat(Files.exists(record(first)), is(false));
     }
 
     @Test
@@ -103,7 +103,7 @@ class EmbeddedRunTest {
                 () -> run.awaitStarted(Duration.ofSeconds(2)));
 
         assertThat(e.getMessage(), equalTo("GlassFish Embedded didn't start within 2 seconds"));
-        assertThat(run.process().isAlive(), is(false));
+        assertThat(run.handle().isAlive(), is(false));
     }
 
     @Test
@@ -133,7 +133,7 @@ class EmbeddedRunTest {
         waiting.interrupt();
         waiting.join(START.toMillis());
 
-        assertThat(run.process().isAlive(), is(false));
+        assertThat(run.handle().isAlive(), is(false));
         assertThat(interrupted.get(), is(true));
         assertThat(log.infos, hasItem("GlassFish Embedded stopped"));
     }
@@ -171,6 +171,13 @@ class EmbeddedRunTest {
         List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 child.toString(), recorded, then);
 
-        return EmbeddedRun.start(command, workDir, new EmbeddedStartup(war, List.of()), "[child] ", "test", log);
+        // Exclusive, as glassfish:run's child is.
+        return EmbeddedRun.start(command, workDir, new EmbeddedStartup(war, List.of()), null, true, "[child] ", "test",
+                log);
+    }
+
+    /** The record of {@code run}'s child in the stage directory. */
+    private Path record(EmbeddedRun run) {
+        return tmp.resolve("glassfish-embedded-" + run.handle().pid() + ".pid");
     }
 }

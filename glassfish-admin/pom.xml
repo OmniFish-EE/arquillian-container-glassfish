@@ -27,8 +27,9 @@
 
     <name>GlassFish Admin Helpers</name>
     <description>
-        Runs asadmin commands and edits domain.xml, with nothing but the JDK.
-        Shared by the GlassFish Maven plugins and the Arquillian Containers.
+        Runs asadmin commands, edits domain.xml, and runs GlassFish Embedded
+        with an application, with nothing but the JDK. Shared by the GlassFish
+        Maven plugins and the Arquillian Containers.
     </description>
 
     <properties>

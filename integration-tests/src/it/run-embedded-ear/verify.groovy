@@ -52,7 +52,8 @@ try {
 
     // Ctrl+C: see run-embedded.
     if (windows) {
-        def pid = new File(ear, 'target/dist/glassfish-embedded.pid').text.tokenize()[0] as long
+        def record = new File(ear, 'target/dist').listFiles().find { it.name ==~ /glassfish-embedded-\d+\.pid/ }
+        def pid = (record.name =~ /\d+/)[0] as long
         ProcessHandle.of(pid).ifPresent { it.destroy() }
         assert finished(run, 'The run') == 0
     } else {

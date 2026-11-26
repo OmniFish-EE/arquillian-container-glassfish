@@ -122,6 +122,37 @@ public final class DomainXmlEditor {
     }
 
     /**
+     * Set the ports of the server's three IIOP listeners, {@code orb-listener-1},
+     * {@code SSL} and {@code SSL_MUTUALAUTH}, and of its JMS host,
+     * {@code default_JMS_host}, which an application's remote EJBs and JMS
+     * open. Only the server's config is edited, and what it doesn't have is
+     * left out.
+     */
+    public static void setIiopAndJmsPorts(Path domainXml, int iiop, int iiopSsl, int iiopMutualAuth, int jms)
+            throws IOException {
+        Document doc = parse(domainXml);
+        Element config = serverConfig(doc, domainXml);
+        Map<String, Integer> iiopPorts = Map.of("orb-listener-1", iiop, "SSL", iiopSsl, "SSL_MUTUALAUTH",
+                iiopMutualAuth);
+        NodeList listeners = config.getElementsByTagName("iiop-listener");
+        for (int i = 0; i < listeners.getLength(); i++) {
+            Element listener = (Element) listeners.item(i);
+            Integer port = iiopPorts.get(listener.getAttribute("id"));
+            if (port != null) {
+                listener.setAttribute("port", String.valueOf(port));
+            }
+        }
+        NodeList jmsHosts = config.getElementsByTagName("jms-host");
+        for (int i = 0; i < jmsHosts.getLength(); i++) {
+            Element jmsHost = (Element) jmsHosts.item(i);
+            if ("default_JMS_host".equals(jmsHost.getAttribute("name"))) {
+                jmsHost.setAttribute("port", String.valueOf(jms));
+            }
+        }
+        atomicWrite(domainXml, doc);
+    }
+
+    /**
      * The ports of the server's admin, http and https listeners, keyed by
      * listener name, as written: a {@code ${...}} placeholder stays one.
      */

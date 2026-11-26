@@ -13,7 +13,6 @@ package ee.omnifish.glassfish.maven;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.maven.plugin.MojoExecutionException;
@@ -25,10 +24,9 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
 import ee.omnifish.glassfish.admin.ServerLogTailer;
-import ee.omnifish.glassfish.maven.staging.EarWebModules;
-import ee.omnifish.glassfish.maven.staging.EmbeddedCommand;
-import ee.omnifish.glassfish.maven.staging.EmbeddedGlassFish;
-import ee.omnifish.glassfish.maven.staging.EmbeddedWorkDir;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedCommand;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedPorts;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 
 /**
@@ -125,49 +123,33 @@ public class RunMojo extends AbstractStartMojo {
      * Ctrl+C stops the child, or it ends otherwise.
      */
     private void runEmbedded(Path archive) throws MojoExecutionException {
+        EmbeddedPorts ports = EmbeddedPorts.standard();
         // Before provisioning, so a second run leaves what the first one runs from alone.
-        for (int port : EmbeddedCommand.ports(runsEmbeddedJar())) {
+        for (int port : ports.listening(runsEmbeddedJar())) {
             requireFree(port);
         }
         List<String> commands = embeddedCommands();
         EmbeddedGlassFish glassfish = provisionEmbedded();
         String packaging = executedProject.getPackaging();
-        boolean war = "war".equals(packaging);
-        EmbeddedCommand command = new EmbeddedCommand(glassfish, archive.getFileName().toString(), war)
+        EmbeddedCommand command = new EmbeddedCommand(glassfish, archive.getFileName().toString(),
+                "war".equals(packaging))
                 .debug(debug(), suspend())
                 .messagesOnly(logMessagesOnly)
                 .commands(commands)
                 .name(name)
                 .contextRoot(contextRoot);
 
-        List<String> line;
-        List<String> earContextRoots;
-        EmbeddedWorkDir workDir;
-        try {
-            glassfish.requireMainClass();
-            line = command.build();
-            earContextRoots = "ear".equals(packaging) ? EarWebModules.contextRoots(archive) : List.of();
-            workDir = EmbeddedWorkDir.create(Paths.get(executedProject.getBuild().getDirectory(), WORK_DIR), archive,
-                    glassfish);
-        } catch (IOException | IllegalArgumentException e) {
-            throw new MojoExecutionException(e.getMessage(), e);
-        }
-
         if (suspend()) {
             getLog().info("Waiting up to " + startTimeout().toSeconds() + " seconds for a debugger to attach on "
-                    + EmbeddedCommand.DEBUG_ADDRESS);
+                    + ports.debugAddress());
         }
         String prefix = ServerLogTailer.prefix("glassfish:embedded", 0, LifecycleSupport.isConsoleColored());
-        EmbeddedRun run = EmbeddedRun.start(line, workDir, new EmbeddedStartup(war, commands), prefix, GOAL,
-                getLog());
+        EmbeddedRun run = EmbeddedRun.start(command, archive, glassfish, ports,
+                Paths.get(executedProject.getBuild().getDirectory(), WORK_DIR), null, true, prefix, GOAL, getLog());
         run.awaitStarted(startTimeout());
-        List<String> urls = new ArrayList<>();
-        for (String root : war ? run.contextRoots() : earContextRoots) {
-            urls.add(RunDeployer.url(EmbeddedCommand.HTTP_PORT, root));
-        }
-        getLog().info(RunDeployer.deployed(run.name(), urls));
+        getLog().info(RunDeployer.deployed(run.name(), run.urls(archive, packaging, ports.http())));
         if (debug() || suspend()) {
-            getLog().info("Debugger at " + EmbeddedCommand.DEBUG_ADDRESS);
+            getLog().info("Debugger at " + ports.debugAddress());
         }
         getLog().info("Ctrl+C stops GlassFish Embedded");
         run.untilStopped();

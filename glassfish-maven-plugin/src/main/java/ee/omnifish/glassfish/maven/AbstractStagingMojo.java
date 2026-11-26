@@ -27,10 +27,10 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.RemoteRepository;
 
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.Edition;
-import ee.omnifish.glassfish.maven.staging.EmbeddedGlassFish;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.CommandRunner;
