@@ -83,6 +83,20 @@ class GlassFishDomainTest {
         assertThat(domain.isThisDomains(startedAt(written.plusSeconds(5)), pidFile), is(false));
     }
 
+    /**
+     * Windows stamps a file by a coarser clock than a process's start, so a
+     * {@code config/pid} written right after its server started can seem
+     * older than that server.
+     */
+    @Test
+    void withoutItsCommandLineAProcessThatSeemsToStartAClockTickAfterThePidFileIsTheDomains() throws Exception {
+        GlassFishDomain domain = new GlassFishDomain(FakeDomain.install(home, freePort(), ""));
+        Path pidFile = Files.writeString(home.resolve(GlassFishStaging.DOMAIN_CONFIG).resolve("pid"), "1");
+        Instant written = Files.getLastModifiedTime(pidFile).toInstant();
+
+        assertThat(domain.isThisDomains(startedAt(written.plusMillis(16)), pidFile), is(true));
+    }
+
     /** A system property can set the admin port; GlassFish starts with it all the same. */
     @Test
     void theAdminPortMayComeFromASystemProperty() throws Exception {

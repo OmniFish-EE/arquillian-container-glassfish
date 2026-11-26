@@ -173,11 +173,17 @@ public class RunMojo extends AbstractStagingPoolMojo {
      * slot's, with the slot's setup, and keep running, with its output on the
      * console, until Ctrl+C stops it, or it ends otherwise, as when
      * {@code glassfish-pool:down} from another terminal ends it. Then hand
-     * the slot back.
+     * the slot back: as the run's ending, once the child started, which on
+     * Ctrl+C runs in a shutdown hook, as the JVM exits once its hooks return.
      */
     private void runEmbedded(PoolConfig poolConfig, Runnable preStage, Path archive) throws MojoExecutionException {
         SlotLease lease = lease(poolConfig, preStage);
         int slot = lease.slotIndex();
+        Runnable handBack = () -> {
+            lease.close();
+            getLog().info("Handed slot " + slot + " back to the pool");
+        };
+        EmbeddedRun run = null;
         try {
             EmbeddedGlassFish glassfish = embeddedGlassFish(poolConfig);
             EmbeddedPorts ports = lease.ports().embeddedPorts(poolConfig.debugPort(slot));
@@ -203,8 +209,8 @@ public class RunMojo extends AbstractStagingPoolMojo {
             }
             String prefix = ServerLogTailer.prefix("glassfish:slot-" + slot, slot - 1,
                     LifecycleSupport.isConsoleColored());
-            EmbeddedRun run = EmbeddedRun.start(command, archive, glassfish, ports, lease.slotDir(), lease.slotDir(),
-                    false, prefix, GOAL, getLog());
+            run = EmbeddedRun.start(command, archive, glassfish, ports, lease.slotDir(), lease.slotDir(), false,
+                    prefix, GOAL, getLog(), handBack);
             run.awaitStarted(START_TIMEOUT);
             getLog().info(RunDeployer.deployed(run.name(), run.urls(archive, packaging, ports.http())));
             if (debug || suspend) {
@@ -213,8 +219,12 @@ public class RunMojo extends AbstractStagingPoolMojo {
             getLog().info("Ctrl+C ends the run, and hands slot " + slot + " back to the pool");
             run.untilStopped();
         } finally {
-            lease.close();
-            getLog().info("Handed slot " + slot + " back to the pool");
+            if (run != null) {
+                // Ends the run, if it hasn't ended, which hands the slot back.
+                run.close();
+            } else {
+                handBack.run();
+            }
         }
     }
 

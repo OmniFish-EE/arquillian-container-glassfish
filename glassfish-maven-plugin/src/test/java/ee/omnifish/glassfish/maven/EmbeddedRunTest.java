@@ -13,6 +13,7 @@ package ee.omnifish.glassfish.maven;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
@@ -22,6 +23,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -118,6 +120,32 @@ class EmbeddedRunTest {
         assertThat(Files.exists(workDir.dir()), is(false));
     }
 
+    /**
+     * What follows the ending, as glassfish-pool:run's hand-back of its slot,
+     * runs once the child's working directory is gone, and only once: after
+     * a close, and after a failed start.
+     */
+    @Test
+    void whatFollowsTheEndingRunsOnceTheChildIsGone() throws Exception {
+        EmbeddedWorkDir started = workDir("work-1");
+        List<Boolean> afterStarted = new ArrayList<>();
+        EmbeddedRun run = start(started, "war-messages.log", "idle", true,
+                () -> afterStarted.add(Files.exists(started.dir())));
+        run.awaitStarted(START);
+        assertThat(afterStarted, is(empty()));
+
+        run.close();
+        run.close();
+        assertThat(afterStarted, contains(false));
+
+        EmbeddedWorkDir failed = workDir("work-2");
+        List<Boolean> afterFailed = new ArrayList<>();
+        EmbeddedRun failing = start(failed, "", "1", true, () -> afterFailed.add(Files.exists(failed.dir())));
+        assertThrows(MojoExecutionException.class, () -> failing.awaitStarted(START));
+        failing.close();
+        assertThat(afterFailed, contains(false));
+    }
+
     /** As mvnd's Ctrl+C does. */
     @Test
     void anInterruptEndsTheRunAndStaysSet() throws Exception {
@@ -154,6 +182,12 @@ class EmbeddedRunTest {
      * idles with {@code "idle"}, or exits with the code {@code then} gives.
      */
     private EmbeddedRun start(EmbeddedWorkDir workDir, String recording, String then, boolean war) throws Exception {
+        return start(workDir, recording, then, war, () -> { });
+    }
+
+    /** {@link #start(EmbeddedWorkDir, String, String, boolean)}, with {@code afterwards} following the ending. */
+    private EmbeddedRun start(EmbeddedWorkDir workDir, String recording, String then, boolean war,
+            Runnable afterwards) throws Exception {
         Path child = Files.writeString(tmp.resolve("Child.java"), "import java.nio.file.*;\n"
                 + "class Child {\n"
                 + "    public static void main(String[] args) throws Exception {\n"
@@ -173,7 +207,7 @@ class EmbeddedRunTest {
 
         // Exclusive, as glassfish:run's child is.
         return EmbeddedRun.start(command, workDir, new EmbeddedStartup(war, List.of()), null, true, "[child] ", "test",
-                log);
+                log, afterwards);
     }
 
     /** The record of {@code run}'s child in the stage directory. */

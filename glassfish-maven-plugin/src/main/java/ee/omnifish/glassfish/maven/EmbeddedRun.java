@@ -34,8 +34,9 @@ import ee.omnifish.glassfish.admin.embedded.EmbeddedWorkDir;
  * the console, and the one ending of the run, however it ends: from a
  * shutdown hook on plain Maven's Ctrl+C, after mvnd's Ctrl+C interrupts the
  * wait, after a failed start, or once the child ended otherwise. The ending
- * stops the child, then removes its record and its working directory. Shared
- * by {@code glassfish:run} and the pool plugin's {@code glassfish-pool:run}.
+ * stops the child, removes its record and its working directory, then runs
+ * what the caller has follow it. Shared by {@code glassfish:run} and the pool
+ * plugin's {@code glassfish-pool:run}.
  */
 public final class EmbeddedRun implements AutoCloseable {
 
@@ -51,10 +52,16 @@ public final class EmbeddedRun implements AutoCloseable {
 
     private volatile boolean stopping;
 
-    private EmbeddedRun(EmbeddedChild child, String goal, Log log) {
+    private EmbeddedRun(EmbeddedChild child, String goal, Log log, Runnable afterwards) {
         this.child = child;
         this.log = log;
-        ending = new RunEnding(goal, log, this::stop, child::close);
+        ending = new RunEnding(goal, log, this::stop, () -> {
+            try {
+                child.close();
+            } finally {
+                afterwards.run();
+            }
+        });
     }
 
     /**
@@ -67,10 +74,13 @@ public final class EmbeddedRun implements AutoCloseable {
      * @param exclusive whether to refuse while another child runs from the
      *        same stage directory, as for {@code glassfish:run}
      * @param goal the goal that runs, which names the shutdown hook's thread
+     * @param afterwards what follows the ending, as {@code glassfish-pool:run}'s
+     *        hand-back of its slot: on Ctrl+C, it runs in the shutdown hook,
+     *        as the JVM exits once its hooks return
      */
     public static EmbeddedRun start(EmbeddedCommand command, Path archive, EmbeddedGlassFish glassfish,
-            EmbeddedPorts ports, Path workParent, Path slotDir, boolean exclusive, String prefix, String goal, Log log)
-            throws MojoExecutionException {
+            EmbeddedPorts ports, Path workParent, Path slotDir, boolean exclusive, String prefix, String goal, Log log,
+            Runnable afterwards) throws MojoExecutionException {
         List<String> line;
         EmbeddedWorkDir workDir;
         try {
@@ -81,15 +91,16 @@ public final class EmbeddedRun implements AutoCloseable {
             throw new MojoExecutionException(e.getMessage(), e);
         }
 
-        return start(line, workDir, command.startup(), slotDir, exclusive, prefix, goal, log);
+        return start(line, workDir, command.startup(), slotDir, exclusive, prefix, goal, log, afterwards);
     }
 
     /** Start {@code line} in {@code workDir}. Package-private for unit tests, which start a stand-in child. */
     static EmbeddedRun start(List<String> line, EmbeddedWorkDir workDir, EmbeddedStartup startup, Path slotDir,
-            boolean exclusive, String prefix, String goal, Log log) throws MojoExecutionException {
+            boolean exclusive, String prefix, String goal, Log log, Runnable afterwards)
+            throws MojoExecutionException {
         try {
             return new EmbeddedRun(EmbeddedChild.start(line, workDir, startup, slotDir, exclusive,
-                    output -> System.out.println(prefix + output)), goal, log);
+                    output -> System.out.println(prefix + output)), goal, log, afterwards);
         } catch (IOException e) {
             throw new MojoExecutionException("Starting GlassFish Embedded failed: " + e.getMessage(), e);
         }

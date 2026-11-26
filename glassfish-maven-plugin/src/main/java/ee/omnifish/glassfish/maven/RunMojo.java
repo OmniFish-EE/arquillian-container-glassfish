@@ -145,7 +145,8 @@ public class RunMojo extends AbstractStartMojo {
         }
         String prefix = ServerLogTailer.prefix("glassfish:embedded", 0, LifecycleSupport.isConsoleColored());
         EmbeddedRun run = EmbeddedRun.start(command, archive, glassfish, ports,
-                Paths.get(executedProject.getBuild().getDirectory(), WORK_DIR), null, true, prefix, GOAL, getLog());
+                Paths.get(executedProject.getBuild().getDirectory(), WORK_DIR), null, true, prefix, GOAL, getLog(),
+                () -> { });
         run.awaitStarted(startTimeout());
         getLog().info(RunDeployer.deployed(run.name(), run.urls(archive, packaging, ports.http())));
         if (debug() || suspend()) {
