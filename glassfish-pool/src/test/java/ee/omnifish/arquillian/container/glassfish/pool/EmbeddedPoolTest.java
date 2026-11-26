@@ -8,14 +8,23 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -45,7 +54,9 @@ class EmbeddedPoolTest {
         assertThat(read.trustStorePassword(), equalTo("changeit"));
         assertThat(KeyStore.getInstance(read.trustStore().toFile(), "changeit".toCharArray()).getCertificate("idp"),
                 equalTo(certificate()));
-        assertThat(Files.exists(pool.resolve(EmbeddedPool.FILE + ".tmp")), is(false));
+        try (Stream<Path> files = Files.list(pool)) {
+            assertThat(files.noneMatch(file -> file.toString().endsWith(".tmp")), is(true));
+        }
     }
 
     @Test
@@ -76,6 +87,52 @@ class EmbeddedPoolTest {
         EmbeddedPool.remove(pool);
         assertThat(PoolConfig.forTestJvm(pool).embedded(), is(false));
         assertThat(EmbeddedPool.read(pool).isPresent(), is(false));
+    }
+
+    /**
+     * Two JVMs that publish the description at once, as the
+     * {@code glassfish-pool:run}s of two modules that share a pool do, both
+     * succeed, and leave a whole description, with a whole truststore.
+     */
+    @Test
+    void twoJvmsPublishAtOnce() throws Exception {
+        Path pool = tmp.resolve("pool");
+        Path trustStore = trustStore(tmp.resolve("custom.p12"), "secret");
+        Path go = tmp.resolve("go");
+        List<Process> writers = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            writers.add(writer(pool, trustStore, go));
+        }
+        Files.createFile(go);
+
+        for (Process writer : writers) {
+            assertThat(writer.waitFor(120, TimeUnit.SECONDS), is(true));
+            assertThat(new String(writer.getErrorStream().readAllBytes(), StandardCharsets.UTF_8),
+                    writer.exitValue(), equalTo(0));
+        }
+        EmbeddedGlassFish read = EmbeddedPool.read(pool).orElseThrow();
+        assertThat(KeyStore.getInstance(read.trustStore().toFile(), "changeit".toCharArray()).getCertificate("idp"),
+                equalTo(certificate()));
+    }
+
+    /** An {@link EmbeddedPoolWriter} in a JVM of its own, once it's ready. */
+    private static Process writer(Path pool, Path trustStore, Path go) throws Exception {
+        String classPath = Stream.of(EmbeddedPoolWriter.class, EmbeddedPool.class, EmbeddedGlassFish.class)
+                .map(type -> {
+                    try {
+                        return Paths.get(type.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+                    } catch (java.net.URISyntaxException e) {
+                        throw new IllegalStateException(e);
+                    }
+                })
+                .collect(Collectors.joining(File.pathSeparator));
+        Process writer = new ProcessBuilder(Paths.get(System.getProperty("java.home"), "bin", "java").toString(),
+                "-cp", classPath, EmbeddedPoolWriter.class.getName(), pool.toString(), trustStore.toString(),
+                "secret", "50", go.toString()).start();
+        BufferedReader out = new BufferedReader(new InputStreamReader(writer.getInputStream(),
+                StandardCharsets.UTF_8));
+        assertThat(out.readLine(), equalTo("ready"));
+        return writer;
     }
 
     /** A truststore that {@code password} opens, with a certificate as {@code idp}. */

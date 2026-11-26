@@ -20,6 +20,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.UUID;
 
 import ee.omnifish.glassfish.admin.TrustStores;
 import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
@@ -35,7 +36,10 @@ import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
  * <p>The truststore is a copy with GlassFish's master password, in the pool
  * directory, so the build's truststore password goes no further. The
  * description is published only once that copy is complete, and atomically,
- * so a JVM that reads it meanwhile gets the old one or the new one.
+ * so a JVM that reads it meanwhile gets the old one or the new one. Both are
+ * published under the pool's {@code grow.lock}, so two JVMs that publish at
+ * once, as the {@code glassfish-pool:run}s of two modules that share a pool,
+ * take turns, and leave the description of one with that one's truststore.
  */
 public final class EmbeddedPool {
 
@@ -69,26 +73,36 @@ public final class EmbeddedPool {
         } else {
             description.setProperty(HOME, absolute(glassfish.home()));
         }
-        Path trustStore = poolDir.resolve(TRUST_STORE);
-        if (glassfish.trustStore() != null) {
-            TrustStores.copyCertificates(glassfish.trustStore(), glassfish.trustStorePassword().toCharArray(),
-                    trustStore, TrustStores.MASTER_PASSWORD.toCharArray());
-            description.setProperty(TRUST, absolute(trustStore));
-        }
+        PoolLocks.withGrowLock(poolDir, () -> {
+            Path trustStore = poolDir.resolve(TRUST_STORE);
+            if (glassfish.trustStore() != null) {
+                TrustStores.copyCertificates(glassfish.trustStore(), glassfish.trustStorePassword().toCharArray(),
+                        trustStore, TrustStores.MASTER_PASSWORD.toCharArray());
+                description.setProperty(TRUST, absolute(trustStore));
+            }
+            publish(description, poolDir.resolve(FILE));
+            if (glassfish.trustStore() == null) {
+                // Only now: whoever read the old description may still copy it.
+                Files.deleteIfExists(trustStore);
+            }
+            return null;
+        });
+    }
 
-        Path file = poolDir.resolve(FILE);
-        Path tmp = file.resolveSibling(FILE + ".tmp");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            description.store(out, "The GlassFish Embedded the slots run, written by glassfish-pool:up");
-        }
+    /** Publish {@code description} as {@code file}, through a temporary file of its own. */
+    private static void publish(Properties description, Path file) throws IOException {
+        Path tmp = file.resolveSibling(FILE + "." + UUID.randomUUID() + ".tmp");
         try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        }
-        if (glassfish.trustStore() == null) {
-            // Only now: whoever read the old description may still copy it.
-            Files.deleteIfExists(trustStore);
+            try (OutputStream out = Files.newOutputStream(tmp)) {
+                description.store(out, "The GlassFish Embedded the slots run, written by glassfish-pool:up");
+            }
+            try {
+                Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
     }
 
@@ -120,8 +134,15 @@ public final class EmbeddedPool {
 
     /** Describe no GlassFish Embedded: the slots of the pool in {@code poolDir} run domains. */
     public static void remove(Path poolDir) throws IOException {
-        Files.deleteIfExists(poolDir.resolve(FILE));
-        Files.deleteIfExists(poolDir.resolve(TRUST_STORE));
+        if (!exists(poolDir) && !Files.exists(poolDir.resolve(TRUST_STORE))) {
+            return;
+        }
+
+        PoolLocks.withGrowLock(poolDir, () -> {
+            Files.deleteIfExists(poolDir.resolve(FILE));
+            Files.deleteIfExists(poolDir.resolve(TRUST_STORE));
+            return null;
+        });
     }
 
     private static Path path(Properties description, String key) throws IOException {

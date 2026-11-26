@@ -658,8 +658,9 @@ JVM leases, and the undeploy ends that child.
   says its last lines.
 - **A child its test JVM left:** a test JVM that dies, as on a fork's
   timeout, can leave its child running. The stage directory records each
-  child, with its slot, so the next lease of that slot, or the stop after
-  the build, ends it.
+  child, with its slot, and the slot names that stage directory, so the
+  next lease of that slot, or the stop after the build, ends it, also once
+  `up` moved the pool to another stage directory.
 - **JMS and remote EJBs:** each child has IIOP and JMS ports of its own. On
   the static shell, and on 7.1.0's JAR, GlassFish Embedded's JMS broker
   doesn't start, also outside the pool. GlassFish's IIOP security refuses

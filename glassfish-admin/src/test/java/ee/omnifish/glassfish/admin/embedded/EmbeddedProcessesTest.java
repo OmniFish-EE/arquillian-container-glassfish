@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.File;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.lang.reflect.Proxy;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -94,6 +97,8 @@ class EmbeddedProcessesTest {
 
         assertThat(EmbeddedProcesses.serving(tmp, tmp.resolve("pool/slot-1")), contains(child.toHandle()));
         assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.of(child.toHandle())));
+        assertThat(EmbeddedProcesses.stageDirOf(tmp.resolve("pool/slot-1")),
+                equalTo(Optional.of(tmp.toAbsolutePath().normalize())));
     }
 
     /**
@@ -192,6 +197,39 @@ class EmbeddedProcessesTest {
         assertThat(Files.exists(tmp.resolve(EmbeddedProcesses.LOCK_FILE)), is(true));
     }
 
+    /**
+     * A copy of this class in another class loader, as another Maven plugin
+     * has, that waits for the lock and is interrupted, leaves the lock to its
+     * holder: on Linux and macOS, closing a channel on the lock file releases
+     * whatever lock this JVM holds on it, which another JVM could then take
+     * while the holder still works.
+     */
+    @Test
+    void anInterruptedWaiterLeavesTheLockToItsHolderInAnotherClassLoader() throws Exception {
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> withStageLockOfACopy(() -> {
+            locked.countDown();
+            release.await(30, TimeUnit.SECONDS);
+        }));
+        holder.start();
+        assertThat(locked.await(30, TimeUnit.SECONDS), is(true));
+        Thread waiter = new Thread(() -> withStageLockOfACopy(() -> {
+        }));
+        waiter.start();
+        try {
+            awaitWaiting(waiter);
+            waiter.interrupt();
+            waiter.join(1_000);
+
+            assertThat(anotherJvmCanLock(tmp.resolve(EmbeddedProcesses.LOCK_FILE)), is(false));
+        } finally {
+            release.countDown();
+            holder.join(30_000);
+            waiter.join(30_000);
+        }
+    }
+
     @Test
     void anEndedChildHasExited() throws Exception {
         child = sleeper();
@@ -222,6 +260,66 @@ class EmbeddedProcessesTest {
         assertThat(EmbeddedProcesses.runsFrom("java -Dcom.sun.aas.instanceRoot="
                 + STAGE.resolve("glassfish8/glassfish/domains/domain1")
                 + " com.sun.enterprise.glassfish.bootstrap.ASMain", DIRS), is(false));
+    }
+
+    /** Work under the stage lock, which may wait. */
+    @FunctionalInterface
+    private interface Work {
+        void run() throws Exception;
+    }
+
+    /**
+     * Run {@code work} under the stage lock of {@code tmp}, through a copy of
+     * {@link EmbeddedProcesses} in a class loader of its own, as another
+     * Maven plugin's realm has. A failure, as an interrupted wait's, ends it.
+     */
+    private void withStageLockOfACopy(Work work) {
+        URL classes = EmbeddedProcesses.class.getProtectionDomain().getCodeSource().getLocation();
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {classes}, ClassLoader.getPlatformClassLoader())) {
+            Class<?> copy = loader.loadClass(EmbeddedProcesses.class.getName());
+            Class<?> section = loader.loadClass(EmbeddedProcesses.Section.class.getName());
+            Object run = Proxy.newProxyInstance(loader, new Class<?>[] {section}, (proxy, method, args) -> {
+                work.run();
+                return null;
+            });
+            copy.getMethod("withStageLock", Path.class, section).invoke(null, tmp, run);
+        } catch (ReflectiveOperationException | IOException e) {
+            // As the interrupted waiter's.
+        }
+    }
+
+    /** Wait until {@code thread} waits, as for a lock. */
+    private static void awaitWaiting(Thread thread) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (thread.getState() == Thread.State.NEW || thread.getState() == Thread.State.RUNNABLE) {
+            assertThat("Still not waiting", System.nanoTime() < deadline, is(true));
+            Thread.sleep(10);
+        }
+    }
+
+    /**
+     * Whether another JVM could take {@code file}'s lock now. It lets go of
+     * the lock before it exits: Windows releases a lock an ended process
+     * holds only in time.
+     */
+    private boolean anotherJvmCanLock(Path file) throws Exception {
+        Path check = Files.writeString(tmp.resolve("LockCheck.java"), "import java.nio.channels.*;\n"
+                + "import java.nio.file.*;\n"
+                + "class LockCheck {\n"
+                + "    public static void main(String[] args) throws Exception {\n"
+                + "        try (FileChannel channel = FileChannel.open(Path.of(args[0]),\n"
+                + "                StandardOpenOption.WRITE)) {\n"
+                + "            FileLock lock = channel.tryLock();\n"
+                + "            if (lock == null) {\n"
+                + "                System.exit(1);\n"
+                + "            }\n"
+                + "            lock.release();\n"
+                + "        }\n"
+                + "    }\n"
+                + "}\n");
+        Process process = new ProcessBuilder(java(), check.toString(), file.toString()).start();
+        assertThat(process.waitFor(60, TimeUnit.SECONDS), is(true));
+        return process.exitValue() == 0;
     }
 
     /** A process that ran, and ended. */

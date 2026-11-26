@@ -33,9 +33,9 @@ import org.xml.sax.SAXException;
 /**
  * The web modules of an EAR, and their context roots, as its
  * {@code META-INF/application.xml} gives them: a module without one, or an
- * EAR without that descriptor, has its file name without {@code .war}. Its
- * {@code list-applications} doesn't show them, and GlassFish Embedded's
- * banner fails for EARs.
+ * EAR without that descriptor, has its file name, without its directory and
+ * {@code .war}. Its {@code list-applications} doesn't show them, and
+ * GlassFish Embedded's banner fails for EARs.
  */
 public final class EarWebModules {
 
@@ -51,9 +51,10 @@ public final class EarWebModules {
 
     /**
      * {@code ear}'s web modules, by URI, as GlassFish takes them: from its
-     * descriptor, or without one, each WAR in its root. Each has the context
-     * root its descriptor gives, starting with {@code /}, or else its file
-     * name without {@code .war}.
+     * descriptor, or without one, every WAR in it, also one in a directory,
+     * as Jakarta EE's rule for an EAR without a descriptor has it. Each has
+     * the context root its descriptor gives, starting with {@code /}, or else
+     * its file name, without its directory and {@code .war}.
      */
     public static Map<String, String> webModules(Path ear) throws IOException {
         Map<String, String> webModules = new LinkedHashMap<>();
@@ -61,7 +62,7 @@ public final class EarWebModules {
             ZipEntry descriptor = zip.getEntry(APPLICATION_XML);
             if (descriptor == null) {
                 for (ZipEntry entry : Collections.list(zip.entries())) {
-                    if (!entry.isDirectory() && entry.getName().endsWith(".war") && !entry.getName().contains("/")) {
+                    if (!entry.isDirectory() && entry.getName().endsWith(".war")) {
                         webModules.put(entry.getName(), "/" + moduleName(entry.getName()));
                     }
                 }

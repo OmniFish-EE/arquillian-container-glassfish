@@ -577,8 +577,9 @@ until Ctrl+C stops it.
   archive whose file name has a space can't be deployed; give it a
   `<finalName>` without one.
 - **The URLs:** for a WAR, with the context root GlassFish reports; for an
-  EAR, with those its `application.xml` gives its web modules; none for an
-  EJB jar or RAR. Applications a command deploys aren't among them.
+  EAR, with those its `application.xml` gives its web modules, or without
+  one, each WAR's file name, also of a WAR in a directory; none for an EJB
+  jar or RAR. Applications a command deploys aren't among them.
 - **As for `domain1`:** `name`, `contextRoot`, `logMessagesOnly`, `debug`,
   `suspend` and `startTimeout` apply as they do there. The debugger listens
   on localhost:9009.

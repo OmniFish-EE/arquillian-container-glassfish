@@ -19,8 +19,10 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -237,14 +239,16 @@ public final class PoolProvisioner {
     }
 
     /**
-     * The GlassFish Embedded children that the stage directory records as
+     * The GlassFish Embedded children that a stage directory records as
      * serving slot {@code idx}, and that still run.
      */
     public List<ProcessHandle> children(int idx) {
-        Optional<Path> stageDir = stageDir();
-        return stageDir.isPresent()
-                ? EmbeddedProcesses.serving(stageDir.get(), PoolPaths.slotDir(config.poolDir(), idx))
-                : List.of();
+        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
+        List<ProcessHandle> children = new ArrayList<>();
+        for (Path stageDir : stageDirs(slotDir)) {
+            children.addAll(EmbeddedProcesses.serving(stageDir, slotDir));
+        }
+        return children;
     }
 
     /**
@@ -253,17 +257,28 @@ public final class PoolProvisioner {
      * JVM that held it before left behind, as a test fork that died.
      */
     public void endChildren(int idx) throws IOException {
-        Optional<Path> stageDir = stageDir();
-        if (stageDir.isEmpty()) {
-            return;
+        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
+        for (Path stageDir : stageDirs(slotDir)) {
+            for (ProcessHandle child : EmbeddedProcesses.serving(stageDir, slotDir)) {
+                LOG.info("Ending GlassFish Embedded's child " + child.pid() + ", which slot " + idx
+                        + "'s previous holder left running");
+                EmbeddedProcesses.end(child, CHILD_STOP_TIMEOUT);
+                EmbeddedProcesses.forget(stageDir, child);
+            }
         }
+    }
 
-        for (ProcessHandle child : children(idx)) {
-            LOG.info("Ending GlassFish Embedded's child " + child.pid() + ", which slot " + idx
-                    + "'s previous holder left running");
-            EmbeddedProcesses.end(child, CHILD_STOP_TIMEOUT);
-            EmbeddedProcesses.forget(stageDir.get(), child);
-        }
+    /**
+     * Where the records of the children of slot {@code slotDir} are: in the
+     * stage directory the pool's description names, and in the one the
+     * slot's last child started from, which differs once {@code up} moved
+     * the pool to another one, or back to domains.
+     */
+    private Set<Path> stageDirs(Path slotDir) {
+        Set<Path> stageDirs = new LinkedHashSet<>();
+        stageDir().ifPresent(stageDirs::add);
+        EmbeddedProcesses.stageDirOf(slotDir).ifPresent(stageDirs::add);
+        return stageDirs;
     }
 
     /**

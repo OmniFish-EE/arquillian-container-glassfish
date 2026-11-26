@@ -18,8 +18,6 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolPaths.growLock;
 import static java.nio.file.StandardOpenOption.CREATE;
@@ -42,7 +40,9 @@ import static java.nio.file.StandardOpenOption.WRITE;
  * next call for that file retries on it.
  *
  * <p>{@code grow.lock} is only held for short sections. Threads of this JVM
- * take turns before taking it, so at most one channel on it is open here.
+ * take turns before taking it, also those of another class loader's copy of
+ * this class, as a Maven plugin and its build extension each have, so at most
+ * one channel on it is open here.
  *
  * <p>The registry is static, so it covers one class loader's copy of the
  * pool; in a test JVM, that is all of it.
@@ -59,9 +59,6 @@ final class PoolLocks {
 
     /** Channels on slot lock files, by absolute path. Guarded by {@link #LOCK}. */
     private static final Map<Path, Channel> CHANNELS = new HashMap<>();
-
-    /** One monitor per {@code grow.lock} file, for the turn-taking within this JVM. */
-    private static final ConcurrentMap<Path, Object> GROW_TURNS = new ConcurrentHashMap<>();
 
     private PoolLocks() {
     }
@@ -136,11 +133,12 @@ final class PoolLocks {
 
     /**
      * Run {@code section} holding {@code poolDir}'s {@code grow.lock}, which
-     * serializes slot claims across JVMs.
+     * serializes slot claims, and the publishing of the pool's description of
+     * GlassFish Embedded, across JVMs.
      */
     static <T> T withGrowLock(Path poolDir, Section<T> section) throws IOException {
         Path key = key(growLock(poolDir));
-        synchronized (GROW_TURNS.computeIfAbsent(key, k -> new Object())) {
+        synchronized (turnsOf(key)) {
             try (FileChannel channel = FileChannel.open(key,
                     CREATE, READ, WRITE);
                  FileLock ignored = channel.lock()) {
@@ -201,6 +199,15 @@ final class PoolLocks {
         return create
                 ? FileChannel.open(key, CREATE, READ, WRITE)
                 : FileChannel.open(key, READ, WRITE);
+    }
+
+    /**
+     * The monitor on which this JVM's threads take turns for {@code lockFile}:
+     * an interned string, of which the JVM keeps one, which every class
+     * loader's copy of this class shares.
+     */
+    private static Object turnsOf(Path lockFile) {
+        return (PoolLocks.class.getName() + ":" + lockFile).intern();
     }
 
     private static Path key(Path file) {

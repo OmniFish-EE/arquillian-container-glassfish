@@ -17,10 +17,10 @@ import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,8 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -49,13 +48,19 @@ import static java.nio.file.StandardOpenOption.WRITE;
  * doesn't say what a process runs, as on Windows, the record is the only way
  * to find a child. Otherwise, a child is also found by its command line:
  * {@code -jar} with the JAR staged in a stage directory, or Embedded's main
- * class with the static shell of an install there.
+ * class with the static shell of an install there. A child that serves a
+ * pool slot names its stage directory in the slot's directory too, in
+ * {@code embedded-stage.properties}, so the slot finds the child's record
+ * also once the pool moved to another stage directory.
  *
  * <p>A child starts, and gets its record, under a lock on
  * {@code .staging-glassfish.lock} in the stage directory, which staging holds
  * too, from its check of the children through the end of a replacement. So
  * no child starts from an install that staging checks or replaces. Within a
- * JVM, threads take turns before taking that lock.
+ * JVM, threads take turns before they open a channel on the lock file, also
+ * those of another class loader's copy of this class, as another Maven
+ * plugin has: on Linux and macOS, closing a channel on the file releases
+ * whatever lock the JVM holds on it, through any channel.
  */
 public final class EmbeddedProcesses {
 
@@ -65,17 +70,16 @@ public final class EmbeddedProcesses {
     /** The lock that starting a child and staging take, in the stage directory. */
     public static final String LOCK_FILE = ".staging-glassfish.lock";
 
+    /** In a pool slot's directory: the stage directory its last child started from, which has that child's record. */
+    public static final String SLOT_STAGE_FILE = "embedded-stage.properties";
+
     static final String RECORD_PREFIX = "glassfish-embedded-";
     static final String RECORD_SUFFIX = ".pid";
 
     private static final String PID = "pid";
     private static final String START = "start";
     private static final String SLOT = "slot";
-
-    /** How long to wait before trying again for a lock another class loader's copy of this class holds. */
-    private static final long OVERLAP_WAIT_MILLIS = 50;
-
-    private static final ConcurrentMap<Path, Object> TURNS = new ConcurrentHashMap<>();
+    private static final String STAGE_DIR = "stageDir";
 
     /** Starts a child. */
     @FunctionalInterface
@@ -97,7 +101,8 @@ public final class EmbeddedProcesses {
      * it, under the stage directory's lock. Records of children that ended
      * are removed first.
      *
-     * @param slotDir the pool slot the child serves, or {@code null}
+     * @param slotDir the pool slot the child serves, or {@code null}; it
+     *        gets the name of {@code stageDir} before the child starts
      * @param exclusive whether to refuse while another child runs from
      *        {@code stageDir}, as for {@code glassfish:run}, whose second run
      *        would replace the first one's, also while that one waits for a
@@ -111,6 +116,9 @@ public final class EmbeddedProcesses {
             if (exclusive && !recordedChildren(stageDir).isEmpty()) {
                 throw new IOException("GlassFish Embedded already runs from " + stageDir + ", for another "
                         + "glassfish:run. End that one first.");
+            }
+            if (slotDir != null) {
+                nameStageDir(slotDir, stageDir);
             }
 
             Process process = starter.start();
@@ -142,6 +150,17 @@ public final class EmbeddedProcesses {
                         .map(commandLine -> runsFrom(commandLine, dirs))
                         .orElse(false))
                 .findFirst();
+    }
+
+    /**
+     * The stage directory that the last child that served the pool slot
+     * {@code slotDir} started from, which has that child's record, if one did.
+     */
+    public static Optional<Path> stageDirOf(Path slotDir) {
+        return read(slotDir.resolve(SLOT_STAGE_FILE))
+                .map(stage -> stage.getProperty(STAGE_DIR, ""))
+                .filter(dir -> !dir.isEmpty())
+                .map(Paths::get);
     }
 
     /** The recorded children of {@code stageDir} that serve the pool slot {@code slotDir} and still run. */
@@ -186,34 +205,28 @@ public final class EmbeddedProcesses {
 
     /**
      * Run {@code section} holding {@code stageDir}'s lock, which starting a
-     * child takes too. A lock another class loader's copy of this class holds
-     * in this JVM is waited for, on the same channel: closing it would
-     * release that lock too.
+     * child takes too. Within the JVM, it waits for its turn first, so no
+     * other thread has a channel on the lock file open meanwhile, whichever
+     * copy of this class it runs.
      */
     public static <T> T withStageLock(Path stageDir, Section<T> section) throws IOException {
         Path lockFile = stageDir.resolve(LOCK_FILE).toAbsolutePath().normalize();
-        synchronized (TURNS.computeIfAbsent(lockFile, file -> new Object())) {
+        synchronized (turnsOf(lockFile)) {
             Files.createDirectories(stageDir);
             try (FileChannel channel = FileChannel.open(lockFile, CREATE, WRITE);
-                 FileLock lock = lock(channel)) {
+                 FileLock lock = channel.lock()) {
                 return section.run();
             }
         }
     }
 
-    private static FileLock lock(FileChannel channel) throws IOException {
-        while (true) {
-            try {
-                return channel.lock();
-            } catch (OverlappingFileLockException e) {
-                try {
-                    Thread.sleep(OVERLAP_WAIT_MILLIS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new InterruptedIOException("Interrupted while waiting for the stage directory's lock");
-                }
-            }
-        }
+    /**
+     * The monitor on which this JVM's threads take turns for {@code lockFile}:
+     * an interned string, of which the JVM keeps one, which every class
+     * loader's copy of this class shares.
+     */
+    private static Object turnsOf(Path lockFile) {
+        return (EmbeddedProcesses.class.getName() + ":" + lockFile).intern();
     }
 
     /** Record {@code child} in {@code stageDir}, as serving {@code slotDir}, if not {@code null}. */
@@ -225,15 +238,32 @@ public final class EmbeddedProcesses {
             record.setProperty(SLOT, slotDir.toAbsolutePath().normalize().toString());
         }
 
-        Path file = recordFile(stageDir, child.pid());
-        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            record.store(out, "A GlassFish Embedded child that runs from this directory");
-        }
+        store(record, recordFile(stageDir, child.pid()), "A GlassFish Embedded child that runs from this directory");
+    }
+
+    /** Name {@code stageDir} in the pool slot {@code slotDir}, as the stage directory its next child starts from. */
+    private static void nameStageDir(Path slotDir, Path stageDir) throws IOException {
+        Properties stage = new Properties();
+        stage.setProperty(STAGE_DIR, stageDir.toAbsolutePath().normalize().toString());
+        Files.createDirectories(slotDir);
+        store(stage, slotDir.resolve(SLOT_STAGE_FILE), "The stage directory the slot's last GlassFish Embedded "
+                + "child started from");
+    }
+
+    /** Write {@code properties} to {@code file} through a file of its own, so a reader gets all of them or none. */
+    private static void store(Properties properties, Path file, String comment) throws IOException {
+        Path tmp = file.resolveSibling(file.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            try (OutputStream out = Files.newOutputStream(tmp)) {
+                properties.store(out, comment);
+            }
+            try {
+                Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
     }
 

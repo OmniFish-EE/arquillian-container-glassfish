@@ -134,6 +134,38 @@ class EmbeddedSlotsTest {
         }
     }
 
+    /**
+     * After up moved the pool to another stage directory, a child that a
+     * fork that died left is still found, by its slot, which names the stage
+     * directory the child started from, and ended before the slot's next lease.
+     */
+    @Test
+    void aChildOfTheStageDirectoryBeforeIsEndedBeforeItsSlotIsLeasedAgain() throws Exception {
+        PoolBootstrap.up(config(1));
+        Process orphan = child(1);
+        Path moved = Files.createDirectories(tmp.resolve("moved"));
+        EmbeddedPool.write(pool, EmbeddedGlassFish.jar(moved, moved.resolve("glassfish-embedded-all-9.0.0.jar"),
+                null, null), "embedded");
+
+        try (SlotLease lease = new SlotLeaser(config(0), 30L).lease()) {
+            assertThat(lease.slotIndex(), equalTo(1));
+            assertThat(orphan.isAlive(), is(false));
+        }
+    }
+
+    /** Also once up removed the pool's description, as it does when the pool runs domains again. */
+    @Test
+    void downEndsAChildAlsoWithoutTheDescription() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+        Process orphan = child(1);
+        EmbeddedPool.remove(pool);
+
+        PoolBootstrap.down(config);
+
+        assertThat(orphan.isAlive(), is(false));
+    }
+
     /** As after the build: what's left of the slots' children ends with the pool. */
     @Test
     void downEndsTheSlotsChildren() throws Exception {

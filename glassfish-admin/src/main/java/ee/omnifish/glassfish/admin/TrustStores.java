@@ -19,6 +19,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.util.Collections;
+import java.util.UUID;
 
 /**
  * Truststores, as GlassFish reads them: it opens its truststore with its
@@ -74,17 +75,22 @@ public final class TrustStores {
      * the new one, and an interrupted write can't leave half of it behind.
      */
     public static void storeAtomically(KeyStore store, Path trustStore, char[] password) throws IOException {
-        Path tmp = trustStore.resolveSibling(trustStore.getFileName() + ".tmp");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            store.store(out, password);
-        } catch (GeneralSecurityException e) {
-            throw new IOException("Could not write truststore " + trustStore + ": " + e.getMessage(), e);
-        }
+        // Of its own, so that writers don't share it.
+        Path tmp = trustStore.resolveSibling(trustStore.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
-            Files.move(tmp, trustStore, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            // Still replaces the file rather than rewriting it in place, just not crash-safe.
-            Files.move(tmp, trustStore, StandardCopyOption.REPLACE_EXISTING);
+            try (OutputStream out = Files.newOutputStream(tmp)) {
+                store.store(out, password);
+            } catch (GeneralSecurityException e) {
+                throw new IOException("Could not write truststore " + trustStore + ": " + e.getMessage(), e);
+            }
+            try {
+                Files.move(tmp, trustStore, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException e) {
+                // Still replaces the file rather than rewriting it in place, just not crash-safe.
+                Files.move(tmp, trustStore, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(tmp);
         }
     }
 }

@@ -58,11 +58,17 @@ class EarWebModulesTest {
         assertThat(EarWebModules.webModules(ear).values(), contains("/alpha-site", "/beta"));
     }
 
+    /**
+     * As Jakarta EE's rule for an EAR without a descriptor has it, and as
+     * GlassFish deploys them: every WAR, also one in a directory, the library
+     * directory included, by its whole URI.
+     */
     @Test
-    void withoutADescriptorTheModulesAreTheWarsInTheRoot() throws IOException {
-        Path ear = ear("alpha.war", "war", "lib/util.war", "beta.war");
+    void withoutADescriptorTheModulesAreAllItsWars() throws IOException {
+        Path ear = ear("alpha.war", "war", "some/gamma.war", "lib/util.war", "beta.war");
 
-        assertThat(EarWebModules.webModules(ear).keySet(), contains("alpha.war", "beta.war"));
+        assertThat(EarWebModules.webModules(ear).keySet(),
+                contains("alpha.war", "some/gamma.war", "lib/util.war", "beta.war"));
     }
 
     /** GlassFish names the application after it when it isn't given a name. */
@@ -91,11 +97,12 @@ class EarWebModulesTest {
         assertThat(EarWebModules.contextRoots(ear), contains("/shop"));
     }
 
+    /** A WAR in a directory too, without its directory, as GlassFish names it. */
     @Test
-    void withoutADescriptorEachWarInTheRootIsNamedAfterItsFile() throws IOException {
-        Path ear = ear("alpha.war", "war", "lib/util.war", "bean.jar");
+    void withoutADescriptorEachWarIsNamedAfterItsFile() throws IOException {
+        Path ear = ear("alpha.war", "war", "some/gamma.war", "bean.jar");
 
-        assertThat(EarWebModules.contextRoots(ear), contains("/alpha"));
+        assertThat(EarWebModules.contextRoots(ear), contains("/alpha", "/gamma"));
     }
 
     @Test
