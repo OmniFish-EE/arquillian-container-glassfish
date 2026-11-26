@@ -36,6 +36,14 @@ import org.slf4j.LoggerFactory;
  * deletes it on exit, and because its {@code deploy} command splits an
  * archive's path where it has a space. The directory is removed when the run
  * ends; one a Maven that no longer runs left behind is removed by the next.
+ *
+ * <p>The child gets its own copy of the truststore, with GlassFish's master
+ * password: GlassFish opens its truststore with that, whatever
+ * {@code javax.net.ssl.trustStorePassword} says.
+ *
+ * <p>While the child runs, the stage directory it runs from names it, so
+ * staging leaves that directory alone, also where the system doesn't say
+ * what a process runs, as on Windows.
  */
 public final class EmbeddedWorkDir implements AutoCloseable {
 
@@ -46,15 +54,25 @@ public final class EmbeddedWorkDir implements AutoCloseable {
     /** The domain directory of an install's child, relative to its working directory. */
     public static final String DOMAIN_DIR = "domain";
 
+    /** The truststore of the JAR's child, relative to its working directory. */
+    public static final String TRUST_STORE = "cacerts.p12";
+
+    /** The password of the child's truststore: GlassFish's master password. */
+    public static final String TRUST_STORE_PASSWORD = CertImport.DEFAULT_PASSWORD;
+
     /** Embedded's own {@code domain.xml}, in the install's {@code modules/kernel.jar}. */
     static final String EMBEDDED_DOMAIN_XML = "org/glassfish/embed/domain.xml";
 
     private final Path dir;
     private final String archiveName;
+    private final Path stageDir;
 
-    private EmbeddedWorkDir(Path dir, String archiveName) {
+    private volatile ProcessHandle child;
+
+    private EmbeddedWorkDir(Path dir, String archiveName, Path stageDir) {
         this.dir = dir;
         this.archiveName = archiveName;
+        this.stageDir = stageDir;
     }
 
     /** The working directory of this Maven's child under {@code parent}, with {@code archive} and what it runs on. */
@@ -64,11 +82,12 @@ public final class EmbeddedWorkDir implements AutoCloseable {
 
     /**
      * {@code run-<pid>} under {@code parent}, emptied, with a copy of
-     * {@code archive}, and for an install, its domain directory: Embedded's
-     * own {@code domain.xml}, {@code domain1}'s {@code keystore.p12}, which
-     * holds the HTTPS listener's key, the install's truststore as
-     * {@code cacerts.p12}, and an empty {@code docroot}. Package-private for
-     * unit tests.
+     * {@code archive}, and for the JAR, of its truststore, if it has one, as
+     * {@link #TRUST_STORE}. For an install, it has its domain directory:
+     * Embedded's own {@code domain.xml}, {@code domain1}'s
+     * {@code keystore.p12}, which holds the HTTPS listener's key, a copy of
+     * the install's truststore as {@code cacerts.p12}, and an empty
+     * {@code docroot}. Package-private for unit tests.
      */
     static EmbeddedWorkDir create(Path parent, long pid, Path archive, EmbeddedGlassFish glassfish)
             throws IOException {
@@ -86,9 +105,11 @@ public final class EmbeddedWorkDir implements AutoCloseable {
         Files.copy(archive, dir.resolve(archiveName));
         if (!glassfish.isJar()) {
             addDomain(dir.resolve(DOMAIN_DIR), glassfish);
+        } else if (glassfish.trustStore() != null) {
+            copyTrustStore(glassfish, dir.resolve(TRUST_STORE));
         }
 
-        return new EmbeddedWorkDir(dir, archiveName);
+        return new EmbeddedWorkDir(dir, archiveName, glassfish.stageDir());
     }
 
     private static void addDomain(Path domain, EmbeddedGlassFish glassfish) throws IOException {
@@ -107,7 +128,13 @@ public final class EmbeddedWorkDir implements AutoCloseable {
         }
         Files.copy(glassfish.home().resolve(GlassFishStaging.DOMAIN_CONFIG).resolve("keystore.p12"),
                 config.resolve("keystore.p12"));
-        Files.copy(glassfish.trustStore(), config.resolve("cacerts.p12"));
+        copyTrustStore(glassfish, config.resolve("cacerts.p12"));
+    }
+
+    /** Copy the certificates of {@code glassfish}'s truststore to {@code target}, with {@link #TRUST_STORE_PASSWORD}. */
+    private static void copyTrustStore(EmbeddedGlassFish glassfish, Path target) throws IOException {
+        GlassFishStaging.copyCertificates(glassfish.trustStore(), glassfish.trustStorePassword().toCharArray(), target,
+                TRUST_STORE_PASSWORD.toCharArray());
     }
 
     /** Remove the working directories under {@code parent} of Mavens other than {@code pid} that no longer run. */
@@ -139,9 +166,28 @@ public final class EmbeddedWorkDir implements AutoCloseable {
         return archiveName;
     }
 
-    /** Remove the directory. What can't be removed yet, as on Windows right after the child ended, the next run removes. */
+    /** Name {@code child}, which runs in this directory, in the stage directory it runs from, until {@link #close}. */
+    public void runs(ProcessHandle child) throws IOException {
+        this.child = child;
+        EmbeddedProcesses.record(stageDir, child);
+    }
+
+    /**
+     * Remove the child's name from the stage directory, once it ended, and
+     * this directory. What can't be removed yet, as on Windows right after
+     * the child ended, the next run removes.
+     */
     @Override
     public void close() {
+        if (child != null) {
+            try {
+                EmbeddedProcesses.forget(stageDir, child);
+            } catch (IOException e) {
+                // The name of a child that ended doesn't hold staging up.
+                LOG.debug("Could not remove the name of GlassFish Embedded's child from " + stageDir + ": "
+                        + e.getMessage());
+            }
+        }
         try {
             delete(dir);
         } catch (IOException e) {

@@ -116,7 +116,7 @@ class EmbeddedRunTest {
     private EmbeddedWorkDir workDir() throws IOException {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
         return EmbeddedWorkDir.create(tmp.resolve("work"), archive,
-                EmbeddedGlassFish.jar(tmp.resolve("embedded.jar"), null, null));
+                EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null));
     }
 
     /**
@@ -141,6 +141,6 @@ class EmbeddedRunTest {
         List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                 child.toString(), recorded, then);
 
-        return EmbeddedRun.start(command, workDir, new EmbeddedStartup(war), "[child] ", "test", log);
+        return EmbeddedRun.start(command, workDir, new EmbeddedStartup(war, List.of()), "[child] ", "test", log);
     }
 }

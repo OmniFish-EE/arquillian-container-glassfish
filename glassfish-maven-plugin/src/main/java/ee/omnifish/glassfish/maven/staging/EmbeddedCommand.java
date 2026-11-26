@@ -101,9 +101,9 @@ public final class EmbeddedCommand {
         return this;
     }
 
-    /** The ports the child opens: HTTP, and for an install, which has a server key, HTTPS. */
-    public List<Integer> ports() {
-        return glassfish.isJar() ? List.of(HTTP_PORT) : List.of(HTTP_PORT, HTTPS_PORT);
+    /** The ports a child opens: HTTP, and unless it runs the {@code jar}, HTTPS, with the install's server key. */
+    public static List<Integer> ports(boolean jar) {
+        return jar ? List.of(HTTP_PORT) : List.of(HTTP_PORT, HTTPS_PORT);
     }
 
     /**
@@ -125,8 +125,8 @@ public final class EmbeddedCommand {
         }
         if (glassfish.isJar()) {
             if (glassfish.trustStore() != null) {
-                line.add("-Djavax.net.ssl.trustStore=" + glassfish.trustStore().toAbsolutePath());
-                line.add("-Djavax.net.ssl.trustStorePassword=" + glassfish.trustStorePassword());
+                line.add("-Djavax.net.ssl.trustStore=" + EmbeddedWorkDir.TRUST_STORE);
+                line.add("-Djavax.net.ssl.trustStorePassword=" + EmbeddedWorkDir.TRUST_STORE_PASSWORD);
             }
             line.add("-jar");
             line.add(glassfish.jar().toAbsolutePath().toString());
@@ -136,8 +136,9 @@ public final class EmbeddedCommand {
             line.addAll(moduleOptions(DomainXmlEditor.jvmOptions(home.resolve(GlassFishStaging.DOMAIN_CONFIG)
                     .resolve("domain.xml"))));
             line.add("-cp");
+            // Windows doesn't take * in a path, only in a class path.
             line.add(glassfish.launcher().toAbsolutePath() + File.pathSeparator
-                    + home.resolve("glassfish/lib/bootstrap").resolve("*"));
+                    + home.resolve("glassfish/lib/bootstrap") + File.separator + "*");
             line.add(EmbeddedProcesses.MAIN_CLASS);
             line.add("--domainDir=" + EmbeddedWorkDir.DOMAIN_DIR);
             line.add("--httpPort=" + HTTP_PORT);

@@ -35,13 +35,32 @@
                 <configuration>
                     <edition>embedded-web</edition>
                     <version>${glassfish.version}</version>
-                    <!-- Replaces GlassFish's Mojarra, so GlassFish Embedded runs from the Web profile's static shell. -->
+                    <!--
+                        Replace GlassFish's Mojarra, so GlassFish Embedded runs from the Web profile's static shell.
+                        From GlassFish 9 on, Mojarra comes as its API and its implementation: there, verify.groovy
+                        sets faces.split, which skips the first overlay and applies the others.
+                    -->
                     <overlays>
                         <overlay>
                             <groupId>org.glassfish</groupId>
                             <artifactId>jakarta.faces</artifactId>
                             <version>${mojarra.overlay}</version>
                             <destFileName>jakarta.faces.jar</destFileName>
+                            <skip>${faces.split}</skip>
+                        </overlay>
+                        <overlay>
+                            <groupId>jakarta.faces</groupId>
+                            <artifactId>jakarta.faces-api</artifactId>
+                            <version>${mojarra.overlay}</version>
+                            <destFileName>jakarta.faces-api.jar</destFileName>
+                            <apply>${faces.split}</apply>
+                        </overlay>
+                        <overlay>
+                            <groupId>org.glassfish.mojarra</groupId>
+                            <artifactId>mojarra</artifactId>
+                            <version>${mojarra.overlay}</version>
+                            <destFileName>mojarra.jar</destFileName>
+                            <apply>${faces.split}</apply>
                         </overlay>
                     </overlays>
                     <!-- The CA verify.groovy makes, which signed the server key it serves HTTPS with. -->

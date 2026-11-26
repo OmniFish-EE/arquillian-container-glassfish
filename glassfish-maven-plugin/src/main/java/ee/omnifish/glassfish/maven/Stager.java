@@ -162,7 +162,7 @@ public final class Stager {
         if (home != null) {
             return home.resolve("glassfish/modules");
         }
-        if (!overlaySkip && !overlays.isEmpty()) {
+        if (OverlayCoord.anyApplied(overlays, overlaySkip)) {
             throw new MojoExecutionException("<overlays> need a target: set <overlayTargetDir> or " + homeParameter);
         }
         return null;

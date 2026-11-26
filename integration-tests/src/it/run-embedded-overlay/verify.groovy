@@ -21,11 +21,19 @@ def windows = System.getProperty('os.name').startsWith('Windows')
 def mvn = new File(System.getProperty('maven.home'), windows ? 'bin/mvn.cmd' : 'bin/mvn').path
 def keytool = new File(System.getProperty('java.home'), windows ? 'bin/keytool.exe' : 'bin/keytool').path
 def project = new File(basedir, 'web app')
-// The Mojarra overlaid, as the harness filtered it into the pom.
-def mojarraOverlay = (new File(basedir, 'pom.xml').text =~ /<mojarra.overlay>([^<]+)</)[0][1]
+// The GlassFish, and the Mojarra overlaid, as the harness filtered them into the pom.
+def pom = new File(basedir, 'pom.xml').text
+def glassfishVersion = (pom =~ /<glassfish.version>([^<]+)</)[0][1]
+def mojarraOverlay = (pom =~ /<mojarra.overlay>([^<]+)</)[0][1]
+// From GlassFish 9 on, Mojarra comes as its API and its implementation, which the pom then overlays apart.
+def facesSplit = glassfishVersion.tokenize('.')[0].toInteger() >= 9
+def facesJars = facesSplit ? ['org.glassfish.mojarra/mojarra': 'mojarra.jar',
+                              'jakarta.faces/jakarta.faces-api': 'jakarta.faces-api.jar']
+                           : ['org.glassfish/jakarta.faces': 'jakarta.faces.jar']
 
 def maven = { List<String> args, String logName ->
-    new ProcessBuilder([mvn, '-B', "-Dmaven.repo.local=${localRepositoryPath}".toString()] + args)
+    new ProcessBuilder([mvn, '-B', "-Dmaven.repo.local=${localRepositoryPath}".toString(),
+                        "-Dfaces.split=${facesSplit}".toString()] + args)
             .directory(project)
             .redirectErrorStream(true)
             .redirectOutput(new File(project, logName))
@@ -55,6 +63,12 @@ def page = { String url ->
     connection.connectTimeout = 10_000
     connection.readTimeout = 30_000
     connection.inputStream.text
+}
+
+// Whether the Faces JARs the application loads are the overlays.
+def overlaid = { String url ->
+    def jars = page("${url}faces.jsp")
+    facesJars.keySet().every { jars.contains("${it} ${mojarraOverlay}") }
 }
 
 // The status of url over HTTPS, trusting whatever certificate GlassFish's own listener has.
@@ -123,7 +137,8 @@ try {
     run = maven(['glassfish:run'], 'run.log')
     def url = deployedAt(run, 'run.log')
     assert url == 'http://localhost:8080/overlay-it/'
-    assert page("${url}faces.jsp").contains("faces ${mojarraOverlay}")
+    assert overlaid(url)
+    assert page("${url}facelets.xhtml").contains('Facelets 42')
     assert page("${url}trust.jsp?port=${trusted.address.port}").contains('reply from server.p12')
     assert page("${url}trust.jsp?port=${untrusted.address.port}").contains('javax.net.ssl.SSLHandshakeException')
     // The static shell's instance has domain1's key, so it serves HTTPS too.
@@ -132,15 +147,12 @@ try {
     // Staging afresh, here without the overlay, would pull the install out from under the run.
     def provision = maven(['glassfish:provision', '-Dglassfish.overlay.skip=true'], 'provision.log')
     assert finished(provision, 'The provision') != 0
-    if (!windows) {
-        // On Windows, Java doesn't say what a process runs, and the files the child keeps open fail the wipe.
-        assert new File(project, 'provision.log').text.contains('GlassFish Embedded runs from it')
-    }
-    assert page("${url}faces.jsp").contains("faces ${mojarraOverlay}")
+    assert new File(project, 'provision.log').text.contains('GlassFish Embedded runs from it')
+    assert overlaid(url)
 
     // The Web profile, with the overlay, whose domain1 GlassFish Embedded didn't run on.
     def install = new File(project, 'target/dist').listFiles().find { it.directory && it.name.startsWith('glassfish') }
-    assert new File(install, 'glassfish/modules/jakarta.faces.jar').file
+    facesJars.values().each { assert new File(install, "glassfish/modules/${it}").file }
     assert !new File(install, 'glassfish/modules/com.ibm.jbatch.container.jar').exists()
     assert !new File(install, 'glassfish/domains/domain1/logs/server.log').exists()
 

@@ -126,7 +126,9 @@ public class RunMojo extends AbstractStartMojo {
      */
     private void runEmbedded(Path archive) throws MojoExecutionException {
         // Before provisioning, so a second run leaves what the first one runs from alone.
-        requireFree(EmbeddedCommand.HTTP_PORT);
+        for (int port : EmbeddedCommand.ports(runsEmbeddedJar())) {
+            requireFree(port);
+        }
         List<String> commands = embeddedCommands();
         EmbeddedGlassFish glassfish = provisionEmbedded();
         String packaging = executedProject.getPackaging();
@@ -137,9 +139,6 @@ public class RunMojo extends AbstractStartMojo {
                 .commands(commands)
                 .name(name)
                 .contextRoot(contextRoot);
-        for (int port : command.ports()) {
-            requireFree(port);
-        }
 
         List<String> line;
         List<String> earContextRoots;
@@ -159,7 +158,8 @@ public class RunMojo extends AbstractStartMojo {
                     + EmbeddedCommand.DEBUG_ADDRESS);
         }
         String prefix = ServerLogTailer.prefix("glassfish:embedded", 0, LifecycleSupport.isConsoleColored());
-        EmbeddedRun run = EmbeddedRun.start(line, workDir, new EmbeddedStartup(war), prefix, GOAL, getLog());
+        EmbeddedRun run = EmbeddedRun.start(line, workDir, new EmbeddedStartup(war, commands), prefix, GOAL,
+                getLog());
         run.awaitStarted(startTimeout());
         List<String> urls = new ArrayList<>();
         for (String root : war ? run.contextRoots() : earContextRoots) {

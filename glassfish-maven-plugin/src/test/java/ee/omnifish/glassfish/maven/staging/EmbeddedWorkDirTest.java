@@ -18,8 +18,14 @@ import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -49,20 +55,35 @@ class EmbeddedWorkDirTest {
         }
     }
 
+    /** GlassFish opens its truststore with its master password, so the child gets a copy that has it. */
     @Test
-    void anInstallsChildGetsADomainDirectory() throws IOException {
-        Path home = install(tmp.resolve("glassfish8"), true);
-        Path trustStore = Files.writeString(tmp.resolve("custom.p12"), "intended truststore");
+    void theJarsChildGetsACopyOfItsTruststore() throws Exception {
+        Path trustStore = trustStore(tmp.resolve("custom.p12"), "secret");
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
         try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive,
-                EmbeddedGlassFish.install(home, trustStore))) {
+                EmbeddedGlassFish.jar(tmp, tmp.resolve("glassfish-embedded-all-8.0.5.jar"), trustStore, "secret"))) {
+            assertThat(names(workDir.dir()), containsInAnyOrder("shop.war", EmbeddedWorkDir.TRUST_STORE));
+            assertThat(load(workDir.dir().resolve(EmbeddedWorkDir.TRUST_STORE), "changeit").getCertificate("idp"),
+                    equalTo(certificate()));
+        }
+    }
+
+    @Test
+    void anInstallsChildGetsADomainDirectory() throws Exception {
+        Path home = install(tmp.resolve("glassfish8"), true);
+        Path trustStore = trustStore(tmp.resolve("custom.p12"), "secret");
+        Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
+
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive,
+                EmbeddedGlassFish.install(tmp, home, trustStore, "secret"))) {
             Path domain = workDir.dir().resolve(EmbeddedWorkDir.DOMAIN_DIR);
             assertThat(names(domain.resolve("config")), containsInAnyOrder("domain.xml", "keystore.p12",
                     "cacerts.p12"));
             assertThat(Files.readString(domain.resolve("config/domain.xml")), equalTo("<domain embedded=\"true\"/>"));
             assertThat(Files.readString(domain.resolve("config/keystore.p12")), equalTo("key of s1as"));
-            assertThat(Files.readString(domain.resolve("config/cacerts.p12")), equalTo("intended truststore"));
+            assertThat(load(domain.resolve("config/cacerts.p12"), "changeit").getCertificate("idp"),
+                    equalTo(certificate()));
             assertThat(Files.isDirectory(domain.resolve("docroot")), is(true));
         }
     }
@@ -73,7 +94,7 @@ class EmbeddedWorkDirTest {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
         IOException e = assertThrows(IOException.class, () -> EmbeddedWorkDir.create(tmp.resolve("work"), OWNER,
-                archive, EmbeddedGlassFish.install(home, home.resolve("unused.p12"))));
+                archive, EmbeddedGlassFish.install(tmp, home, home.resolve("unused.p12"), "changeit")));
 
         assertThat(e.getMessage(), containsString("has no org/glassfish/embed/domain.xml"));
     }
@@ -110,6 +131,18 @@ class EmbeddedWorkDirTest {
     }
 
     @Test
+    void whileTheChildRunsTheStageDirectoryNamesIt() throws IOException {
+        Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
+        EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar());
+
+        workDir.runs(ProcessHandle.current());
+        assertThat(EmbeddedProcesses.runningFrom(tmp).isPresent(), is(true));
+
+        workDir.close();
+        assertThat(Files.exists(tmp.resolve(EmbeddedProcesses.PID_FILE)), is(false));
+    }
+
+    @Test
     void closingRemovesTheDirectory() throws IOException {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
         EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar());
@@ -120,8 +153,30 @@ class EmbeddedWorkDirTest {
         assertThat(Files.isDirectory(tmp.resolve("work")), is(true));
     }
 
+    /** A truststore that {@code password} opens, with a certificate as {@code idp}. */
+    private static Path trustStore(Path file, String password) throws Exception {
+        KeyStore store = KeyStore.getInstance("PKCS12");
+        store.load(null, null);
+        store.setCertificateEntry("idp", certificate());
+        try (OutputStream out = Files.newOutputStream(file)) {
+            store.store(out, password.toCharArray());
+        }
+        return file;
+    }
+
+    private static Certificate certificate() throws Exception {
+        Path pem = Paths.get(EmbeddedWorkDirTest.class.getResource("/certs/trusted-a.pem").toURI());
+        try (InputStream in = Files.newInputStream(pem)) {
+            return CertificateFactory.getInstance("X.509").generateCertificate(in);
+        }
+    }
+
+    private static KeyStore load(Path trustStore, String password) throws Exception {
+        return KeyStore.getInstance(trustStore.toFile(), password.toCharArray());
+    }
+
     private EmbeddedGlassFish jar() {
-        return EmbeddedGlassFish.jar(tmp.resolve("glassfish-embedded-all-8.0.5.jar"), null, null);
+        return EmbeddedGlassFish.jar(tmp, tmp.resolve("glassfish-embedded-all-8.0.5.jar"), null, null);
     }
 
     /** An install with domain1's keystore, and a kernel.jar that has Embedded's domain.xml when {@code embedded}. */

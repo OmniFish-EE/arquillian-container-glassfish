@@ -124,6 +124,7 @@ try {
     runs << first
     def url = deployedAt(first, 'run-1.log')
     assert url == 'http://localhost:8080/run-embedded-it/'
+    assert new File(basedir, 'run-1.log').text.contains('http-listener.port=8080')
     assert page(url).contains('marker: from a post-boot command')
     assert page("${url}trust.jsp?port=${trusted.address.port}").contains('reply from server.p12')
     assert page("${url}trust.jsp?port=${untrusted.address.port}").contains('javax.net.ssl.SSLHandshakeException')

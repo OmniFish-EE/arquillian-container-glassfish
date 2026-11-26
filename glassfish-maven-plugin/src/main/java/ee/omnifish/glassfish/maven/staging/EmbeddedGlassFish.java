@@ -27,12 +27,14 @@ public final class EmbeddedGlassFish {
     /** The static shell of an install, relative to its root. */
     static final String STATIC_SHELL = "glassfish/lib/embedded/glassfish-embedded-static-shell.jar";
 
+    private final Path stageDir;
     private final Path jar;
     private final Path home;
     private final Path trustStore;
     private final String trustStorePassword;
 
-    private EmbeddedGlassFish(Path jar, Path home, Path trustStore, String trustStorePassword) {
+    private EmbeddedGlassFish(Path stageDir, Path jar, Path home, Path trustStore, String trustStorePassword) {
+        this.stageDir = stageDir;
         this.jar = jar;
         this.home = home;
         this.trustStore = trustStore;
@@ -40,24 +42,33 @@ public final class EmbeddedGlassFish {
     }
 
     /**
-     * The self-contained JAR. Its domain has no truststore, so the child
-     * selects {@code trustStore} with {@code javax.net.ssl.trustStore}.
+     * The self-contained JAR, staged in {@code stageDir}. Its domain has no
+     * truststore, so the child selects a copy of {@code trustStore} with
+     * {@code javax.net.ssl.trustStore}.
      *
      * @param trustStore the truststore with the imported certificates, or
      *        {@code null} for the JDK's
+     * @param trustStorePassword the password that opens {@code trustStore}
      */
-    public static EmbeddedGlassFish jar(Path jar, Path trustStore, String trustStorePassword) {
-        return new EmbeddedGlassFish(jar, null, trustStore, trustStorePassword);
+    public static EmbeddedGlassFish jar(Path stageDir, Path jar, Path trustStore, String trustStorePassword) {
+        return new EmbeddedGlassFish(stageDir, jar, null, trustStore, trustStorePassword);
     }
 
     /**
-     * An install, run through its static shell. GlassFish reads the
-     * truststore of its instance, so {@code trustStore} is copied there.
+     * An install, staged in {@code stageDir}, run through its static shell.
+     * GlassFish reads the truststore of its instance, so a copy of
+     * {@code trustStore} goes there.
      *
      * @param trustStore the truststore for the instance, such as {@code domain1}'s
+     * @param trustStorePassword the password that opens {@code trustStore}
      */
-    public static EmbeddedGlassFish install(Path home, Path trustStore) {
-        return new EmbeddedGlassFish(null, home, trustStore, null);
+    public static EmbeddedGlassFish install(Path stageDir, Path home, Path trustStore, String trustStorePassword) {
+        return new EmbeddedGlassFish(stageDir, null, home, trustStore, trustStorePassword);
+    }
+
+    /** The stage directory it runs from. */
+    public Path stageDir() {
+        return stageDir;
     }
 
     public boolean isJar() {
@@ -74,12 +85,12 @@ public final class EmbeddedGlassFish {
         return home;
     }
 
-    /** The truststore the child uses, or {@code null} for the JDK's. */
+    /** The truststore the child uses a copy of, or {@code null} for the JDK's. */
     public Path trustStore() {
         return trustStore;
     }
 
-    /** The password of the JAR's {@link #trustStore}. */
+    /** The password that opens {@link #trustStore}. */
     public String trustStorePassword() {
         return trustStorePassword;
     }

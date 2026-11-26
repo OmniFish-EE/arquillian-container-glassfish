@@ -94,6 +94,24 @@ class StagerTest {
         assertThat(e.getMessage(), containsString("<overlayTargetDir> or <poolSource> (gf.pool.source)"));
     }
 
+    /** Overlays that are all skipped, one by one, need no target, as for GlassFish Embedded's JAR. */
+    @Test
+    void overlaysThatAreAllSkippedNeedNoTarget() throws Exception {
+        OverlayCoord skipped = new OverlayCoord("org.glassfish", "jakarta.faces", "4.1.18", "jar", null,
+                "jakarta.faces.jar");
+        skipped.setSkip(true);
+        OverlayCoord notApplied = new OverlayCoord("org.glassfish", "jakarta.faces", "4.1.18", "jar", null,
+                "jakarta.faces.jar");
+        notApplied.setApply(false);
+
+        StageSpec spec = new Stager(coord -> {
+            throw new AssertionError("resolved " + coord.toGav());
+        }, log).spec(Edition.EMBEDDED.distribution("8.0.5", null, false), tmp.toFile(), false, null,
+                List.of(skipped, notApplied), null, false, CertImport.NONE, HOME);
+
+        assertEquals(null, spec.overlayTargetDir());
+    }
+
     /** Even when they agree, and also with overlaySkip, since the pom is wrong either way. */
     @Test
     void anOverlaySetsSkipOrApplyNotBoth() {

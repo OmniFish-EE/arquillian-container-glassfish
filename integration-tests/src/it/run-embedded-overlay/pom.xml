@@ -34,7 +34,9 @@
         shell, with Mojarra overlaid and a trusted CA: it requests the URL run
         prints, checks the overlaid Mojarra, the trusted CA and HTTPS, has
         glassfish:provision fail to stage afresh what it runs from, and ends
-        it as Ctrl+C would. Run via integration-tests' maven-invoker harness.
+        it as Ctrl+C would. On GlassFish 9, it overlays Mojarra 5's API and
+        implementation apart. Run via integration-tests' maven-invoker
+        harness.
     </description>
 
     <modules>
@@ -45,5 +47,7 @@
         <container.version>@project.version@</container.version>
         <glassfish.version>@glassfish.version@</glassfish.version>
         <mojarra.overlay>@mojarra.overlay@</mojarra.overlay>
+        <!-- Whether the Mojarra overlaid comes as its API and its implementation; see web app/pom.xml. -->
+        <faces.split>false</faces.split>
     </properties>
 </project>

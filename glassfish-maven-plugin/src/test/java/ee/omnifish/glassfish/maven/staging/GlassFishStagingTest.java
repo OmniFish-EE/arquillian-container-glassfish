@@ -546,6 +546,23 @@ class GlassFishStagingTest {
         assertThat(Files.getLastModifiedTime(trustStore), equalTo(written));
     }
 
+    /** With every overlay skipped, one by one, there's nothing to overlay the JAR with. */
+    @Test
+    void anEmbeddedJarWithEveryOverlaySkippedIsCopied(@TempDir Path tmp) throws IOException {
+        Path jar = zip(tmp, "org/glassfish/runnablejar/UberMain.class");
+        Path stage = tmp.resolve("stage");
+        OverlayCoord skipped = faces();
+        skipped.setSkip(true);
+        OverlayCoord notApplied = faces();
+        notApplied.setApply(false);
+
+        GlassFishStaging.stage(new StageSpec(stage, embedded(), false, null, null, List.of(skipped, notApplied),
+                false), coord -> jar);
+
+        assertThat(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar")),
+                equalTo(Files.readAllBytes(jar)));
+    }
+
     @Test
     void switchingFromAnEmbeddedJarToAZipStagesAfresh(@TempDir Path tmp) throws IOException {
         Path jar = zip(tmp.resolve("jar"), "org/glassfish/runnablejar/UberMain.class");
@@ -580,6 +597,24 @@ class GlassFishStagingTest {
         } finally {
             child.destroyForcibly().waitFor();
         }
+    }
+
+    /** Also where the system doesn't say what a process runs, by the name glassfish:run gives its child there. */
+    @Test
+    void aJarANamedChildRunsFromIsNotStagedAfresh(@TempDir Path tmp) throws Exception {
+        Path jar = zip(tmp, "build-1");
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+        EmbeddedProcesses.record(stage, ProcessHandle.current());
+
+        zip(tmp, "build-2");
+        Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+        IOException e = assertThrows(IOException.class,
+                () -> GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar));
+
+        assertThat(e.getMessage(), containsString("GlassFish Embedded runs from it"));
+        assertThat(new String(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar"))),
+                containsString("build-1"));
     }
 
     // --- trusted certificates ---

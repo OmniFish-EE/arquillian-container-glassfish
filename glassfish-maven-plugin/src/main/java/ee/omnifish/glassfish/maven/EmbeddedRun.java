@@ -65,15 +65,20 @@ final class EmbeddedRun implements AutoCloseable {
      */
     static EmbeddedRun start(List<String> command, EmbeddedWorkDir workDir, EmbeddedStartup startup, String prefix,
             String goal, Log log) throws MojoExecutionException {
-        Process process;
+        Process process = null;
         try {
             process = new ProcessBuilder(command)
                     .directory(workDir.dir().toFile())
                     .redirectErrorStream(true)
                     .start();
+            // So staging leaves what it runs from alone.
+            workDir.runs(process.toHandle());
             // GlassFish Embedded reads nothing without --prompt.
             process.getOutputStream().close();
         } catch (IOException e) {
+            if (process != null) {
+                process.destroyForcibly();
+            }
             workDir.close();
             throw new MojoExecutionException("Starting GlassFish Embedded failed: " + e.getMessage(), e);
         }

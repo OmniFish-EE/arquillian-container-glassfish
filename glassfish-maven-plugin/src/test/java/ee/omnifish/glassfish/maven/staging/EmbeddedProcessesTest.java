@@ -11,18 +11,62 @@
 package ee.omnifish.glassfish.maven.staging;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class EmbeddedProcessesTest {
 
     private static final Path STAGE = Path.of(File.separator + "build", "target", "dist").toAbsolutePath();
     private static final List<Path> DIRS = List.of(STAGE);
+
+    @TempDir
+    Path tmp;
+
+    /** Also where the system doesn't say what a process runs: this test's JVM runs nothing from tmp. */
+    @Test
+    void theChildTheStageDirectoryNamesRunsFromIt() throws Exception {
+        EmbeddedProcesses.record(tmp, ProcessHandle.current());
+
+        assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.of(ProcessHandle.current())));
+    }
+
+    @Test
+    void aNamedChildThatEndedDoesntRun() throws Exception {
+        Process ended = new ProcessBuilder(ProcessHandle.current().info().command().orElseThrow(), "-version")
+                .start();
+        ended.waitFor();
+        Files.writeString(tmp.resolve(EmbeddedProcesses.PID_FILE), String.valueOf(ended.pid()));
+
+        assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.empty()));
+    }
+
+    /** A process that got the pid of the child later isn't it. */
+    @Test
+    void aProcessThatStartedAtAnotherTimeIsntTheNamedChild() throws Exception {
+        Files.writeString(tmp.resolve(EmbeddedProcesses.PID_FILE), ProcessHandle.current().pid() + " 0");
+
+        assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.empty()));
+    }
+
+    @Test
+    void forgettingAChildLeavesAnothersName() throws Exception {
+        EmbeddedProcesses.record(tmp, ProcessHandle.current());
+
+        EmbeddedProcesses.forget(tmp, ProcessHandle.current().parent().orElseThrow());
+        assertThat(Files.exists(tmp.resolve(EmbeddedProcesses.PID_FILE)), is(true));
+
+        EmbeddedProcesses.forget(tmp, ProcessHandle.current());
+        assertThat(Files.exists(tmp.resolve(EmbeddedProcesses.PID_FILE)), is(false));
+    }
 
     @Test
     void theJarsChildRunsFromTheStageDirectory() {

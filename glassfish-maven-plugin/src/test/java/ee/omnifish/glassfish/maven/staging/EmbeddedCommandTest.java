@@ -42,7 +42,8 @@ class EmbeddedCommandTest {
     void theJarRunsTheApplicationOverHttp() throws IOException {
         Path jar = tmp.resolve("glassfish-embedded-all-8.0.5.jar");
 
-        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(jar, null, null), "shop.war", true).build();
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, jar, null, null), "shop.war", true)
+                .build();
 
         assertThat(line.get(0), endsWith(File.separator + "bin" + File.separator
                 + (File.separatorChar == '\\' ? "java.exe" : "java")));
@@ -50,22 +51,26 @@ class EmbeddedCommandTest {
                 "--noInfo=true", "deploy shop.war", EmbeddedCommand.CONTEXT_ROOT_QUERY));
     }
 
-    /** Its domain has no truststore, so the child selects the one with the certificates. */
+    /**
+     * Its domain has no truststore, so the child selects its working
+     * directory's copy of the one with the certificates, which has
+     * GlassFish's master password, whatever the original's is.
+     */
     @Test
     void theJarSelectsItsTruststore() throws IOException {
         Path jar = tmp.resolve("glassfish-embedded-all-8.0.5.jar");
-        Path trustStore = tmp.resolve("cacerts.p12");
+        Path trustStore = tmp.resolve("custom.p12");
 
-        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(jar, trustStore, "changeit"), "shop.war", true)
-                .build();
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, jar, trustStore, "secret"), "shop.war",
+                true).build();
 
-        assertThat(line.subList(1, 4), contains("-Djavax.net.ssl.trustStore=" + trustStore.toAbsolutePath(),
+        assertThat(line.subList(1, 4), contains("-Djavax.net.ssl.trustStore=cacerts.p12",
                 "-Djavax.net.ssl.trustStorePassword=changeit", "-jar"));
     }
 
     @Test
     void debuggingAndTheLogFormatAreOptionsOfTheJvm() throws IOException {
-        EmbeddedGlassFish glassfish = EmbeddedGlassFish.jar(tmp.resolve("embedded.jar"), null, null);
+        EmbeddedGlassFish glassfish = EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null);
 
         List<String> debug = new EmbeddedCommand(glassfish, "shop.war", true).debug(true, false).messagesOnly(true)
                 .build();
@@ -82,7 +87,8 @@ class EmbeddedCommandTest {
     void anInstallRunsEmbeddedThroughItsStaticShell() throws IOException {
         Path home = install(tmp.resolve("glassfish8"));
 
-        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.install(home, null), "shop.ear", false).build();
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.install(tmp, home, null, null), "shop.ear", false)
+                .build();
 
         Path glassfish = home.toAbsolutePath().resolve("glassfish");
         assertThat(line.subList(1, line.size()), contains(
@@ -92,7 +98,7 @@ class EmbeddedCommandTest {
                 "--add-modules=jdk.incubator.vector",
                 "-cp",
                 glassfish.resolve("lib/embedded/glassfish-embedded-static-shell.jar") + File.pathSeparator
-                        + glassfish.resolve("lib/bootstrap").resolve("*"),
+                        + glassfish.resolve("lib/bootstrap") + File.separator + "*",
                 "org.glassfish.runnablejar.UberMain",
                 "--domainDir=domain",
                 "--httpPort=8080",
@@ -103,16 +109,14 @@ class EmbeddedCommandTest {
 
     @Test
     void theOpenPortsDependOnTheForm() {
-        assertThat(new EmbeddedCommand(EmbeddedGlassFish.jar(tmp.resolve("embedded.jar"), null, null), "a.war", true)
-                .ports(), contains(8080));
-        assertThat(new EmbeddedCommand(EmbeddedGlassFish.install(tmp, null), "a.war", true).ports(),
-                contains(8080, 8181));
+        assertThat(EmbeddedCommand.ports(true), contains(8080));
+        assertThat(EmbeddedCommand.ports(false), contains(8080, 8181));
     }
 
     /** GlassFish splits commands where whitespace has no backslash before it, and doesn't read quotes. */
     @Test
     void theCommandsComeFirstWithTheirQuotedSpacesEscaped() throws IOException {
-        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp.resolve("embedded.jar"), null, null),
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null),
                 "shop.war", true)
                 .commands(List.of("create-system-properties marker=\"from a command\"", "set a.b=c"))
                 .name("my shop")
@@ -128,7 +132,7 @@ class EmbeddedCommandTest {
 
     @Test
     void onlyAWarIsQueriedForItsContextRoot() throws IOException {
-        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp.resolve("embedded.jar"), null, null),
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null),
                 "bean.jar", false).build();
 
         assertThat(line.get(line.size() - 1), equalTo("deploy bean.jar"));
@@ -137,8 +141,8 @@ class EmbeddedCommandTest {
 
     @Test
     void aWordEndingWithABackslashCantBePassedOn() {
-        EmbeddedCommand command = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp.resolve("embedded.jar"), null, null),
-                "shop.war", true).commands(List.of("set a=b\\ c=d"));
+        EmbeddedGlassFish glassfish = EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null);
+        EmbeddedCommand command = new EmbeddedCommand(glassfish, "shop.war", true).commands(List.of("set a=b\\ c=d"));
 
         IllegalArgumentException e = assertThrows(IllegalArgumentException.class, command::build);
 
@@ -150,11 +154,11 @@ class EmbeddedCommandTest {
         Path runnable = jar(tmp.resolve("runnable.jar"), "org.glassfish.runnablejar.UberMain");
         Path old = jar(tmp.resolve("old.jar"), null);
 
-        assertDoesNotThrow(() -> EmbeddedGlassFish.jar(runnable, null, null).requireMainClass());
+        assertDoesNotThrow(() -> EmbeddedGlassFish.jar(tmp, runnable, null, null).requireMainClass());
         IOException withoutMainClass = assertThrows(IOException.class,
-                () -> EmbeddedGlassFish.jar(old, null, null).requireMainClass());
+                () -> EmbeddedGlassFish.jar(tmp, old, null, null).requireMainClass());
         IOException missing = assertThrows(IOException.class,
-                () -> EmbeddedGlassFish.install(tmp.resolve("glassfish8"), null).requireMainClass());
+                () -> EmbeddedGlassFish.install(tmp, tmp.resolve("glassfish8"), null, null).requireMainClass());
 
         assertThat(withoutMainClass.getMessage(), containsString("old.jar has no Main-Class"));
         assertThat(missing.getMessage(), containsString("glassfish-embedded-static-shell.jar"));

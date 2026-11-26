@@ -44,6 +44,7 @@ import ee.omnifish.glassfish.admin.rest.NodeAddress;
 import ee.omnifish.glassfish.maven.staging.EmbeddedCommand;
 import ee.omnifish.glassfish.maven.staging.FakeDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
+import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
 
 /** {@code run}'s ending, on an install whose {@code asadmin} is a shell script, and what it does before it starts. */
@@ -182,6 +183,41 @@ class RunMojoTest {
      */
     @Test
     void anEmbeddedRunFailsOnAnOccupiedPortBeforeItProvisions() throws Exception {
+        RunMojo run = embeddedRun();
+
+        assertFailsOnOccupied(EmbeddedCommand.HTTP_PORT, run);
+    }
+
+    /** With an overlay, the child runs from an install's static shell, which serves HTTPS too. */
+    @Test
+    void anOverlaidEmbeddedRunFailsOnAnOccupiedHttpsPortBeforeItProvisions() throws Exception {
+        RunMojo run = embeddedRun();
+        set(run, AbstractStagingMojo.class, "overlays", List.of(new OverlayCoord("org.glassfish", "jakarta.faces",
+                "4.1.18", "jar", null, "jakarta.faces.jar")));
+
+        assertFailsOnOccupied(EmbeddedCommand.HTTPS_PORT, run);
+    }
+
+    private static void assertFailsOnOccupied(int port, RunMojo run) throws IOException {
+        ServerSocket firstRun = null;
+        try {
+            firstRun = new ServerSocket(port);
+        } catch (BindException e) {
+            // Something answers there already.
+        }
+        try {
+            MojoExecutionException e = assertThrows(MojoExecutionException.class, run::execute);
+
+            assertThat(e.getMessage(), containsString("Something already answers on port " + port));
+        } finally {
+            if (firstRun != null) {
+                firstRun.close();
+            }
+        }
+    }
+
+    /** A glassfish:run of a WAR on GlassFish Embedded 8.0.5, without a stage directory. */
+    private RunMojo embeddedRun() throws IOException, ReflectiveOperationException {
         MavenProject project = new MavenProject();
         project.setArtifactId("app");
         project.setPackaging("war");
@@ -193,21 +229,8 @@ class RunMojoTest {
         run.setLog(log);
         set(run, RunMojo.class, "executedProject", project);
         set(run, AbstractStagingMojo.class, "edition", "embedded");
-        ServerSocket firstRun = null;
-        try {
-            firstRun = new ServerSocket(EmbeddedCommand.HTTP_PORT);
-        } catch (BindException e) {
-            // Something answers there already.
-        }
-        try {
-            MojoExecutionException e = assertThrows(MojoExecutionException.class, run::execute);
-
-            assertThat(e.getMessage(), containsString("Something already answers on port 8080"));
-        } finally {
-            if (firstRun != null) {
-                firstRun.close();
-            }
-        }
+        set(run, AbstractStagingMojo.class, "version", "8.0.5");
+        return run;
     }
 
     @Test

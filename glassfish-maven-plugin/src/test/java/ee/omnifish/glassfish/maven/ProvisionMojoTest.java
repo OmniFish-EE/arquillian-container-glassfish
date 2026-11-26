@@ -88,10 +88,10 @@ class ProvisionMojoTest {
                 "jakarta.faces.jar");
         notApplied.setApply(false);
 
-        assertTrue(ProvisionMojo.isOverlaid(List.of(skipped, applies), false));
-        assertFalse(ProvisionMojo.isOverlaid(List.of(applies), true));
-        assertFalse(ProvisionMojo.isOverlaid(List.of(skipped, notApplied), false));
-        assertFalse(ProvisionMojo.isOverlaid(null, false));
+        assertTrue(OverlayCoord.anyApplied(List.of(skipped, applies), false));
+        assertFalse(OverlayCoord.anyApplied(List.of(applies), true));
+        assertFalse(OverlayCoord.anyApplied(List.of(skipped, notApplied), false));
+        assertFalse(OverlayCoord.anyApplied(null, false));
     }
 
     @Test

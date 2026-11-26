@@ -52,9 +52,13 @@
                 <configuration>
                     <edition>embedded</edition>
                     <version>${glassfish.version}</version>
-                    <!-- Quoted, as the value has spaces. -->
+                    <!--
+                        Quoted, as the value has spaces. The query comes before the plugin's own deploy and query of
+                        the context root.
+                    -->
                     <postBootCommands>
                         create-system-properties run.marker="from a post-boot command"
+                        get configs.config.server-config.network-config.network-listeners.network-listener.http-listener.port
                     </postBootCommands>
                     <!-- The CA verify.groovy makes, which signed the server key it serves HTTPS with. -->
                     <trustedCerts>

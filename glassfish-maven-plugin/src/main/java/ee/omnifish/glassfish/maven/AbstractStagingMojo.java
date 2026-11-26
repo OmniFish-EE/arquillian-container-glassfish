@@ -271,15 +271,16 @@ abstract class AbstractStagingMojo extends AbstractMojo {
             Path staged = spec.stageDir().resolve(GlassFishStaging.EMBEDDED_TRUST_STORE);
             Path jarTrustStore = (explicitTrustStore != null) ? explicitTrustStore
                     : spec.certImport().hasWork() ? staged : null;
-            return EmbeddedGlassFish.jar(jar, jarTrustStore, trustStorePassword);
+            return EmbeddedGlassFish.jar(spec.stageDir(), jar, jarTrustStore, trustStorePassword);
         }
         if (spec.home() == null) {
             throw new MojoExecutionException("Can't run GlassFish Embedded: its install root isn't known");
         }
 
         try {
-            return EmbeddedGlassFish.install(spec.home(),
-                    (explicitTrustStore != null) ? explicitTrustStore : GlassFishStaging.domainTrustStore(spec.home()));
+            return EmbeddedGlassFish.install(spec.stageDir(), spec.home(),
+                    (explicitTrustStore != null) ? explicitTrustStore : GlassFishStaging.domainTrustStore(spec.home()),
+                    trustStorePassword);
         } catch (IOException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }
@@ -351,18 +352,32 @@ abstract class AbstractStagingMojo extends AbstractMojo {
         return spec(new Stager(repoSystem, repoSession, remoteRepos, getLog())).home();
     }
 
-    private StageSpec spec(Stager stager) throws MojoExecutionException {
-        Edition edition = edition();
+    /**
+     * Whether GlassFish Embedded runs from its self-contained JAR, rather
+     * than from the static shell of an install, as with an overlay: known
+     * before anything is staged.
+     */
+    protected boolean runsEmbeddedJar() throws MojoExecutionException {
+        return Edition.isJar(distributionCoord());
+    }
+
+    /** The distribution to stage, from {@code <edition>}, {@code <version>} and {@code <distribution>}, or {@code null}. */
+    private DistributionCoord distributionCoord() throws MojoExecutionException {
         // Because of its -D property, Maven injects an empty bean when <distribution> isn't configured.
         DistributionCoord configured = (distribution == null || distribution.isEmpty()) ? null : distribution;
         // A pom's glassfish.version property feeds <version>, which mustn't make an existing install unpack one.
-        DistributionCoord dist = edition.distribution((home == null) ? version : null, configured,
-                isOverlaid(overlays, overlaySkip));
+        return edition().distribution((home == null) ? version : null, configured,
+                OverlayCoord.anyApplied(overlays, overlaySkip));
+    }
+
+    private StageSpec spec(Stager stager) throws MojoExecutionException {
+        Edition edition = edition();
+        DistributionCoord dist = distributionCoord();
         if (dist == null && home == null) {
             throw new MojoExecutionException("Nothing to provision: set <version> (-Dglassfish.version=<version>), "
                     + "<distribution>, or <home> for an existing install");
         }
-        checkEdition(edition, dist, home, unpackSkip, isOverlaid(overlays, overlaySkip));
+        checkEdition(edition, dist, home, unpackSkip, OverlayCoord.anyApplied(overlays, overlaySkip));
 
         // GlassFish Embedded runs them on every start instead.
         StagingCommands commands = edition.isEmbedded() ? StagingCommands.NONE
@@ -385,11 +400,6 @@ abstract class AbstractStagingMojo extends AbstractMojo {
             return new File(executionRootDirectory, "target/dist");
         }
         return stageDir;
-    }
-
-    /** Whether an overlay applies: one that isn't skipped, without {@code overlaySkip}. Package-private for unit tests. */
-    static boolean isOverlaid(List<OverlayCoord> overlays, boolean overlaySkip) {
-        return !overlaySkip && overlays != null && overlays.stream().anyMatch(overlay -> !overlay.isSkipped());
     }
 
     /**

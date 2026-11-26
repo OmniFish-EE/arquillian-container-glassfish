@@ -32,7 +32,7 @@ class EmbeddedStartupTest {
     @Test
     void aWarHasStartedOnceItsContextRootIsKnown() throws Exception {
         for (String recording : List.of("war-default.log", "war-messages.log")) {
-            EmbeddedStartup startup = new EmbeddedStartup(true);
+            EmbeddedStartup startup = new EmbeddedStartup(true, List.of());
 
             int line = feedUntilStarted(startup, recording);
 
@@ -45,7 +45,7 @@ class EmbeddedStartupTest {
 
     @Test
     void anEarHasStartedOnceItsDeployEnded() throws Exception {
-        EmbeddedStartup startup = new EmbeddedStartup(false);
+        EmbeddedStartup startup = new EmbeddedStartup(false, List.of());
 
         feedUntilStarted(startup, "ear-messages.log");
 
@@ -56,7 +56,7 @@ class EmbeddedStartupTest {
 
     @Test
     void anEjbJarHasStartedOnceItsDeployEnded() throws Exception {
-        EmbeddedStartup startup = new EmbeddedStartup(false);
+        EmbeddedStartup startup = new EmbeddedStartup(false, List.of());
 
         feedUntilStarted(startup, "ejb-default.log");
 
@@ -64,10 +64,32 @@ class EmbeddedStartupTest {
         assertThat(startup.name(), equalTo("bean"));
     }
 
+    /**
+     * Startup commands that query, deploy a helper, then query again, come
+     * before the application's deploy and query, which lists both.
+     */
+    @Test
+    void theStartupCommandsDeploysAndQueriesDontCount() throws Exception {
+        List<String> commands = List.of(
+                "get configs.config.server-config.network-config.network-listeners.network-listener.*.port",
+                "deploy alpha.war", "get applications.application.*.context-root");
+        for (String recording : List.of("war-startup-commands-default.log", "war-startup-commands-messages.log")) {
+            EmbeddedStartup startup = new EmbeddedStartup(true, commands);
+
+            int line = feedUntilStarted(startup, recording);
+
+            assertThat(recording, startup.failure(), nullValue());
+            assertThat(recording, startup.isStarted(), is(true));
+            assertThat(recording, startup.name(), equalTo("shop"));
+            assertThat(recording, startup.contextRoots(), contains("/descriptor-shop"));
+            assertThat(recording, lines(recording).get(line), containsString("context-root=/alpha"));
+        }
+    }
+
     /** A record of another command, without a description, doesn't count. */
     @Test
     void otherCommandsDontStartIt() {
-        EmbeddedStartup startup = new EmbeddedStartup(true);
+        EmbeddedStartup startup = new EmbeddedStartup(true, List.of());
 
         startup.accept("SUCCESS: PlainTextActionReporterSUCCESSNo monitoring data to report.");
         startup.accept("");
@@ -83,7 +105,7 @@ class EmbeddedStartupTest {
     /** As with GlassFish 7.0.x, which goes on after a failed command. */
     @Test
     void aQueryWithoutADeployFails() {
-        EmbeddedStartup startup = new EmbeddedStartup(true);
+        EmbeddedStartup startup = new EmbeddedStartup(true, List.of());
 
         startup.accept("INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull");
         startup.accept("");

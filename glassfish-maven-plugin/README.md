@@ -221,8 +221,9 @@ the overlays and their files, the certificates, and the commands with
 - A file that can't be deleted, for example because a GlassFish running from
   the install keeps it open, fails the build.
 - While `domain1` runs from the install, for example after `glassfish:start`,
-  a changed fingerprint fails the build instead, and the install is kept.
-  Stop it with `glassfish:stop`, then build again.
+  or GlassFish Embedded runs from `stageDir`, after `glassfish:run`, a
+  changed fingerprint fails the build instead, and the install is kept.
+  Stop it with `glassfish:stop`, or end that `run`, then build again.
 
 With `unpackSkip`, the install isn't the plugin's: overlays are copied and
 certificates imported into it on every run. If `stageDir` holds an install
@@ -535,25 +536,32 @@ until Ctrl+C stops it.
 
 - **The two forms:** without overlays, it runs the self-contained JAR,
   copied to `target/dist`, where `java -jar` also runs it by hand. With an
-  overlay, it unpacks the Full or Web ZIP, overlays it as for `full` and
+  overlay that isn't skipped, it unpacks the Full or Web ZIP, overlays it as for `full` and
   `web`, and runs GlassFish Embedded from that install, through its static
   shell, `glassfish/lib/embedded/glassfish-embedded-static-shell.jar`.
 - **Which overlays the static shell loads:** the module JARs its manifest
   names, such as `glassfish/modules/jakarta.faces.jar`, which an overlay can
   replace. A JAR an overlay adds under a new name isn't loaded. In GlassFish
-  9, Mojarra is `glassfish/modules/mojarra.jar`.
+  9, Mojarra is `glassfish/modules/mojarra.jar`, and its API
+  `glassfish/modules/jakarta.faces-api.jar`.
 - **Ports:** HTTP on 8080. The static shell also serves HTTPS on 8181, with
   `domain1`'s key; the JAR has no server key, so it serves HTTP only. `run`
   fails when something already answers on one of them, before it
-  provisions anything, so a second `run` leaves the first one's GlassFish
-  alone. While a `run` runs GlassFish Embedded from `target/dist`, staging
-  doesn't replace it there either.
+  provisions anything. A `provision` bound to the lifecycle, as with
+  `<extensions>true</extensions>`, runs before that, in the `package` that
+  `run` runs.
+- **The GlassFish a `run` runs:** while it runs GlassFish Embedded from
+  `target/dist`, staging doesn't replace it there, so neither a second `run`
+  nor a `provision` pulls it out from under it. `target/dist` names its
+  process meanwhile, in `glassfish-embedded.pid`.
 - **Trusted certificates:** for the JAR, `provision` copies the JDK's trust
   anchors to `target/dist/cacerts.p12`, imports the certificates into that
   copy, and `run` has GlassFish use it. For the static shell, they go into
   `domain1`'s truststore, as for `full` and `web`, which GlassFish Embedded
   then uses. `<trustStore>` names another store, which GlassFish then uses
-  instead.
+  instead. GlassFish opens its truststore with its master password,
+  `changeit`, so `run` gives GlassFish Embedded a copy with that password,
+  whatever `<trustStorePassword>` the original has.
 - **Commands:** `postBootCommands`, then `postStartCommands`, run on every
   start, before the deploy: GlassFish Embedded keeps no domain between
   starts. A failed one ends the start, also with `failOnCommandError` set to
@@ -567,15 +575,15 @@ until Ctrl+C stops it.
   `<finalName>` without one.
 - **The URLs:** for a WAR, with the context root GlassFish reports; for an
   EAR, with those its `application.xml` gives its web modules; none for an
-  EJB jar or RAR.
+  EJB jar or RAR. Applications a command deploys aren't among them.
 - **As for `domain1`:** `name`, `contextRoot`, `logMessagesOnly`, `debug`,
   `suspend` and `startTimeout` apply as they do there. The debugger listens
   on localhost:9009.
 - **Ending it:** Ctrl+C stops GlassFish Embedded, with Maven, as does mvnd's
   Ctrl+C. When GlassFish Embedded ends otherwise, `run` returns.
-- **Tested with** GlassFish 7.1.0 and 8.0.5, and with 9.0.0-M4 without
-  overlays. GlassFish 7.0.x runs an application from the command line since
-  7.0.18, but keeps going after a failed command there.
+- **Tested with** GlassFish 7.1.0, 8.0.5 and 9.0.0-M4. GlassFish 7.0.x runs
+  an application from the command line since 7.0.18, but keeps going after
+  a failed command there.
 - **Not yet:** `start` and `stop` don't run GlassFish Embedded, and neither
   `<home>` nor `<unpackSkip>` applies to it.
 

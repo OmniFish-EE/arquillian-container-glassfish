@@ -10,6 +10,8 @@
  */
 package ee.omnifish.glassfish.maven.staging;
 
+import java.util.List;
+
 /**
  * Single overlay artifact: an {@link ArtifactCoord} plus the file name it
  * should land under in the staged install's {@code modules/} directory.
@@ -62,5 +64,10 @@ public class OverlayCoord extends ArtifactCoord {
     /** Whether staging leaves this overlay out: with {@code <skip>true</skip>}, or {@code <apply>false</apply>}. */
     public boolean isSkipped() {
         return Boolean.TRUE.equals(skip) || Boolean.FALSE.equals(apply);
+    }
+
+    /** Whether one of {@code overlays} applies: one that isn't skipped, without {@code overlaySkip}. */
+    public static boolean anyApplied(List<OverlayCoord> overlays, boolean overlaySkip) {
+        return !overlaySkip && overlays != null && overlays.stream().anyMatch(overlay -> !overlay.isSkipped());
     }
 }

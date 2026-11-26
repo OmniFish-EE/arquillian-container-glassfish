@@ -388,13 +388,14 @@ public final class GlassFishStaging {
 
     private static void copyOverlays(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path target = spec.overlayTargetDir();
-        Files.createDirectories(target);
         for (OverlayCoord overlay : spec.overlays()) {
             if (overlay.isSkipped()) {
                 LOG.info("Skipping overlay " + overlay.toGav()
                         + (Boolean.FALSE.equals(overlay.getApply()) ? " (apply=false)" : " (skip=true)"));
                 continue;
             }
+            // Only for an overlay that applies: with every one skipped, there may be no target, as for a JAR.
+            Files.createDirectories(target);
             Path source = resolver.resolve(overlay);
             String fileName = (overlay.getDestFileName() == null || overlay.getDestFileName().isEmpty())
                     ? source.getFileName().toString()
@@ -417,20 +418,29 @@ public final class GlassFishStaging {
      * store is read without its password, which only checks its integrity.
      */
     private static void writeJdkTrustStore(Path trustStore, char[] password) throws IOException {
-        Path jdkTrustStore = jdkTrustStore();
+        copyCertificates(jdkTrustStore(), null, trustStore, password);
+    }
+
+    /**
+     * Write the certificates of the truststore {@code source}, which
+     * {@code sourcePassword} opens, to {@code target}, as PKCS12 with
+     * {@code targetPassword}. The JDK probes the source's type from the file.
+     * Keys, which trust doesn't use, are left out.
+     */
+    public static void copyCertificates(Path source, char[] sourcePassword, Path target, char[] targetPassword)
+            throws IOException {
+        KeyStore store = loadTrustStore(source, sourcePassword);
         try {
-            KeyStore jdk = KeyStore.getInstance(jdkTrustStore.toFile(), (char[]) null);
             KeyStore copy = KeyStore.getInstance("PKCS12");
             copy.load(null, null);
-            for (String alias : Collections.list(jdk.aliases())) {
-                if (jdk.isCertificateEntry(alias)) {
-                    copy.setCertificateEntry(alias, jdk.getCertificate(alias));
+            for (String alias : Collections.list(store.aliases())) {
+                if (store.isCertificateEntry(alias)) {
+                    copy.setCertificateEntry(alias, store.getCertificate(alias));
                 }
             }
-            storeAtomically(copy, trustStore, password);
+            storeAtomically(copy, target, targetPassword);
         } catch (GeneralSecurityException e) {
-            throw new IOException("Could not copy the JDK's trust anchors from " + jdkTrustStore + ": "
-                    + e.getMessage(), e);
+            throw new IOException("Could not copy the certificates of " + source + ": " + e.getMessage(), e);
         }
     }
 
