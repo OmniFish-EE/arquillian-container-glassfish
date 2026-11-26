@@ -20,13 +20,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.net.BindException;
 import java.net.ServerSocket;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.DefaultArtifact;
+import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.AfterEach;
@@ -36,8 +41,10 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import ee.omnifish.glassfish.admin.rest.NodeAddress;
+import ee.omnifish.glassfish.maven.staging.EmbeddedCommand;
 import ee.omnifish.glassfish.maven.staging.FakeDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
+import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
 
 /** {@code run}'s ending, on an install whose {@code asadmin} is a shell script, and what it does before it starts. */
@@ -167,6 +174,63 @@ class RunMojoTest {
         MojoExecutionException e = assertThrows(MojoExecutionException.class, run::execute);
 
         assertThat(e.getMessage(), containsString("the package phase made no war"));
+    }
+
+    /**
+     * A second run fails on the port the first one's child serves on, before
+     * it provisions: staging could otherwise wipe what that child runs from.
+     * Without a stage directory, provisioning would fail otherwise.
+     */
+    @Test
+    void anEmbeddedRunFailsOnAnOccupiedPortBeforeItProvisions() throws Exception {
+        RunMojo run = embeddedRun();
+
+        assertFailsOnOccupied(EmbeddedCommand.HTTP_PORT, run);
+    }
+
+    /** With an overlay, the child runs from an install's static shell, which serves HTTPS too. */
+    @Test
+    void anOverlaidEmbeddedRunFailsOnAnOccupiedHttpsPortBeforeItProvisions() throws Exception {
+        RunMojo run = embeddedRun();
+        set(run, AbstractStagingMojo.class, "overlays", List.of(new OverlayCoord("org.glassfish", "jakarta.faces",
+                "4.1.18", "jar", null, "jakarta.faces.jar")));
+
+        assertFailsOnOccupied(EmbeddedCommand.HTTPS_PORT, run);
+    }
+
+    private static void assertFailsOnOccupied(int port, RunMojo run) throws IOException {
+        ServerSocket firstRun = null;
+        try {
+            firstRun = new ServerSocket(port);
+        } catch (BindException e) {
+            // Something answers there already.
+        }
+        try {
+            MojoExecutionException e = assertThrows(MojoExecutionException.class, run::execute);
+
+            assertThat(e.getMessage(), containsString("Something already answers on port " + port));
+        } finally {
+            if (firstRun != null) {
+                firstRun.close();
+            }
+        }
+    }
+
+    /** A glassfish:run of a WAR on GlassFish Embedded 8.0.5, without a stage directory. */
+    private RunMojo embeddedRun() throws IOException, ReflectiveOperationException {
+        MavenProject project = new MavenProject();
+        project.setArtifactId("app");
+        project.setPackaging("war");
+        Artifact artifact = new DefaultArtifact("org.example", "app", "1", "compile", "war", null,
+                new DefaultArtifactHandler("war"));
+        artifact.setFile(Files.writeString(home.resolve("app.war"), "war").toFile());
+        project.setArtifact(artifact);
+        RunMojo run = new RunMojo();
+        run.setLog(log);
+        set(run, RunMojo.class, "executedProject", project);
+        set(run, AbstractStagingMojo.class, "edition", "embedded");
+        set(run, AbstractStagingMojo.class, "version", "8.0.5");
+        return run;
     }
 
     @Test

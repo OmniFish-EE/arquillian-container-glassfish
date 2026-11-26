@@ -1,0 +1,93 @@
+GlassFish will start now. Welcome!
+Nov 26, 2026 12:42:12 AM com.sun.enterprise.v3.server.CommonClassLoaderServiceImpl findDerbyJars
+INFO: Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Nov 26, 2026 12:42:12 AM org.glassfish.security.services.impl.authorization.AuthorizationServiceImpl initialize
+INFO: Authorization Service has successfully initialized.
+Nov 26, 2026 12:42:12 AM org.hibernate.validator.internal.util.Version <clinit>
+INFO: HV000001: Hibernate Validator 9.1.4.Final
+Nov 26, 2026 12:42:12 AM com.sun.enterprise.v3.server.SystemTasksImpl postConstruct
+INFO: Loaded embedded server named: server
+Nov 26, 2026 12:42:12 AM org.glassfish.main.boot.embedded.AutoDisposableGlassFish <init>
+INFO: Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.v3.services.impl.GrizzlyProxy start0
+INFO: Grizzly Framework 5.0.3 started in: 22 ms - bound to [/0.0.0.0:18080]
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.v3.services.impl.GrizzlyService createNetworkProxy
+INFO: Network listener https-listener on port 0 disabled per domain.xml
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.v3.admin.adapter.AdminEndpointDecider setGuiContextRoot
+INFO: Admin Console Adapter: context root: /admin
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.v3.admin.adapter.AdminEndpointDecider setGuiContextRoot
+INFO: Admin Console Adapter: context root: /admin
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.v3.admin.adapter.AdminEndpointDecider setGuiContextRoot
+INFO: Admin Console Adapter: context root: /admin
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.v3.server.AppServerStartup postStartupJob
+INFO: GlassFish  (commit: null) startup time: Embedded (584 ms), startup services (272 ms), total (856 ms)
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.connectors.jms.util.JmsRaUtil upgradeIfNecessary
+INFO: No JMS RA installation RAR found on path /tmp/gfembed1595082833161564228/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+Nov 26, 2026 12:42:13 AM org.glassfish.admin.mbeanserver.JMXStartupService$JMXConnectorsStarterThread run
+INFO: JMXStartupService has disabled JMXConnector system
+Nov 26, 2026 12:42:13 AM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    configs.config.server-config.network-config.network-listeners.network-listener.https-listener.port=0
+    configs.config.server-config.network-config.network-listeners.network-listener.http-listener.port=18080
+
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.security.ee.authorization.PolicyLoader loadPolicy
+INFO: Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.security.SecurityLifecycle onInitialization
+INFO: Entering Security Startup Service.
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.security.auth.realm.Realm doInstantiate
+INFO: Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.security.auth.realm.Realm doInstantiate
+INFO: Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.security.auth.realm.Realm doInstantiate
+INFO: Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.security.SecurityLifecycle onInitialization
+INFO: Security Service(s) started successfully.
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.server.logging.ServerLogFileService getCurrentLogFile
+WARNING: The GlassFishLogHandler was not found, returning null
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.web.WebContainer createHttpListener
+INFO: Created HTTP listener http-listener on host/port 0.0.0.0:18080
+Nov 26, 2026 12:42:13 AM jakarta.enterprise.web.vs.server
+SEVERE: Error adding HttpProbes. NetworkListener https-listeners GrizzlyProxy is NULL
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.web.WebContainer createHosts
+INFO: Created virtual server server
+Nov 26, 2026 12:42:13 AM org.apache.catalina.realm.JAASRealm setContainer
+INFO: Setting JAAS app name glassfish-web
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.web.WebContainer loadSystemDefaultWebModules
+INFO: Virtual server server loaded default web module 
+Nov 26, 2026 12:42:13 AM org.glassfish.web.loader.WebappClassLoader close
+INFO: close(), this:
+org.glassfish.web.loader.WebappClassLoader@1bb15351[name=alpha], urls=[
+file:/tmp/gfembed1595082833161564228/applications/alpha/WEB-INF/classes
+file:/tmp/gfembed1595082833161564228/generated/ejb/alpha/
+][delegate=true, context=alpha, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=35, pathTimestamps.size=0, resourceEntryCache.size=0]
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.web.WebApplication start
+INFO: Loading application [alpha] at [/alpha]
+Nov 26, 2026 12:42:13 AM org.glassfish.deployment.admin.DeployCommand execute
+INFO: alpha was successfully deployed in 542 milliseconds.
+Nov 26, 2026 12:42:13 AM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name alpha.
+    [name=alpha
+
+Nov 26, 2026 12:42:13 AM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    applications.application.alpha.context-root=/alpha
+
+Nov 26, 2026 12:42:13 AM org.glassfish.web.loader.WebappClassLoader close
+INFO: close(), this:
+org.glassfish.web.loader.WebappClassLoader@784d9bc[name=shop], urls=[
+file:/tmp/gfembed1595082833161564228/applications/shop/WEB-INF/classes
+file:/tmp/gfembed1595082833161564228/generated/ejb/shop/
+][delegate=true, context=shop, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=0, pathTimestamps.size=0, resourceEntryCache.size=0]
+Nov 26, 2026 12:42:13 AM com.sun.enterprise.web.WebApplication start
+INFO: Loading application [shop] at [/descriptor-shop]
+Nov 26, 2026 12:42:13 AM org.glassfish.deployment.admin.DeployCommand execute
+INFO: shop was successfully deployed in 44 milliseconds.
+Nov 26, 2026 12:42:13 AM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name shop.
+    [name=shop
+
+Nov 26, 2026 12:42:13 AM org.glassfish.runnablejar.UberMain executeCommandFromString
+INFO: SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    applications.application.shop.context-root=/descriptor-shop
+    applications.application.alpha.context-root=/alpha
+

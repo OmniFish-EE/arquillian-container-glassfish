@@ -6,7 +6,8 @@ GlassFish distribution through your Maven repositories, unpacks it under
 setup commands on a brief start, and publishes where it landed as
 `glassfish.home`. That replaces the usual `maven-dependency-plugin` `unpack`
 block, and the [managed connector](../glassfish-managed/) picks the install
-up without further configuration.
+up without further configuration. Its `run` goal runs the project on
+GlassFish, also on GlassFish Embedded.
 
 | Coordinates  | Value                    |
 | ------------ | ------------------------ |
@@ -20,13 +21,13 @@ up without further configuration.
 | Goal        | Default phase          | Purpose |
 | ----------- | ---------------------- | ------- |
 | `provision` | `process-test-classes` | Resolve, unpack and overlay GlassFish, import certificates and run post-boot commands, then set `glassfish.home`. A re-run leaves the install alone while these inputs stay the same. |
-| `start`     | `pre-integration-test` | Provision as above, start `domain1`, run `postStartCommands`, and return, leaving it running. See *Starting and stopping GlassFish*. |
-| `stop`      | `post-integration-test` | Stop `domain1`. See *Starting and stopping GlassFish*. |
-| `run`       | none                   | Package the project, start `domain1` as `start` does, deploy the project's artifact, and keep running, with GlassFish's log on the console, until Ctrl+C. See *Running an application*. |
+| `start`     | `pre-integration-test` | Provision as above, start `domain1`, run `postStartCommands`, and return, leaving it running. Full and Web editions only. See *Starting and stopping GlassFish*. |
+| `stop`      | `post-integration-test` | Stop `domain1`. Full and Web editions only. See *Starting and stopping GlassFish*. |
+| `run`       | none                   | Package the project, start `domain1` as `start` does, deploy the project's artifact, and keep running, with GlassFish's log on the console, until Ctrl+C. See *Running an application*. On an Embedded edition, run the artifact on GlassFish Embedded instead. See *Running on GlassFish Embedded*. |
 
 ## Quick start
 
-Declare the plugin as an extension and give it a `<distribution>` version:
+Declare the plugin as an extension and give it a GlassFish `<version>`:
 
 ```xml
 <plugin>
@@ -35,9 +36,7 @@ Declare the plugin as an extension and give it a `<distribution>` version:
     <version>2.2.2</version>
     <extensions>true</extensions>
     <configuration>
-        <distribution>
-            <version>9.0.0</version>
-        </distribution>
+        <version>9.0.0</version>
     </configuration>
 </plugin>
 ```
@@ -48,7 +47,8 @@ the system property `glassfish.home`. The managed connector reads that
 property itself, so neither plugin needs `<systemPropertyVariables>`, and
 `arquillian.xml` needs no `glassFishHome`.
 
-`<distribution>9.0.0</distribution>` is short for the block above.
+`<distribution>9.0.0</distribution>` does the same. For the Web profile, or
+GlassFish Embedded, add an `<edition>`; see *Choosing GlassFish*.
 
 ### Lifecycle binding
 
@@ -107,7 +107,9 @@ note applies:
 
 | Parameter          | Property                     | Default                           | Notes |
 | ------------------ | ---------------------------- | --------------------------------- | ----- |
-| `distribution`     | `glassfish.distribution`     | (none)                            | GAV of the distribution to resolve and unpack. Only `<version>` is required. Also takes text: a version, or `groupId:artifactId:version[:type[:classifier]]`. |
+| `edition`          | `glassfish.edition`          | `full`                            | `full`, `web`, `embedded` or `embedded-web`. See *Choosing GlassFish*. |
+| `version`          | `glassfish.version`          | (none)                            | The GlassFish version of the `edition`'s artifact. A pom's `glassfish.version` property sets it too. Doesn't apply with `home`. |
+| `distribution`     | `glassfish.distribution`     | (none)                            | GAV of the distribution to resolve and unpack, overriding `version`. Only `<version>` is required. Also takes text: a version, or `groupId:artifactId:version[:type[:classifier]]`. |
 | `stageDir`         | `glassfish.stageDir`         | `${project.build.directory}/dist` | Where the zip is unpacked. |
 | `home`             | (none)                       | derived from the zip              | The install root. |
 | `homeProperty`     | (none)                       | `glassfish.home`                  | Project property set to the install root, and forwarded by the extension. |
@@ -161,6 +163,40 @@ consequences:
   With `-Dglassfish.provision.skip`, nothing is published, so the value from
   the pom or the command line is used.
 
+## Choosing GlassFish
+
+`<edition>` (`-Dglassfish.edition`) picks the GlassFish artifact, and how
+`run` starts it, and `<version>` (`-Dglassfish.version`) its version:
+
+| `<edition>` | Resolves | `run` starts |
+| ----------- | -------- | ------------ |
+| `full` (default) | `org.glassfish.main.distributions:glassfish:<version>:zip` | `domain1`, with `asadmin start-domain` |
+| `web` | `org.glassfish.main.distributions:web:<version>:zip` | `domain1` |
+| `embedded` | `org.glassfish.main.extras:glassfish-embedded-all:<version>`; with an overlay, the Full ZIP | GlassFish Embedded, with the application |
+| `embedded-web` | `org.glassfish.main.extras:glassfish-embedded-web:<version>`; with an overlay, the Web ZIP | GlassFish Embedded, with the application |
+
+```xml
+<configuration>
+    <edition>embedded</edition>
+    <version>8.0.5</version>
+</configuration>
+```
+
+- **There's no default version:** `<version>` or `<distribution>` gives it.
+  A pom that already defines a `glassfish.version` property, as for its
+  dependencies, sets `<version>` with it.
+- **`<distribution>` overrides `<version>`.** One that only gives a version,
+  as `<distribution>8.0.5</distribution>`, gives it to the edition's
+  artifact. One with coordinates, such as Payara's or a GlassFish snapshot's,
+  names the artifact itself, also when they're the Full ZIP's own. On an
+  Embedded edition, a JAR runs as it is, and a ZIP through its static shell.
+- **With `<home>`, `<version>` doesn't apply**, so an existing install isn't
+  replaced by one the version names. `<distribution>` with `<home>` works as
+  before.
+- **The Embedded editions** provision a JAR, or with an overlay, a ZIP; see
+  *Running on GlassFish Embedded*. They don't take `<home>` or `<unpackSkip>`,
+  and `start` and `stop` don't run them.
+
 ## Staging behaviour
 
 `provision` resolves `<distribution>` through the build's repositories and
@@ -185,8 +221,9 @@ the overlays and their files, the certificates, and the commands with
 - A file that can't be deleted, for example because a GlassFish running from
   the install keeps it open, fails the build.
 - While `domain1` runs from the install, for example after `glassfish:start`,
-  a changed fingerprint fails the build instead, and the install is kept.
-  Stop it with `glassfish:stop`, then build again.
+  or GlassFish Embedded runs from `stageDir`, after `glassfish:run`, a
+  changed fingerprint fails the build instead, and the install is kept.
+  Stop it with `glassfish:stop`, or end that `run`, then build again.
 
 With `unpackSkip`, the install isn't the plugin's: overlays are copied and
 certificates imported into it on every run. If `stageDir` holds an install
@@ -430,7 +467,7 @@ prints where it answers:
 [INFO] Ctrl+C stops GlassFish, as glassfish:stop does
 ```
 
-It needs no more than the plugin with a `<distribution>`. Until Ctrl+C, Maven
+It needs no more than the plugin with a `<version>`. Until Ctrl+C, Maven
 stays attached, and GlassFish's `server.log` appears on the console. Then
 GlassFish stops.
 
@@ -481,6 +518,74 @@ GlassFish stops.
   `postBootCommands`, that's when they run, on a brief start of their own,
   before `run` shows GlassFish's log, which starts with the domain `run`
   starts.
+
+## Running on GlassFish Embedded
+
+With an Embedded `<edition>`, `mvn glassfish:run` packages the project and
+runs it the way GlassFish Embedded runs an application from the command
+line: GlassFish's own main class, in a JVM of its own, with the archive.
+
+```
+[INFO] Deployed shop-1.0, at http://localhost:8080/shop/
+[INFO] Debugger at localhost:9009
+[INFO] Ctrl+C stops GlassFish Embedded
+```
+
+GlassFish's output appears on the console, after `[glassfish:embedded]`,
+until Ctrl+C stops it.
+
+- **The two forms:** without overlays, it runs the self-contained JAR,
+  copied to `target/dist`, where `java -jar` also runs it by hand. With an
+  overlay that isn't skipped, it unpacks the Full or Web ZIP, overlays it as for `full` and
+  `web`, and runs GlassFish Embedded from that install, through its static
+  shell, `glassfish/lib/embedded/glassfish-embedded-static-shell.jar`.
+- **Which overlays the static shell loads:** the module JARs its manifest
+  names, such as `glassfish/modules/jakarta.faces.jar`, which an overlay can
+  replace. A JAR an overlay adds under a new name isn't loaded. In GlassFish
+  9, Mojarra is `glassfish/modules/mojarra.jar`, and its API
+  `glassfish/modules/jakarta.faces-api.jar`.
+- **Ports:** HTTP on 8080. The static shell also serves HTTPS on 8181, with
+  `domain1`'s key; the JAR has no server key, so it serves HTTP only. `run`
+  fails when something already answers on one of them, before it
+  provisions anything. A `provision` bound to the lifecycle, as with
+  `<extensions>true</extensions>`, runs before that, in the `package` that
+  `run` runs.
+- **The GlassFish a `run` runs:** while it runs GlassFish Embedded from
+  `target/dist`, staging doesn't replace it there, so neither a second `run`
+  nor a `provision` pulls it out from under it. `target/dist` names its
+  process meanwhile, in `glassfish-embedded.pid`.
+- **Trusted certificates:** for the JAR, `provision` copies the JDK's trust
+  anchors to `target/dist/cacerts.p12`, imports the certificates into that
+  copy, and `run` has GlassFish use it. For the static shell, they go into
+  `domain1`'s truststore, as for `full` and `web`, which GlassFish Embedded
+  then uses. `<trustStore>` names another store, which GlassFish then uses
+  instead. GlassFish opens its truststore with its master password,
+  `changeit`, so `run` gives GlassFish Embedded a copy with that password,
+  whatever `<trustStorePassword>` the original has.
+- **Commands:** `postBootCommands`, then `postStartCommands`, run on every
+  start, before the deploy: GlassFish Embedded keeps no domain between
+  starts. A failed one ends the start, also with `failOnCommandError` set to
+  `false`. A value with spaces needs quotes, as for `asadmin`. Restarts
+  don't apply, so `postBootRestart` doesn't, and neither do commands that
+  only take effect after one, such as `create-jvm-options`.
+- **The working directory:** GlassFish Embedded runs in a directory of its
+  own, `target/glassfish-embedded/run-<pid>`, with a copy of the archive,
+  which it deploys by its file name. `run` removes it when it ends. An
+  archive whose file name has a space can't be deployed; give it a
+  `<finalName>` without one.
+- **The URLs:** for a WAR, with the context root GlassFish reports; for an
+  EAR, with those its `application.xml` gives its web modules; none for an
+  EJB jar or RAR. Applications a command deploys aren't among them.
+- **As for `domain1`:** `name`, `contextRoot`, `logMessagesOnly`, `debug`,
+  `suspend` and `startTimeout` apply as they do there. The debugger listens
+  on localhost:9009.
+- **Ending it:** Ctrl+C stops GlassFish Embedded, with Maven, as does mvnd's
+  Ctrl+C. When GlassFish Embedded ends otherwise, `run` returns.
+- **Tested with** GlassFish 7.1.0, 8.0.5 and 9.0.0-M4. GlassFish 7.0.x runs
+  an application from the command line since 7.0.18, but keeps going after
+  a failed command there.
+- **Not yet:** `start` and `stop` don't run GlassFish Embedded, and neither
+  `<home>` nor `<unpackSkip>` applies to it.
 
 ## Recipes
 

@@ -490,6 +490,133 @@ class GlassFishStagingTest {
         }
     }
 
+    // --- GlassFish Embedded's JAR ---
+
+    @Test
+    void anEmbeddedJarIsCopiedNotUnpacked(@TempDir Path tmp) throws IOException {
+        Path jar = zip(tmp, "org/glassfish/runnablejar/UberMain.class");
+        Path stage = tmp.resolve("stage");
+
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+
+        Path staged = stage.resolve("glassfish-embedded-all-9.0.0.jar");
+        assertThat(GlassFishStaging.stagedJar(stage, embedded()), equalTo(staged));
+        assertThat(Files.readAllBytes(staged), equalTo(Files.readAllBytes(jar)));
+        assertThat(Files.exists(stage.resolve("org")), is(false));
+    }
+
+    @Test
+    void aRebuiltEmbeddedJarIsCopiedAgain(@TempDir Path tmp) throws IOException {
+        Path jar = zip(tmp, "build-1");
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+        Path leftover = Files.createFile(stage.resolve("leftover.txt"));
+
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+        assertThat(Files.exists(leftover), is(true));
+
+        zip(tmp, "build-2");
+        Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+
+        assertThat(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar")),
+                equalTo(Files.readAllBytes(jar)));
+        assertThat(Files.exists(leftover), is(false));
+    }
+
+    /** Its domain has no truststore: the certificates join the JDK's trust anchors, in a store next to the JAR. */
+    @Test
+    void anEmbeddedJarsCertificatesJoinTheJdksTrustAnchors(@TempDir Path tmp) throws Exception {
+        Path jar = zip(tmp, "org/glassfish/runnablejar/UberMain.class");
+        Path stage = tmp.resolve("stage");
+        StageSpec spec = embeddedSpec(stage, certs(trusted("idp", "trusted-a.pem")));
+
+        GlassFishStaging.stage(spec, coord -> jar);
+
+        Path trustStore = stage.resolve(GlassFishStaging.EMBEDDED_TRUST_STORE);
+        KeyStore store = load(trustStore, "changeit");
+        KeyStore jdk = KeyStore.getInstance(Paths.get(System.getProperty("java.home"), "lib", "security", "cacerts")
+                .toFile(), (char[]) null);
+        assertThat(store.getType(), equalTo("PKCS12"));
+        assertThat(store.getCertificate("idp"), equalTo(certificate("trusted-a.pem")));
+        assertThat(store.size(), equalTo(jdk.size() + 1));
+
+        FileTime written = Files.getLastModifiedTime(trustStore);
+        GlassFishStaging.stage(spec, coord -> jar);
+        assertThat(Files.getLastModifiedTime(trustStore), equalTo(written));
+    }
+
+    /** With every overlay skipped, one by one, there's nothing to overlay the JAR with. */
+    @Test
+    void anEmbeddedJarWithEveryOverlaySkippedIsCopied(@TempDir Path tmp) throws IOException {
+        Path jar = zip(tmp, "org/glassfish/runnablejar/UberMain.class");
+        Path stage = tmp.resolve("stage");
+        OverlayCoord skipped = faces();
+        skipped.setSkip(true);
+        OverlayCoord notApplied = faces();
+        notApplied.setApply(false);
+
+        GlassFishStaging.stage(new StageSpec(stage, embedded(), false, null, null, List.of(skipped, notApplied),
+                false), coord -> jar);
+
+        assertThat(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar")),
+                equalTo(Files.readAllBytes(jar)));
+    }
+
+    @Test
+    void switchingFromAnEmbeddedJarToAZipStagesAfresh(@TempDir Path tmp) throws IOException {
+        Path jar = zip(tmp.resolve("jar"), "org/glassfish/runnablejar/UberMain.class");
+        Path zip = zip(tmp.resolve("zip"), "glassfish9/glassfish/bin/asadmin");
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+
+        GlassFishStaging.stage(new StageSpec(stage, distribution("9.0.0"), false, stage.resolve("glassfish9"), null,
+                List.of(), false), coord -> zip);
+
+        assertThat(Files.exists(stage.resolve("glassfish-embedded-all-9.0.0.jar")), is(false));
+        assertThat(Files.isRegularFile(stage.resolve("glassfish9/glassfish/bin/asadmin")), is(true));
+    }
+
+    /** A glassfish:run in another Maven runs GlassFish Embedded from the stage directory, so staging leaves it be. */
+    @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "Java doesn't say what a process runs there")
+    void aJarAnEmbeddedChildRunsFromIsNotStagedAfresh(@TempDir Path tmp) throws Exception {
+        Path jar = zip(tmp, "build-1");
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+        Process child = FakeDomain.startEmbeddedChild(stage.resolve("glassfish-embedded-all-9.0.0.jar"));
+        try {
+            zip(tmp, "build-2");
+            Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+            IOException e = assertThrows(IOException.class,
+                    () -> GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar));
+
+            assertThat(e.getMessage(), containsString("GlassFish Embedded runs from it"));
+            assertThat(new String(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar"))),
+                    containsString("build-1"));
+        } finally {
+            child.destroyForcibly().waitFor();
+        }
+    }
+
+    /** Also where the system doesn't say what a process runs, by the name glassfish:run gives its child there. */
+    @Test
+    void aJarANamedChildRunsFromIsNotStagedAfresh(@TempDir Path tmp) throws Exception {
+        Path jar = zip(tmp, "build-1");
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
+        EmbeddedProcesses.record(stage, ProcessHandle.current());
+
+        zip(tmp, "build-2");
+        Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+        IOException e = assertThrows(IOException.class,
+                () -> GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar));
+
+        assertThat(e.getMessage(), containsString("GlassFish Embedded runs from it"));
+        assertThat(new String(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar"))),
+                containsString("build-1"));
+    }
+
     // --- trusted certificates ---
 
     @Test
@@ -611,6 +738,15 @@ class GlassFishStagingTest {
                 certSpec(tmp, home, certs(trusted("idp", "trusted-a.pem"))), NO_ARTIFACTS));
 
         assertThat(e.getMessage(), containsString("cacerts.p12 or cacerts.jks"));
+    }
+
+    private static DistributionCoord embedded() {
+        return Edition.EMBEDDED.distribution("9.0.0", null, false);
+    }
+
+    /** A staging run that copies GlassFish Embedded 9.0.0's JAR into {@code stage}. */
+    private static StageSpec embeddedSpec(Path stage, CertImport certImport) {
+        return new StageSpec(stage, embedded(), false, null, null, List.of(), false, certImport);
     }
 
     private static DistributionCoord distribution(String version) {

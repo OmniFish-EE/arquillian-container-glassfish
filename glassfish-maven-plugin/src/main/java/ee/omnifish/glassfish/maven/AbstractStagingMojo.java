@@ -29,6 +29,8 @@ import org.eclipse.aether.repository.RemoteRepository;
 
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.Edition;
+import ee.omnifish.glassfish.maven.staging.EmbeddedGlassFish;
 import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.CommandRunner;
@@ -51,10 +53,30 @@ abstract class AbstractStagingMojo extends AbstractMojo {
     private static final String HOME_PARAMETER = "<home>";
 
     /**
-     * GlassFish distribution to resolve and unpack. {@code groupId},
-     * {@code artifactId} and {@code type} default to the Eclipse GlassFish zip
-     * ({@code org.glassfish.main.distributions:glassfish:zip}), so only
-     * {@code <version>} is required. Also takes text: a version, as in
+     * The GlassFish edition: {@code full}, {@code web}, {@code embedded} or
+     * {@code embedded-web}. {@code full} and {@code web} unpack their
+     * distribution ZIP and start its {@code domain1}. {@code embedded} and
+     * {@code embedded-web} run GlassFish Embedded, with the application, in
+     * a JVM of its own: from its self-contained JAR, or, when a module is
+     * overlaid, from the static shell of the Full or Web ZIP.
+     */
+    @Parameter(property = "glassfish.edition", defaultValue = "full")
+    private String edition;
+
+    /**
+     * The GlassFish version, for the artifact {@code <edition>} names. A
+     * pom's {@code glassfish.version} property sets it too. {@code <distribution>}
+     * overrides it, and with {@code <home>}, it doesn't apply.
+     */
+    @Parameter(property = "glassfish.version")
+    private String version;
+
+    /**
+     * GlassFish distribution to resolve and unpack, overriding {@code <version>}.
+     * {@code groupId}, {@code artifactId} and {@code type} default to the
+     * artifact of {@code <edition>}, the Eclipse GlassFish zip
+     * ({@code org.glassfish.main.distributions:glassfish:zip}) by default, so
+     * only {@code <version>} is required. Also takes text: a version, as in
      * {@code <distribution>9.0.0</distribution>}, or
      * {@code groupId:artifactId:version[:type[:classifier]]}.
      */
@@ -215,12 +237,11 @@ abstract class AbstractStagingMojo extends AbstractMojo {
      * @return the install root, or {@code null} when it isn't known
      */
     protected Path provision(CommandRunner commandRunner) throws MojoExecutionException {
-        Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
-        StageSpec spec = spec(stager);
-        try {
-            stager.stage(spec, commandRunner);
-        } catch (IOException e) {
-            throw new MojoExecutionException("Provisioning GlassFish failed: " + e.getMessage(), e);
+        StageSpec spec = stage(commandRunner);
+        if (Edition.isJar(spec.distribution())) {
+            getLog().info("GlassFish Embedded provisioned at "
+                    + GlassFishStaging.stagedJar(spec.stageDir(), spec.distribution()).toAbsolutePath());
+            return null;
         }
 
         if (spec.home() == null) {
@@ -234,6 +255,73 @@ abstract class AbstractStagingMojo extends AbstractMojo {
         publish(project.getProperties(), homeProperty, installRoot, getLog());
         getLog().info("GlassFish provisioned at " + installRoot + " (" + homeProperty + ")");
         return spec.home();
+    }
+
+    /**
+     * Stage GlassFish Embedded, and say what runs it: the self-contained
+     * JAR, with the truststore its certificates went into, or the install
+     * whose static shell runs it, with the truststore to copy into its
+     * instance: {@code trustStore}, or else its {@code domain1}'s.
+     */
+    protected EmbeddedGlassFish provisionEmbedded() throws MojoExecutionException {
+        StageSpec spec = stage(GlassFishStaging.BRIEF_START);
+        Path explicitTrustStore = (trustStore == null) ? null : trustStore.toPath();
+        if (Edition.isJar(spec.distribution())) {
+            Path jar = GlassFishStaging.stagedJar(spec.stageDir(), spec.distribution());
+            Path staged = spec.stageDir().resolve(GlassFishStaging.EMBEDDED_TRUST_STORE);
+            Path jarTrustStore = (explicitTrustStore != null) ? explicitTrustStore
+                    : spec.certImport().hasWork() ? staged : null;
+            return EmbeddedGlassFish.jar(spec.stageDir(), jar, jarTrustStore, trustStorePassword);
+        }
+        if (spec.home() == null) {
+            throw new MojoExecutionException("Can't run GlassFish Embedded: its install root isn't known");
+        }
+
+        try {
+            return EmbeddedGlassFish.install(spec.stageDir(), spec.home(),
+                    (explicitTrustStore != null) ? explicitTrustStore : GlassFishStaging.domainTrustStore(spec.home()),
+                    trustStorePassword);
+        } catch (IOException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    private StageSpec stage(CommandRunner commandRunner) throws MojoExecutionException {
+        Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
+        StageSpec spec = spec(stager);
+        try {
+            stager.stage(spec, commandRunner);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Provisioning GlassFish failed: " + e.getMessage(), e);
+        }
+
+        return spec;
+    }
+
+    /** The {@code <edition>}: {@code full} also when Maven didn't configure this goal, as in a unit test. */
+    protected Edition edition() throws MojoExecutionException {
+        if (edition == null) {
+            return Edition.FULL;
+        }
+
+        try {
+            return Edition.of(edition);
+        } catch (IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    /** Fail on an Embedded {@code <edition>}, which {@code goal} doesn't run yet. */
+    protected void requireDomainEdition(String goal) throws MojoExecutionException {
+        if (edition().isEmbedded()) {
+            throw new MojoExecutionException("glassfish:" + goal + " works with the full and web editions; for "
+                    + "GlassFish Embedded, use glassfish:run");
+        }
+    }
+
+    /** The post-boot commands, which on GlassFish Embedded run on every start. */
+    protected StagingCommands postBootCommands() {
+        return new StagingCommands(postBootCommands, failOnCommandError);
     }
 
     /**
@@ -264,15 +352,36 @@ abstract class AbstractStagingMojo extends AbstractMojo {
         return spec(new Stager(repoSystem, repoSession, remoteRepos, getLog())).home();
     }
 
-    private StageSpec spec(Stager stager) throws MojoExecutionException {
-        // Because of its -D property, Maven injects an empty bean when <distribution> isn't configured.
-        DistributionCoord dist = (distribution == null || distribution.isEmpty()) ? null : distribution;
-        if (dist == null && home == null) {
-            throw new MojoExecutionException("Nothing to provision: set <distribution> "
-                    + "(-Dglassfish.distribution=<version>), or <home> for an existing install");
-        }
+    /**
+     * Whether GlassFish Embedded runs from its self-contained JAR, rather
+     * than from the static shell of an install, as with an overlay: known
+     * before anything is staged.
+     */
+    protected boolean runsEmbeddedJar() throws MojoExecutionException {
+        return Edition.isJar(distributionCoord());
+    }
 
-        StagingCommands commands = new StagingCommands(postBootCommands, failOnCommandError);
+    /** The distribution to stage, from {@code <edition>}, {@code <version>} and {@code <distribution>}, or {@code null}. */
+    private DistributionCoord distributionCoord() throws MojoExecutionException {
+        // Because of its -D property, Maven injects an empty bean when <distribution> isn't configured.
+        DistributionCoord configured = (distribution == null || distribution.isEmpty()) ? null : distribution;
+        // A pom's glassfish.version property feeds <version>, which mustn't make an existing install unpack one.
+        return edition().distribution((home == null) ? version : null, configured,
+                OverlayCoord.anyApplied(overlays, overlaySkip));
+    }
+
+    private StageSpec spec(Stager stager) throws MojoExecutionException {
+        Edition edition = edition();
+        DistributionCoord dist = distributionCoord();
+        if (dist == null && home == null) {
+            throw new MojoExecutionException("Nothing to provision: set <version> (-Dglassfish.version=<version>), "
+                    + "<distribution>, or <home> for an existing install");
+        }
+        checkEdition(edition, dist, home, unpackSkip, OverlayCoord.anyApplied(overlays, overlaySkip));
+
+        // GlassFish Embedded runs them on every start instead.
+        StagingCommands commands = edition.isEmbedded() ? StagingCommands.NONE
+                : new StagingCommands(postBootCommands, failOnCommandError);
         requireUnpack(commands, unpackSkip, dist);
 
         CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
@@ -291,6 +400,32 @@ abstract class AbstractStagingMojo extends AbstractMojo {
             return new File(executionRootDirectory, "target/dist");
         }
         return stageDir;
+    }
+
+    /**
+     * Fail on what {@code edition} can't stage: an existing install or a
+     * skipped unpack for GlassFish Embedded, an Embedded JAR with overlays,
+     * which need the modules of a ZIP, or such a JAR for an edition that
+     * starts {@code domain1}. Package-private for unit tests.
+     */
+    static void checkEdition(Edition edition, DistributionCoord distribution, File home, boolean unpackSkip,
+                             boolean overlaid) throws MojoExecutionException {
+        if (edition.isEmbedded() && (home != null || unpackSkip)) {
+            throw new MojoExecutionException("<home> and <unpackSkip> work with the full and web editions, not "
+                    + edition);
+        }
+        if (!Edition.isJar(distribution)) {
+            return;
+        }
+
+        if (!edition.isEmbedded()) {
+            throw new MojoExecutionException("<edition>" + edition + "</edition> unpacks a ZIP, not "
+                    + distribution.toGav() + "; for GlassFish Embedded, set <edition>embedded</edition>");
+        }
+        if (overlaid) {
+            throw new MojoExecutionException("Overlays need the modules of a ZIP, not " + distribution.toGav()
+                    + ": leave out <distribution>, or name the ZIP of a GlassFish distribution");
+        }
     }
 
     /**

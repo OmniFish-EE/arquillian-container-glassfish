@@ -1,0 +1,62 @@
+GlassFish will start now. Welcome!
+Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Authorization Service has successfully initialized.
+Loaded embedded server named: server
+HV000001: Hibernate Validator 9.1.4.Final
+Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Grizzly Framework 5.0.3 started in: 15 ms - bound to [/0.0.0.0:18080]
+Network listener https-listener on port 0 disabled per domain.xml
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+GlassFish  (commit: null) startup time: Embedded (490 ms), startup services (228 ms), total (718 ms)
+No JMS RA installation RAR found on path /tmp/gfembed287386224267817038/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+JMXStartupService has disabled JMXConnector system
+SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    configs.config.server-config.network-config.network-listeners.network-listener.https-listener.port=0
+    configs.config.server-config.network-config.network-listeners.network-listener.http-listener.port=18080
+
+Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Entering Security Startup Service.
+Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Security Service(s) started successfully.
+The GlassFishLogHandler was not found, returning null
+Created HTTP listener http-listener on host/port 0.0.0.0:18080
+Error adding HttpProbes. NetworkListener https-listeners GrizzlyProxy is NULL
+Created virtual server server
+Setting JAAS app name glassfish-web
+Virtual server server loaded default web module 
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@661d88a[name=alpha], urls=[
+file:/tmp/gfembed287386224267817038/applications/alpha/WEB-INF/classes
+file:/tmp/gfembed287386224267817038/generated/ejb/alpha/
+][delegate=true, context=alpha, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=35, pathTimestamps.size=0, resourceEntryCache.size=0]
+Loading application [alpha] at [/alpha]
+alpha was successfully deployed in 484 milliseconds.
+SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name alpha.
+    [name=alpha
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    applications.application.alpha.context-root=/alpha
+
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@3e28d779[name=shop], urls=[
+file:/tmp/gfembed287386224267817038/applications/shop/WEB-INF/classes
+file:/tmp/gfembed287386224267817038/generated/ejb/shop/
+][delegate=true, context=shop, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=0, pathTimestamps.size=0, resourceEntryCache.size=0]
+Loading application [shop] at [/descriptor-shop]
+shop was successfully deployed in 41 milliseconds.
+SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name shop.
+    [name=shop
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: get AdminCommandnull
+    applications.application.shop.context-root=/descriptor-shop
+    applications.application.alpha.context-root=/alpha
+
+java.lang.IllegalStateException: Already disposed.
+	at org.glassfish.main.boot.impl.GlassFishImpl.dispose(GlassFishImpl.java:71)
+	at org.glassfish.main.boot.embedded.AutoDisposableGlassFish.dispose(AutoDisposableGlassFish.java:143)
+	at org.glassfish.runnablejar.UberMain.close(UberMain.java:268)
+	at org.glassfish.runnablejar.UberMain$1.run(UberMain.java:249)

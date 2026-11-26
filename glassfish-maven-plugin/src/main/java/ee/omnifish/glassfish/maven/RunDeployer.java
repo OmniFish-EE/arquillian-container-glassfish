@@ -84,7 +84,7 @@ public final class RunDeployer {
             for (String webContextRoot : client.webContextRoots(deployed)) {
                 urls.add(url(node, webContextRoot));
             }
-            log.info("Deployed " + deployed + (urls.isEmpty() ? "" : ", at " + String.join(", ", urls)));
+            log.info(deployed(deployed, urls));
             return deployed;
         } catch (GlassFishClientException | IOException e) {
             throw new MojoExecutionException("Deploying " + archive + " failed: " + e.getMessage(), e);
@@ -95,5 +95,16 @@ public final class RunDeployer {
     static String url(NodeAddress node, String contextRoot) {
         boolean secure = node.getHttpPort() <= 0 && node.getHttpsPort() > 0;
         return node.getURI(secure) + (contextRoot.endsWith("/") ? contextRoot : contextRoot + "/");
+    }
+
+    /** The URL of {@code contextRoot} over HTTP on {@code port} of this host. */
+    static String url(int port, String contextRoot) {
+        String root = contextRoot.startsWith("/") ? contextRoot : "/" + contextRoot;
+        return "http://localhost:" + port + (root.endsWith("/") ? root : root + "/");
+    }
+
+    /** What a run logs once it deployed {@code name}, which answers at {@code urls}. */
+    static String deployed(String name, List<String> urls) {
+        return "Deployed " + name + (urls.isEmpty() ? "" : ", at " + String.join(", ", urls));
     }
 }

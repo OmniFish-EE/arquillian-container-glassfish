@@ -31,6 +31,7 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -50,7 +51,8 @@ import org.slf4j.LoggerFactory;
  * Resolve and unpack a GlassFish distribution zip, copy overlay artifacts into
  * the staged install, and import trusted certificates into its truststore.
  * Shared by {@code glassfish:provision} and the pool plugin's
- * {@code up}/{@code provision} goals.
+ * {@code up}/{@code provision} goals. A GlassFish Embedded JAR is copied
+ * instead of unpacked, with its certificates in a truststore of its own.
  *
  * <p>Artifact lookup is delegated to a caller-supplied {@link ArtifactResolver},
  * which keeps this class free of Maven types; the mojos wire Aether in. It
@@ -79,6 +81,13 @@ public final class GlassFishStaging {
 
     /** The domain truststores to look for: current versions ship the first, older ones (6, 7.0.0) the second. */
     private static final List<String> DOMAIN_TRUST_STORES = List.of("cacerts.p12", "cacerts.jks");
+
+    /**
+     * The truststore staged next to a GlassFish Embedded JAR, in the stage
+     * directory, when certificates are imported without a truststore of
+     * their own: the JDK's trust anchors, and the certificates.
+     */
+    public static final String EMBEDDED_TRUST_STORE = "cacerts.p12";
 
     private static final ConcurrentMap<Path, Object> STAGE_DIR_LOCKS = new ConcurrentHashMap<>();
 
@@ -181,6 +190,11 @@ public final class GlassFishStaging {
                             + " runs from " + running.get().home() + ". Stop it with glassfish:stop, then build "
                             + "again.");
                 }
+                if (EmbeddedProcesses.runningFrom(stageDir).isPresent()) {
+                    // Started by glassfish:run, in another Maven.
+                    throw new IOException("The inputs of " + stageDir + " changed, but GlassFish Embedded runs from "
+                            + "it. End that glassfish:run, then build again.");
+                }
                 LOG.info("Re-staging " + stageDir + ": its inputs changed");
             }
         } else if (!isEmpty(stageDir)) {
@@ -193,8 +207,17 @@ public final class GlassFishStaging {
         Files.createDirectories(stageDir);
         writeMarker(marker, gav, spec.home(), null);
         wipeAllBut(stageDir, marker);
-        LOG.info("Unpacking " + gav + " to " + stageDir);
-        unzip(zip, stageDir);
+        if (Edition.isJar(spec.distribution())) {
+            Path jar = stagedJar(stageDir, spec.distribution());
+            LOG.info("Copying " + gav + " to " + jar);
+            Files.copy(zip, jar);
+            if (spec.certImport().hasWork() && spec.certImport().trustStore() == null) {
+                writeJdkTrustStore(stageDir.resolve(EMBEDDED_TRUST_STORE), spec.certImport().password().toCharArray());
+            }
+        } else {
+            LOG.info("Unpacking " + gav + " to " + stageDir);
+            unzip(zip, stageDir);
+        }
         applyOverlaysAndCerts(spec, resolver);
         if (spec.commands().hasWork()) {
             commandRunner.run(spec.home(), spec.commands());
@@ -212,6 +235,17 @@ public final class GlassFishStaging {
         Path marker = stageDir.resolve(MARKER_FILE);
         String home = Files.exists(marker) ? readMarker(marker, MARKER_KEY_HOME) : null;
         return (home == null) ? null : Paths.get(home);
+    }
+
+    /**
+     * Where staging copies the GlassFish Embedded JAR {@code jar}:
+     * {@code stageDir/<artifactId>-<version>[-<classifier>].jar}, whatever
+     * the file in the local repository is called, as for a snapshot.
+     */
+    public static Path stagedJar(Path stageDir, ArtifactCoord jar) {
+        String classifier = (jar.getClassifier() == null || jar.getClassifier().isEmpty()) ? ""
+                : "-" + jar.getClassifier();
+        return stageDir.resolve(jar.getArtifactId() + "-" + jar.getVersion() + classifier + ".jar");
     }
 
     /**
@@ -236,8 +270,25 @@ public final class GlassFishStaging {
             copyOverlays(spec, resolver);
         }
         if (spec.certImport().hasWork()) {
-            importCerts(spec.certImport(), spec.home());
+            importCerts(spec.certImport(), trustStore(spec));
         }
+    }
+
+    /**
+     * The truststore the certificates go into: the one {@code certImport}
+     * names, else, next to a GlassFish Embedded JAR, {@link #EMBEDDED_TRUST_STORE},
+     * else the domain's own under {@code home}, {@code cacerts.p12} or, in
+     * older versions, {@code cacerts.jks}.
+     */
+    private static Path trustStore(StageSpec spec) throws IOException {
+        if (spec.certImport().trustStore() != null) {
+            return spec.certImport().trustStore();
+        }
+        if (Edition.isJar(spec.distribution())) {
+            return spec.stageDir().resolve(EMBEDDED_TRUST_STORE);
+        }
+
+        return domainTrustStore(spec.home());
     }
 
     /**
@@ -264,6 +315,10 @@ public final class GlassFishStaging {
         CertImport certImport = spec.certImport();
         if (certImport.hasWork()) {
             inputs.add("truststore " + certImport.trustStore() + " " + certImport.password());
+            if (certImport.trustStore() == null && Edition.isJar(spec.distribution())) {
+                Path jdkTrustStore = jdkTrustStore();
+                inputs.add("jdk truststore " + jdkTrustStore + " " + identity(jdkTrustStore));
+            }
             for (TrustedCert cert : certImport.certs()) {
                 inputs.add("cert " + cert.getAlias() + " " + sha256(Files.readAllBytes(cert.getFile().toPath())));
             }
@@ -333,13 +388,14 @@ public final class GlassFishStaging {
 
     private static void copyOverlays(StageSpec spec, ArtifactResolver resolver) throws IOException {
         Path target = spec.overlayTargetDir();
-        Files.createDirectories(target);
         for (OverlayCoord overlay : spec.overlays()) {
             if (overlay.isSkipped()) {
                 LOG.info("Skipping overlay " + overlay.toGav()
                         + (Boolean.FALSE.equals(overlay.getApply()) ? " (apply=false)" : " (skip=true)"));
                 continue;
             }
+            // Only for an overlay that applies: with every one skipped, there may be no target, as for a JAR.
+            Files.createDirectories(target);
             Path source = resolver.resolve(overlay);
             String fileName = (overlay.getDestFileName() == null || overlay.getDestFileName().isEmpty())
                     ? source.getFileName().toString()
@@ -350,11 +406,47 @@ public final class GlassFishStaging {
         }
     }
 
+    /** The trust anchors of the JDK that runs Maven, which also runs GlassFish Embedded's child. */
+    private static Path jdkTrustStore() {
+        return Paths.get(System.getProperty("java.home"), "lib", "security", "cacerts");
+    }
+
     /**
-     * Import the certificates into the truststore: the one {@code certImport}
-     * names, else the domain's own under {@code home}, {@code cacerts.p12} or,
-     * in older versions, {@code cacerts.jks}. The JDK probes the store type
-     * from the file.
+     * Write the JDK's trust anchors to {@code trustStore}, as PKCS12 with
+     * {@code password}, for a GlassFish Embedded JAR: its domain has no
+     * truststore, so without one, it trusts what the JDK trusts. The JDK's
+     * store is read without its password, which only checks its integrity.
+     */
+    private static void writeJdkTrustStore(Path trustStore, char[] password) throws IOException {
+        copyCertificates(jdkTrustStore(), null, trustStore, password);
+    }
+
+    /**
+     * Write the certificates of the truststore {@code source}, which
+     * {@code sourcePassword} opens, to {@code target}, as PKCS12 with
+     * {@code targetPassword}. The JDK probes the source's type from the file.
+     * Keys, which trust doesn't use, are left out.
+     */
+    public static void copyCertificates(Path source, char[] sourcePassword, Path target, char[] targetPassword)
+            throws IOException {
+        KeyStore store = loadTrustStore(source, sourcePassword);
+        try {
+            KeyStore copy = KeyStore.getInstance("PKCS12");
+            copy.load(null, null);
+            for (String alias : Collections.list(store.aliases())) {
+                if (store.isCertificateEntry(alias)) {
+                    copy.setCertificateEntry(alias, store.getCertificate(alias));
+                }
+            }
+            storeAtomically(copy, target, targetPassword);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Could not copy the certificates of " + source + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Import the certificates into {@code trustStore}. The JDK probes the
+     * store type from the file.
      *
      * <p>A certificate the truststore already holds under its alias is left
      * alone, and an unchanged truststore isn't written, so staging again
@@ -363,8 +455,7 @@ public final class GlassFishStaging {
      * truststore or the new one, and an interrupted build can't leave half of
      * it behind.
      */
-    private static void importCerts(CertImport certImport, Path home) throws IOException {
-        Path trustStore = (certImport.trustStore() != null) ? certImport.trustStore() : domainTrustStore(home);
+    private static void importCerts(CertImport certImport, Path trustStore) throws IOException {
         char[] password = certImport.password().toCharArray();
         KeyStore store = loadTrustStore(trustStore, password);
         boolean changed = false;
@@ -388,7 +479,8 @@ public final class GlassFishStaging {
         }
     }
 
-    private static Path domainTrustStore(Path home) throws IOException {
+    /** The truststore of {@code home}'s {@code domain1}: {@code cacerts.p12}, or in older versions, {@code cacerts.jks}. */
+    public static Path domainTrustStore(Path home) throws IOException {
         if (home == null) {
             throw new IOException("No install to find the truststore in; set the truststore");
         }

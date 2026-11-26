@@ -206,7 +206,7 @@ public final class GlassFishDomain {
     }
 
     /** {@code path}, and its real path if that differs, as a process may have been given either. */
-    private static List<Path> names(Path path) {
+    static List<Path> names(Path path) {
         List<Path> names = new ArrayList<>();
         names.add(path.toAbsolutePath().normalize());
         try {

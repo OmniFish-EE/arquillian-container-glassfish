@@ -1,0 +1,62 @@
+GlassFish will start now. Welcome!
+Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Loaded embedded server named: server
+Authorization Service has successfully initialized.
+HV000001: Hibernate Validator 9.1.4.Final
+Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Grizzly Framework 5.0.3 started in: 14 ms - bound to [/0.0.0.0:19301]
+Network listener https-listener on port 0 disabled per domain.xml
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+GlassFish  (commit: null) startup time: Embedded (491 ms), startup services (215 ms), total (706 ms)
+No JMS RA installation RAR found on path /tmp/gfembed13854383216357729597/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+JMXStartupService has disabled JMXConnector system
+Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Entering Security Startup Service.
+Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Security Service(s) started successfully.
+The GlassFishLogHandler was not found, returning null
+Created HTTP listener http-listener on host/port 0.0.0.0:19301
+Error adding HttpProbes. NetworkListener https-listeners GrizzlyProxy is NULL
+Created virtual server server
+Setting JAAS app name glassfish-web
+Virtual server server loaded default web module 
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@6a756082[name=alpha_war], urls=[
+file:/tmp/gfembed13854383216357729597/applications/shop-ear/alpha_war/WEB-INF/classes
+file:/tmp/gfembed13854383216357729597/generated/ejb/shop-ear/alpha_war/
+][delegate=true, context=alpha_war, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=0, pathTimestamps.size=0, resourceEntryCache.size=0]
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@51ab1ee3[name=beta_war], urls=[
+file:/tmp/gfembed13854383216357729597/applications/shop-ear/beta_war/WEB-INF/classes
+file:/tmp/gfembed13854383216357729597/generated/ejb/shop-ear/beta_war/
+][delegate=true, context=beta_war, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=0, pathTimestamps.size=0, resourceEntryCache.size=0]
+Loading application [shop-ear#alpha.war] at [/alpha-site]
+Loading application [shop-ear#beta.war] at [/beta-site]
+shop-ear was successfully deployed in 497 milliseconds.
+SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name shop-ear.
+    [name=shop-ear
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: list-applications AdminCommandnull
+    [shop-ear=ear, web
+    NAME      TYPE        STATUS   
+    shop-ear  <ear, web>  enabled  
+          alpha.war  <WebModule>  
+          beta.war   <WebModule>  
+
+Description: list-sub-components AdminCommandnull
+    [beta.war=WebModule
+    [alpha.war=WebModule
+    alpha.war  <WebModule>  
+        [moduleInfo=alpha.war:war:/alpha-site
+    beta.war   <WebModule>  
+        [moduleInfo=beta.war:war:/beta-site
+
+java.lang.IllegalStateException: Already disposed.
+	at org.glassfish.main.boot.impl.GlassFishImpl.dispose(GlassFishImpl.java:71)
+	at org.glassfish.main.boot.embedded.AutoDisposableGlassFish.dispose(AutoDisposableGlassFish.java:143)
+	at org.glassfish.runnablejar.UberMain.close(UberMain.java:268)
+	at org.glassfish.runnablejar.UberMain$1.run(UberMain.java:249)

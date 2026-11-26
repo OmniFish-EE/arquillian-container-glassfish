@@ -29,6 +29,7 @@ import ee.omnifish.glassfish.admin.PostBootCommands;
 import ee.omnifish.glassfish.maven.staging.ArtifactCoord;
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.Edition;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.ArtifactResolver;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.CommandRunner;
@@ -100,16 +101,18 @@ public final class Stager {
         if (willUnpack) {
             requireVersion(distribution);
         }
+        // A GlassFish Embedded JAR is copied, not unpacked: there's no install root, and its truststore is its own.
+        boolean jar = willUnpack && Edition.isJar(distribution);
         Path installRoot = null;
         if (home != null) {
             installRoot = home.toPath();
-        } else if (willUnpack) {
+        } else if (willUnpack && !jar) {
             installRoot = deriveHome(distribution, stageDir.toPath(), homeParameter);
         }
         List<OverlayCoord> ov = (overlays == null) ? List.of() : overlays;
         checkOverlays(ov);
         Path overlayDir = overlayDir(overlayTargetDir, installRoot, ov, overlaySkip, homeParameter);
-        checkCertImport(certImport, installRoot, homeParameter);
+        checkCertImport(certImport, installRoot, jar, homeParameter);
         checkCommands(commands, installRoot, homeParameter);
         return new StageSpec(stageDir.toPath(), distribution, unpackSkip, installRoot, overlayDir, ov, overlaySkip,
                 certImport, commands);
@@ -159,7 +162,7 @@ public final class Stager {
         if (home != null) {
             return home.resolve("glassfish/modules");
         }
-        if (!overlaySkip && !overlays.isEmpty()) {
+        if (OverlayCoord.anyApplied(overlays, overlaySkip)) {
             throw new MojoExecutionException("<overlays> need a target: set <overlayTargetDir> or " + homeParameter);
         }
         return null;
@@ -178,8 +181,11 @@ public final class Stager {
         }
     }
 
-    /** Every certificate has an alias and a file, and the truststore is known, or found under {@code home}. */
-    private static void checkCertImport(CertImport certImport, Path home, String homeParameter)
+    /**
+     * Every certificate has an alias and a file, and the truststore is known,
+     * found under {@code home}, or, for a {@code jar}, staged next to it.
+     */
+    private static void checkCertImport(CertImport certImport, Path home, boolean jar, String homeParameter)
             throws MojoExecutionException {
         if (!certImport.hasWork()) {
             return;
@@ -190,7 +196,7 @@ public final class Stager {
                 throw new MojoExecutionException("<trustedCert> needs an <alias> and a <file> (got " + cert + ")");
             }
         }
-        if (certImport.trustStore() == null && home == null) {
+        if (certImport.trustStore() == null && home == null && !jar) {
             throw new MojoExecutionException("<trustedCerts> need a truststore: set <trustStore> or " + homeParameter);
         }
     }
