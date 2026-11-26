@@ -30,6 +30,7 @@ import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
 import ee.omnifish.glassfish.admin.AsAdmin;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
 import ee.omnifish.glassfish.admin.DomainXmlEditor;
 import ee.omnifish.glassfish.admin.PostBootCommands;
 import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
@@ -62,6 +63,12 @@ import ee.omnifish.glassfish.admin.ServerLogTailer;
  * slot gets: {@code up} forwards them, so slots created here, when the pool
  * grows or a dead slot is recycled, get the same setup as those {@code up}
  * started.
+ *
+ * <p>When the pool runs GlassFish Embedded, as {@code up} describes it in the
+ * pool directory ({@link EmbeddedPool}), the leased slot is a block of ports,
+ * and each deployment starts a child of its own on them, with the archive;
+ * see {@link EmbeddedSlotDeployer}. There's no admin connection, no server
+ * log to follow, and nothing to restart.
  */
 public class GlassFishPoolDeployableContainer implements DeployableContainer<GlassFishPoolConfiguration> {
 
@@ -76,10 +83,12 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
     private static final AtomicBoolean POST_BOOT_HINT_LOGGED = new AtomicBoolean();
     private static final AtomicBoolean POST_START_WARNED = new AtomicBoolean();
     private static final AtomicBoolean SETTINGS_CHECKED = new AtomicBoolean();
+    private static final AtomicBoolean RESTART_SKIP_LOGGED = new AtomicBoolean();
 
     private GlassFishPoolConfiguration configuration;
     private PoolConfig poolConfig;
     private CommonGlassFishManager<GlassFishPoolConfiguration> manager;
+    private EmbeddedSlotDeployer embedded;
     private LeaseHandle handle;
 
     @Override
@@ -130,6 +139,10 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         }
         try {
             SlotPorts ports = handle.ports();
+            if (ports.isEmbedded()) {
+                startEmbedded(poolDir, ports, shared ? slotGroup : null);
+                return;
+            }
             configuration.setAdminHost("localhost");
             configuration.setAdminPort(ports.adminPort());
             configuration.setHttpPort(ports.httpPort());
@@ -156,12 +169,39 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
     }
 
     /**
+     * Deploy to the leased slot for GlassFish Embedded: a child per
+     * deployment, on its ports, from the GlassFish the pool directory names.
+     */
+    private void startEmbedded(Path poolDir, SlotPorts ports, String slotGroup) throws LifecycleException {
+        EmbeddedGlassFish glassfish;
+        try {
+            glassfish = EmbeddedPool.read(poolDir).orElseThrow(() -> new IOException(poolDir
+                    + " has a slot for GlassFish Embedded, but no " + EmbeddedPool.FILE + " that says which"));
+        } catch (IOException e) {
+            throw new LifecycleException("Could not read the pool's GlassFish Embedded: " + e.getMessage(), e);
+        }
+        if (glassfish.isJar() && configuration.isHttpsPortAsDefault()) {
+            throw new LifecycleException("httpsPortAsDefault needs HTTPS, which GlassFish Embedded's JAR doesn't "
+                    + "serve without a server key. With an overlay, the pool runs the static shell of a ZIP, with "
+                    + "domain1's key.");
+        }
+
+        configuration.setHttpPort(ports.httpPort());
+        configuration.setHttpsPort(ports.httpsPort());
+        LOG.info("Leased pool slot " + handle.slotIndex() + " for GlassFish Embedded (http=" + ports.httpPort() + ")"
+                + (slotGroup != null ? " [shared group: " + slotGroup + "]" : ""));
+        embedded = new EmbeddedSlotDeployer(handle.lease(), glassfish, poolConfig, configuration);
+    }
+
+    /**
      * With {@code serverLogToConsole}, show what the slot's server writes to
      * its log while {@code lease} holds it. Only the lease that leases the
-     * slot does this, so containers that share it see each line once.
+     * slot does this, so containers that share it see each line once. A
+     * slot for GlassFish Embedded has no server between deployments; its
+     * children's output is shown as they run.
      */
     private SlotLease followServerLog(SlotLease lease) {
-        if (configuration.isServerLogToConsole()) {
+        if (configuration.isServerLogToConsole() && !lease.ports().isEmbedded()) {
             String prefix = ServerLogTailer.prefix("glassfish:slot-" + lease.slotIndex(), lease.slotIndex() - 1,
                     configuration.isServerLogColor());
             lease.followServerLog(line -> System.out.println(prefix + line));
@@ -172,6 +212,10 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
 
     /** Release the held lease and close the slot iff this was its last holder. */
     private void releaseHandle() {
+        if (embedded != null) {
+            embedded.close();
+            embedded = null;
+        }
         SlotLease toFinalize = handle.release();
         if (toFinalize != null) {
             toFinalize.close();
@@ -249,6 +293,11 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         if (handle == null) {
             return;
         }
+        if (embedded != null) {
+            // Children this container's deployments left running, as without their undeploy.
+            embedded.close();
+            embedded = null;
+        }
         // For a shared slot only the LAST holder finalizes it; earlier holders
         // get null here and leave the slot up for their siblings.
         SlotLease toFinalize = handle.release();
@@ -256,7 +305,12 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             // Restart while the slot lock is still held: a free lock plus a port
             // momentarily down would let a concurrent leaser classify the slot as
             // dead and recycle it (wiping the GF install we're restarting).
-            if (configuration.isRestartOnRelease()) {
+            if (configuration.isRestartOnRelease() && toFinalize.ports().isEmbedded()) {
+                if (RESTART_SKIP_LOGGED.compareAndSet(false, true)) {
+                    LOG.info("restartOnRelease has nothing to restart on GlassFish Embedded: each deployment "
+                            + "starts a child of its own");
+                }
+            } else if (configuration.isRestartOnRelease()) {
                 restartLeasedDomain(toFinalize);
             }
             try {
@@ -290,12 +344,16 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
 
     @Override
     public ProtocolMetaData deploy(Archive<?> archive) throws DeploymentException {
-        return manager.deploy(archive);
+        return (embedded != null) ? embedded.deploy(archive) : manager.deploy(archive);
     }
 
     @Override
     public void undeploy(Archive<?> archive) throws DeploymentException {
-        manager.undeploy(archive);
+        if (embedded != null) {
+            embedded.undeploy(archive);
+        } else {
+            manager.undeploy(archive);
+        }
     }
 
     @Override

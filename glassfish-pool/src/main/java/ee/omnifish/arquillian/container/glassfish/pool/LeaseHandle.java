@@ -27,6 +27,9 @@ interface LeaseHandle {
 
     int slotIndex();
 
+    /** The lease held, shared with sibling containers for a shared slot. */
+    SlotLease lease();
+
     /**
      * Relinquish this holder's claim. Returns the underlying {@link SlotLease}
      * for the caller to finalize (restart-if-configured, then close) iff this
@@ -54,6 +57,11 @@ interface LeaseHandle {
         @Override
         public int slotIndex() {
             return lease.slotIndex();
+        }
+
+        @Override
+        public SlotLease lease() {
+            return lease;
         }
 
         @Override
@@ -86,6 +94,11 @@ interface LeaseHandle {
         @Override
         public int slotIndex() {
             return lease.slotIndex();
+        }
+
+        @Override
+        public SlotLease lease() {
+            return lease;
         }
 
         @Override

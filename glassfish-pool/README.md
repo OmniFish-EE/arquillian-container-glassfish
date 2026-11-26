@@ -45,6 +45,15 @@ amortise startup cost across parallel forks.
    ports, hands them to `CommonGlassFishManager`, deploys via REST, releases
    the lock at JVM shutdown.
 
+On GlassFish Embedded, which the plugin's `<edition>embedded</edition>` or
+`<edition>embedded-web</edition>` selects, a slot is its window of ports,
+and no more: no install is cloned, and nothing runs on it between
+deployments. The plugin's `up` describes the GlassFish Embedded the slots
+run in `poolDir/embedded.properties`. The test JVM leases a slot as above,
+and each `deploy` then starts a child JVM of its own, with the archive, on
+the slot's ports; the `undeploy` ends that child. A slot runs one child at
+a time. See [Running tests on GlassFish Embedded](../glassfish-pool-maven-plugin/README.md#running-tests-on-glassfish-embedded).
+
 ```
 poolDir/
 ├── grow.lock                        # serialises pool-grow across JVMs
@@ -268,9 +277,9 @@ on the pool plugin.
 | --------------------- | ------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. The Maven plugin forwards the build's `poolDir` as `gf.pool.dir`.                                 |
 | `leaseTimeoutSeconds` | long    | `600`                            | Lease wait before failing the test JVM.                                                                     |
-| `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). |
-| `serverLogToConsole`  | boolean | `-Dglassfish.serverLogToConsole`/`false` | Show what the leased slot's server writes to its `server.log` on the console while the slot is leased, prefixed with `[glassfish:slot-N]`, coloured per slot when Maven's console shows colour (`glassfish.serverLogColor`, set by the plugin's extension). It starts at the log's end, so a slot's earlier output isn't repeated; containers that share a slot see each line once. Slot startup during `up` or a grow isn't shown. |
-| `slotGroup`           | String  | `-Dgf.pool.slotGroup`/(empty)    | Slot-sharing key; containers sharing it reuse one slot. Inferred from the `<group>` qualifier when `gf.pool.shareGroupSlot=true`. See [Sharing one slot across containers](#sharing-one-slot-across-containers). |
+| `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). On GlassFish Embedded, each deployment starts a child of its own, so there's nothing to restart. |
+| `serverLogToConsole`  | boolean | `-Dglassfish.serverLogToConsole`/`false` | Show what the leased slot's server writes to its `server.log` on the console while the slot is leased, prefixed with `[glassfish:slot-N]`, coloured per slot when Maven's console shows colour (`glassfish.serverLogColor`, set by the plugin's extension). It starts at the log's end, so a slot's earlier output isn't repeated; containers that share a slot see each line once. Slot startup during `up` or a grow isn't shown. On GlassFish Embedded, it shows each child's output, which also goes to `slot-N/glassfish-embedded.log`. |
+| `slotGroup`           | String  | `-Dgf.pool.slotGroup`/(empty)    | Slot-sharing key; containers sharing it reuse one slot. Inferred from the `<group>` qualifier when `gf.pool.shareGroupSlot=true`. See [Sharing one slot across containers](#sharing-one-slot-across-containers). On GlassFish Embedded, the slot still runs one deployment at a time, of whichever container. |
 | `adminUser`           | String  | `admin`                          | Inherited from `CommonGlassFishConfiguration`.                                                              |
 | `adminPassword`       | String  | (empty)                          | Inherited.                                                                                                  |
 | `httpPort`            | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |

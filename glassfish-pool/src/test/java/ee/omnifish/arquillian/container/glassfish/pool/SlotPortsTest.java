@@ -43,6 +43,31 @@ class SlotPortsTest {
         assertThat(read.glassFishHome(), equalTo("/some/glassfish"));
     }
 
+    /** A slot for GlassFish Embedded has no admin port and no install, but the IIOP and JMS ports of its children. */
+    @Test
+    void anEmbeddedSlotRoundTripsWithoutAnAdminPort(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("ports.properties");
+        SlotPorts.embedded(14849, 14850, 14857, 14851, 14852, 14853, 14854, 14855).writeTo(file);
+
+        SlotPorts read = SlotPorts.readFrom(file);
+        assertThat(read.isEmbedded(), equalTo(true));
+        assertThat(read.adminPort(), equalTo(0));
+        assertThat(read.glassFishHome(), nullValue());
+        assertThat(read.httpPort(), equalTo(14849));
+        assertThat(read.debugPort(), equalTo(14857));
+        assertThat(read.embeddedPorts(14857).iiopMutualAuth(), equalTo(14853));
+        assertThat(read.embeddedPorts(14857).jmsRmi(), equalTo(14855));
+        assertThat(Files.readString(file).contains(SlotPorts.ADMIN_PORT), equalTo(false));
+    }
+
+    @Test
+    void aDomainSlotIsntEmbedded(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("ports.properties");
+        new SlotPorts(14948, 14949, 14950, "/some/glassfish").writeTo(file);
+
+        assertThat(SlotPorts.readFrom(file).isEmbedded(), equalTo(false));
+    }
+
     @Test
     void writeIsAtomicallyVisible(@TempDir Path tmp) throws IOException {
         Path file = tmp.resolve("ports.properties");

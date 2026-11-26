@@ -167,8 +167,9 @@ public final class PoolBootstrap {
     /**
      * Pool is "already provisioned" when every requested slot is owned by
      * another JVM, or has a {@code ports.properties} pointing at a live admin
-     * port. Used by {@link #up} to fast-exit on a second concurrent (or
-     * repeated) call so the heavy clone/start-domain work isn't re-run.
+     * port, or for GlassFish Embedded, one of an Embedded slot. Used by
+     * {@link #up} to fast-exit on a second concurrent (or repeated) call so
+     * the heavy clone/start-domain work isn't re-run.
      */
     private static boolean isAlreadyProvisioned(PoolConfig config) {
         for (int idx = 1; idx <= config.size(); idx++) {
@@ -187,10 +188,11 @@ public final class PoolBootstrap {
 
             try {
                 SlotPorts ports = SlotPorts.readFrom(portsFile);
-                if (!isPortHealthy(ports.adminPort())) {
+                if (ports.isEmbedded() != config.embedded()
+                        || (!ports.isEmbedded() && !isPortHealthy(ports.adminPort()))) {
                     return false;
                 }
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
                 return false;
             }
         }
@@ -200,8 +202,11 @@ public final class PoolBootstrap {
 
     /**
      * Stop every {@code slot-N} under {@code config.poolDir()}, with
-     * {@code stop-domain}, and with {@code stop-domain --kill} if that fails.
-     * Slots without an install dir are skipped.
+     * {@code stop-domain}, and with {@code stop-domain --kill} if that fails,
+     * and end the GlassFish Embedded children that serve one. Slots without
+     * an install dir have no domain to stop. An Embedded slot loses its
+     * {@code ports.properties}, so the next build sets it up afresh, as it
+     * does a domain slot that stopped.
      *
      * @throws IllegalStateException naming the slots whose admin port still
      *         answers afterwards, because the next {@link #up} would reuse
@@ -261,7 +266,14 @@ public final class PoolBootstrap {
             PoolProvisioner provisioner = new PoolProvisioner(config);
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (int slot : slots) {
-                futures.add(CompletableFuture.runAsync(() -> provisioner.stopSlot(slot), pool));
+                futures.add(CompletableFuture.runAsync(() -> {
+                    provisioner.stopSlot(slot);
+                    try {
+                        provisioner.stopEmbeddedSlot(slot);
+                    } catch (IOException e) {
+                        LOG.log(Level.WARNING, "Slot " + slot + "'s GlassFish Embedded child didn't end", e);
+                    }
+                }, pool));
             }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         } finally {
@@ -269,10 +281,13 @@ public final class PoolBootstrap {
         }
 
         List<String> running = new ArrayList<>();
+        PoolProvisioner provisioner = new PoolProvisioner(config);
         for (int slot : slots) {
             int adminPort = adminPort(config, slot);
             if (isDirectory(slotInstall(poolDir, slot)) && isPortHealthy(adminPort)) {
                 running.add(slot + " (admin port " + adminPort + ")");
+            } else if (!provisioner.children(slot).isEmpty()) {
+                running.add(slot + " (GlassFish Embedded)");
             }
         }
         if (!running.isEmpty()) {
@@ -286,7 +301,10 @@ public final class PoolBootstrap {
         Path portsFile = portsFile(config.poolDir(), slot);
         if (exists(portsFile)) {
             try {
-                return SlotPorts.readFrom(portsFile).adminPort();
+                SlotPorts ports = SlotPorts.readFrom(portsFile);
+                if (!ports.isEmbedded()) {
+                    return ports.adminPort();
+                }
             } catch (IOException | RuntimeException e) {
                 // Half-written; fall back to the config's port.
             }
@@ -322,7 +340,11 @@ public final class PoolBootstrap {
         }
     }
 
-    /** Print a one-line-per-slot status to stdout: idx, adminPort, alive/dead, leased/idle. */
+    /**
+     * Print a one-line-per-slot status to stdout: idx, adminPort, alive/dead,
+     * leased/idle. An Embedded slot has no admin port, and is alive while a
+     * child runs on it.
+     */
     public static void status(PoolConfig config) {
         status(config, System.out);
     }
@@ -348,6 +370,7 @@ public final class PoolBootstrap {
         String rowFormat = "| %-4s | %-9s | %-10s | %-6s |%n";
         out.printf(rowFormat, "slot", "adminPort", "alive", "leased");
         out.println("|------|-----------|------------|--------|");
+        PoolProvisioner provisioner = new PoolProvisioner(config);
         for (int slot : slots) {
             Path portsFile = portsFile(poolDir, slot);
             String adminPort = "?";
@@ -357,9 +380,14 @@ public final class PoolBootstrap {
             if (Files.exists(portsFile)) {
                 try {
                     SlotPorts ports = SlotPorts.readFrom(portsFile);
-                    adminPort = String.valueOf(ports.adminPort());
-                    alive = isPortHealthy(ports.adminPort()) ? "yes" : "no";
-                } catch (IOException e) {
+                    if (ports.isEmbedded()) {
+                        adminPort = "-";
+                        alive = provisioner.children(slot).isEmpty() ? "idle" : "child";
+                    } else {
+                        adminPort = String.valueOf(ports.adminPort());
+                        alive = isPortHealthy(ports.adminPort()) ? "yes" : "no";
+                    }
+                } catch (IOException | RuntimeException e) {
                     adminPort = "(io err)";
                 }
             } else {

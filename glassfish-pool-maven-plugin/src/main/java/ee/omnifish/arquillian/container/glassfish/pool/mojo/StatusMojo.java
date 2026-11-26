@@ -10,6 +10,7 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
@@ -48,7 +49,7 @@ public class StatusMojo extends AbstractPoolMojo {
     protected boolean interactiveMode;
 
     @Override
-    public void execute() {
+    public void execute() throws MojoExecutionException {
         if (once || !interactiveMode || System.console() == null) {
             PoolBootstrap.status(poolConfig());
         } else {

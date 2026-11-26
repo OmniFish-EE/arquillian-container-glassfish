@@ -99,11 +99,12 @@ class ProvisionMojoTest {
         DistributionCoord jar = Edition.EMBEDDED.distribution("8.0.5", null, false);
 
         MojoExecutionException withHome = assertThrows(MojoExecutionException.class,
-                () -> ProvisionMojo.checkEdition(Edition.EMBEDDED, null, new File("glassfish8"), false, false));
+                () -> Stager.checkEdition(Edition.EMBEDDED, null, new File("glassfish8"), false, false, "<home>"));
         assertThrows(MojoExecutionException.class,
-                () -> ProvisionMojo.checkEdition(Edition.EMBEDDED_WEB, jar, null, true, false));
-        assertDoesNotThrow(() -> ProvisionMojo.checkEdition(Edition.EMBEDDED, jar, null, false, false));
-        assertDoesNotThrow(() -> ProvisionMojo.checkEdition(Edition.FULL, null, new File("glassfish8"), true, false));
+                () -> Stager.checkEdition(Edition.EMBEDDED_WEB, jar, null, true, false, "<home>"));
+        assertDoesNotThrow(() -> Stager.checkEdition(Edition.EMBEDDED, jar, null, false, false, "<home>"));
+        assertDoesNotThrow(() -> Stager.checkEdition(Edition.FULL, null, new File("glassfish8"), true, false,
+                "<home>"));
 
         assertThat(withHome.getMessage(), containsString("<home> and <unpackSkip> work with the full and web editions"));
     }
@@ -114,9 +115,9 @@ class ProvisionMojoTest {
         jar.set("org.glassfish.main.extras:glassfish-embedded-all:8.0.5:jar");
 
         MojoExecutionException overlaid = assertThrows(MojoExecutionException.class,
-                () -> ProvisionMojo.checkEdition(Edition.EMBEDDED, jar, null, false, true));
+                () -> Stager.checkEdition(Edition.EMBEDDED, jar, null, false, true, "<home>"));
         MojoExecutionException full = assertThrows(MojoExecutionException.class,
-                () -> ProvisionMojo.checkEdition(Edition.FULL, jar, null, false, false));
+                () -> Stager.checkEdition(Edition.FULL, jar, null, false, false, "<home>"));
 
         assertThat(overlaid.getMessage(), containsString("Overlays need the modules of a ZIP"));
         assertThat(full.getMessage(), containsString("for GlassFish Embedded, set <edition>embedded</edition>"));

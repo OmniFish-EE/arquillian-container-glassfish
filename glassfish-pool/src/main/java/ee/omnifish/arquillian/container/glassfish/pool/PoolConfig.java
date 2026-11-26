@@ -24,6 +24,12 @@ import java.util.stream.Collectors;
  * <p>Each slot N occupies a contiguous port window starting at
  * {@code adminPortBase + N*portStride}. Port stride must be {@code >= 10}
  * because a GlassFish domain uses 10 ports.
+ *
+ * <p>On GlassFish Embedded ({@link #embedded}), a slot is that window, and no
+ * more: each deployment starts a child of its own on its ports, which uses
+ * them as {@code +1} HTTP, {@code +2} HTTPS, {@code +3} to {@code +5} its
+ * IIOP listeners, {@code +6} the JMS broker, {@code +7} the broker's RMI
+ * registry and {@code +9} its debugger.
  */
 public final class PoolConfig {
 
@@ -37,6 +43,12 @@ public final class PoolConfig {
 
     /** Where a slot's debug port is in its window: the last of its first ten ports. */
     private static final int DEBUG_PORT_OFFSET = 9;
+
+    /** Where an Embedded slot's first IIOP listener is in its window; the SSL ones follow. */
+    private static final int IIOP_PORT_OFFSET = 3;
+
+    /** Where an Embedded slot's JMS broker is in its window; its RMI registry follows. */
+    private static final int JMS_PORT_OFFSET = 6;
 
     public static final String SYS_POOL_DIR = "gf.pool.dir";
     public static final String SYS_SOURCE = "gf.pool.source";
@@ -68,6 +80,7 @@ public final class PoolConfig {
     private final SlotSetup setup;
     private final boolean debug;
     private final boolean suspend;
+    private final boolean embedded;
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride) {
         this(poolDir, source, size, adminPortBase, portStride, SlotSetup.NONE, false, false);
@@ -86,6 +99,12 @@ public final class PoolConfig {
 
     public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
                       SlotSetup setup, boolean debug, boolean suspend) {
+        this(poolDir, source, size, adminPortBase, portStride, setup, debug, suspend, false);
+    }
+
+    /** @param embedded whether the slots run GlassFish Embedded, a child per deployment */
+    public PoolConfig(Path poolDir, Path source, int size, int adminPortBase, int portStride,
+                      SlotSetup setup, boolean debug, boolean suspend, boolean embedded) {
         if (portStride < MIN_PORT_STRIDE) {
             throw new IllegalArgumentException(
                     "portStride must be >= " + MIN_PORT_STRIDE + " (got " + portStride + ")");
@@ -104,6 +123,7 @@ public final class PoolConfig {
         this.setup = (setup == null) ? SlotSetup.NONE : setup;
         this.debug = debug;
         this.suspend = suspend;
+        this.embedded = embedded;
     }
 
     public Path poolDir() {
@@ -143,6 +163,39 @@ public final class PoolConfig {
     /** The port slot {@code idx}'s debugger listens on, on localhost, when it starts with one. */
     public int debugPort(int idx) {
         return adminPort(idx) + DEBUG_PORT_OFFSET;
+    }
+
+    /** The port of the IIOP listener of an Embedded slot {@code idx}'s child. */
+    public int iiopPort(int idx) {
+        return adminPort(idx) + IIOP_PORT_OFFSET;
+    }
+
+    /** The port of the SSL IIOP listener of an Embedded slot {@code idx}'s child. */
+    public int iiopSslPort(int idx) {
+        return iiopPort(idx) + 1;
+    }
+
+    /** The port of the IIOP listener with mutual authentication of an Embedded slot {@code idx}'s child. */
+    public int iiopMutualAuthPort(int idx) {
+        return iiopPort(idx) + 2;
+    }
+
+    /** The port of the JMS broker of an Embedded slot {@code idx}'s child. */
+    public int jmsPort(int idx) {
+        return adminPort(idx) + JMS_PORT_OFFSET;
+    }
+
+    /** The port of the JMS broker's RMI registry of an Embedded slot {@code idx}'s child. */
+    public int jmsRmiPort(int idx) {
+        return jmsPort(idx) + 1;
+    }
+
+    /**
+     * Whether the slots run GlassFish Embedded: each a block of ports, on
+     * which each deployment starts a child of its own, rather than a domain.
+     */
+    public boolean embedded() {
+        return embedded;
     }
 
     /**
@@ -191,7 +244,8 @@ public final class PoolConfig {
                 Integer.parseInt(System.getProperty(SYS_PORT_STRIDE, String.valueOf(DEFAULT_PORT_STRIDE))),
                 SlotSetup.fromSystemProperties(),
                 Boolean.getBoolean("glassfish.debug"),
-                Boolean.getBoolean("glassfish.suspend"));
+                Boolean.getBoolean("glassfish.suspend"),
+                EmbeddedPool.exists(Paths.get(requireSys(SYS_POOL_DIR))));
     }
 
     /**
@@ -199,7 +253,9 @@ public final class PoolConfig {
      * system properties {@link #fromSystemProperties} reads, as {@code up}
      * forwards them. {@code debug} and {@code suspend} aren't forwarded, so
      * slots the test JVM creates start without them. Without a forwarded
-     * source, the test JVM can't create slots, only lease existing ones.
+     * source, the test JVM can't create domain slots, only lease existing
+     * ones. The pool runs GlassFish Embedded when {@code up} described it in
+     * {@code poolDir} ({@link EmbeddedPool}).
      */
     static PoolConfig forTestJvm(Path poolDir) {
         return new PoolConfig(
@@ -210,7 +266,8 @@ public final class PoolConfig {
                 Integer.getInteger(SYS_PORT_STRIDE, DEFAULT_PORT_STRIDE),
                 SlotSetup.fromSystemProperties(),
                 false,
-                false);
+                false,
+                EmbeddedPool.exists(poolDir));
     }
 
     /**

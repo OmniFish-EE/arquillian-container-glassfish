@@ -10,6 +10,7 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,6 +106,31 @@ public final class SlotSetup {
     /** The {@code -Xmx} and {@code -ea} jvm-options, mapped as the managed Arquillian Container maps them. */
     Map<String, String> jvmOptions() {
         return DomainXmlEditor.heapAndAssertionOptions(maxHeapSize, enableAssertions);
+    }
+
+    /**
+     * The JVM options of a GlassFish Embedded child, which has no
+     * {@code domain.xml} of a slot to bake them into: the system properties
+     * as {@code -D} options, then the heap and assertion options.
+     */
+    public List<String> childJvmOptions() {
+        List<String> options = new ArrayList<>();
+        for (String property : systemProperties) {
+            options.add("-D" + property);
+        }
+        options.addAll(jvmOptions().values());
+        return options;
+    }
+
+    /**
+     * The commands a GlassFish Embedded child runs as it starts, before its
+     * deploy: each start is a slot's first start too, so the post-boot
+     * commands, then the post-start ones.
+     */
+    public List<String> childCommands() {
+        List<String> commands = new ArrayList<>(postBootCommands);
+        commands.addAll(postStartCommands);
+        return commands;
     }
 
     /**

@@ -18,12 +18,12 @@ and failsafe) to get a parallel-fork-friendly pool of GlassFish instances.
 
 | Goal        | Default phase            | Purpose                                             |
 | ----------- | ------------------------ | --------------------------------------------------- |
-| `up`        | `pre-integration-test`   | Stage GlassFish (optional), provision and start every slot in parallel. Idempotent — re-running fast-exits if all slots are healthy. |
+| `up`        | `pre-integration-test`   | Stage GlassFish (optional), provision and start every slot in parallel. Idempotent — re-running fast-exits if all slots are healthy. On an Embedded edition, each slot is a block of ports instead; see [Running tests on GlassFish Embedded](#running-tests-on-glassfish-embedded). |
 | `down`      | `post-integration-test`  | Stop every slot's domain. Fails if a slot keeps running, since the next `up` would reuse it. The extension binds it only with `multiModule` off. |
 | `provision` | (none)                   | Provision a single extra slot at `-Dgf.pool.slot=N`. Mostly debugging — `SlotLeaser` grows the pool itself when test JVMs need it. |
-| `status`    | (none)                   | Print one row per slot: index, admin port, alive, leased. Live-refreshes on a TTY (like `top`); one-shot when piped or under `-B`. |
+| `status`    | (none)                   | Print one row per slot: index, admin port, alive, leased. Live-refreshes on a TTY (like `top`); one-shot when piped or under `-B`. A slot for GlassFish Embedded has `-` as its admin port, and is alive while a child runs on it. |
 | `nuke`      | (none)                   | Stop every slot AND remove the pool directory. Forceful reset before a clean `up`. |
-| `run`       | (none)                   | Package the project, lease a slot, deploy the project to it, and keep running, with the slot's `server.log` on the console, until Ctrl+C. See [Running an application](#running-an-application). |
+| `run`       | (none)                   | Package the project, lease a slot, deploy the project to it, and keep running, with the slot's `server.log` on the console, until Ctrl+C. See [Running an application](#running-an-application). On an Embedded edition, run it on GlassFish Embedded, on the slot's ports. |
 
 ## Quick start
 
@@ -149,7 +149,10 @@ build isn't running tests there's no reason to pay for a pool.
 
 | Parameter         | Property               | Default                          | Notes                                                                  |
 | ----------------- | ---------------------- | -------------------------------- | ---------------------------------------------------------------------- |
-| `distribution`    | (nested `<distribution>`) | (none)                        | Optional GAV of a GlassFish dist to resolve and unpack into `stageDir`. Only `<version>` is required; `groupId`/`artifactId`/`type` default to `org.glassfish.main.distributions`/`glassfish`/`zip`. |
+| `edition`         | `gf.pool.edition`      | `full`                           | `full` or `web`, a `domain1` per slot, or `embedded` or `embedded-web`, GlassFish Embedded, a child JVM per deployment. See *Running tests on GlassFish Embedded*. |
+| `version`         | `gf.pool.version`      | (none)                           | The GlassFish version, for the artifact `<edition>` names. `<distribution>` overrides it, and with `<poolSource>`, it doesn't apply. |
+| `embeddedMode`    | `gf.pool.embeddedMode` | `command-line`                   | How GlassFish Embedded starts on an Embedded edition: `command-line`, a child JVM per deployment. `in-process`, inside the test JVM, isn't supported yet. `full` and `web`, and `run`, ignore it. |
+| `distribution`    | (nested `<distribution>`) | (none)                        | Optional GAV of a GlassFish dist to resolve and unpack into `stageDir`, overriding `<version>`. Only `<version>` is required; `groupId`/`artifactId`/`type` default to the artifact of `<edition>`, `org.glassfish.main.distributions`/`glassfish`/`zip` by default. |
 | `stageDir`        | `gf.pool.stageDir`     | `target/dist`, see *Defaults*    | Where the dist zip is unpacked.                                        |
 | `unpackSkip`      | `gf.pool.unpack.skip`  | `false`                          | Skip the unpack — assume `poolSource` already points at a staged install. |
 | `overlays`        | (nested `<overlays>`)  | (empty)                          | Artifacts copied into `overlayTargetDir` after unpack. See *Overlays*.  |
@@ -580,6 +583,95 @@ $ mvn glassfish-pool:run
 - **`-DskipTests`** skips the tests of the `package` that `run` forks, and
   an `up` bound in it, but not `run`. Projects other than `war`, `ear`,
   `ejb` and `rar` have nothing to deploy, and `run` does nothing there.
+
+## Running tests on GlassFish Embedded
+
+With an Embedded `<edition>`, the tests run on GlassFish Embedded, the way
+it runs an application from the command line: each deployment starts a
+child JVM of its own, with the archive, on the ports of the slot its test
+JVM leases, and the undeploy ends that child.
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.arquillian</groupId>
+    <artifactId>glassfish-pool-maven-plugin</artifactId>
+    <version>2.2.3</version>
+    <extensions>true</extensions>
+    <configuration>
+        <edition>embedded-web</edition>
+        <version>8.0.5</version>
+    </configuration>
+</plugin>
+```
+
+- **The tests** depend on the pool's Arquillian Container,
+  `arquillian-glassfish-server-pool`, as they do for domains. `up`
+  describes the GlassFish Embedded the slots run in the pool directory, as
+  `embedded.properties`, where the test JVMs find it, so nothing more needs
+  forwarding to them.
+- **The two forms:**
+  - Without an applied overlay, the children run GlassFish Embedded's
+    self-contained JAR, which `up` copies to `stageDir`. It serves HTTP
+    only, as it has no server key.
+  - With one, `up` stages the Full or Web ZIP and applies the overlays,
+    and the children run its static shell, with `domain1`'s key, so they
+    serve HTTPS too.
+- **A slot is a block of ports:** it has no install of its own, and nothing
+  runs on it between deployments. The stop after the build removes its
+  `ports.properties`, so the next build sets it up afresh, with its own
+  settings, as it does a domain slot that stopped. Its children use its
+  window like this:
+
+  | Offset | Port |
+  |---|---|
+  | +1 | HTTP |
+  | +2 | HTTPS |
+  | +3, +4, +5 | IIOP, IIOP SSL, IIOP with mutual authentication |
+  | +6 | JMS broker |
+  | +7 | the JMS broker's RMI registry |
+  | +9 | the debugger |
+
+- **One deployment per slot at a time:** a deployment to a slot whose child
+  still runs fails, before it disturbs that child. A test class with two
+  deployments at once needs two containers, as in an Arquillian group, each
+  on a slot of its own.
+- **Settings and commands:**
+  - Each child gets `<systemProperties>`, `<maxHeapSize>` and
+    `<enableAssertions>` as JVM options.
+  - It runs `<postBootCommands>`, then `<postStartCommands>`, as startup
+    commands, before its deploy: each child is a slot's first start.
+  - The test JVM's own `glassfish.systemProperties`,
+    `glassfish.postBootCommands` and `glassfish.postStartCommands` follow.
+  - A failed command ends the child's start, whatever
+    `<failOnCommandError>` says.
+- **Trusted certificates:** each child gets a copy of the truststore, with
+  GlassFish's master password. For the JAR, that's a copy of the JDK's trust
+  anchors with the certificates, or `<trustStore>`; for the static shell,
+  `domain1`'s truststore, or `<trustStore>`.
+- **The debugger:** with `glassfish.debug`, on `up` or in the test JVM,
+  each child listens on localhost, on its slot's debug port, so a debugger
+  attaches anew for each deployment. With `glassfish.suspend` in the test
+  JVM, each child waits for one before it deploys.
+- **The log:** each child's output goes to `slot-N/glassfish-embedded.log`,
+  which the slot's next child replaces, and with
+  `glassfish.serverLogToConsole`, to the console too. A start that fails
+  says its last lines.
+- **A child its test JVM left:** a test JVM that dies, as on a fork's
+  timeout, can leave its child running. The stage directory records each
+  child, with its slot, so the next lease of that slot, or the stop after
+  the build, ends it.
+- **JMS and remote EJBs:** each child has IIOP and JMS ports of its own. On
+  the static shell, and on 7.1.0's JAR, GlassFish Embedded's JMS broker
+  doesn't start, also outside the pool. GlassFish's IIOP security refuses
+  remote EJB calls between two children.
+- **What doesn't apply:** `restartOnRelease` has nothing to restart.
+  `<sourcePostBootCommands>`, `<poolSource>` and `<unpackSkip>` fail on an
+  Embedded edition, and so does `<embeddedMode>in-process</embeddedMode>`,
+  which isn't supported yet.
+- **`glassfish-pool:run`** runs the project on GlassFish Embedded too, from
+  the command line, on a leased slot's ports, whatever `<embeddedMode>`
+  says. Its debugger, on by default in a build that runs `run`, is on the
+  slot's debug port.
 
 ## Recipes
 

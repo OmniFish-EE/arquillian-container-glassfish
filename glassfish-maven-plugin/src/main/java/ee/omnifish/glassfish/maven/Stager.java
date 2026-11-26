@@ -26,6 +26,7 @@ import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
 
 import ee.omnifish.glassfish.admin.PostBootCommands;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
 import ee.omnifish.glassfish.maven.staging.ArtifactCoord;
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
@@ -126,6 +127,64 @@ public final class Stager {
     /** Run {@code spec}, with {@code commandRunner} running its commands; see {@link GlassFishStaging#stage}. */
     public void stage(StageSpec spec, CommandRunner commandRunner) throws IOException {
         GlassFishStaging.stage(spec, resolver, commandRunner);
+    }
+
+    /**
+     * Fail on what {@code edition} can't stage: an existing install or a
+     * skipped unpack for GlassFish Embedded, an Embedded JAR with overlays,
+     * which need the modules of a ZIP, or such a JAR for an edition that
+     * starts {@code domain1}.
+     *
+     * @param homeParameter how the goal spells its explicit install root, for messages
+     */
+    public static void checkEdition(Edition edition, DistributionCoord distribution, File home, boolean unpackSkip,
+                                    boolean overlaid, String homeParameter) throws MojoExecutionException {
+        if (edition.isEmbedded() && (home != null || unpackSkip)) {
+            throw new MojoExecutionException(homeParameter + " and <unpackSkip> work with the full and web editions, "
+                    + "not " + edition);
+        }
+        if (!Edition.isJar(distribution)) {
+            return;
+        }
+
+        if (!edition.isEmbedded()) {
+            throw new MojoExecutionException("<edition>" + edition + "</edition> unpacks a ZIP, not "
+                    + distribution.toGav() + "; for GlassFish Embedded, set <edition>embedded</edition>");
+        }
+        if (overlaid) {
+            throw new MojoExecutionException("Overlays need the modules of a ZIP, not " + distribution.toGav()
+                    + ": leave out <distribution>, or name the ZIP of a GlassFish distribution");
+        }
+    }
+
+    /**
+     * What runs the GlassFish Embedded {@code spec} staged: the
+     * self-contained JAR, with the truststore its certificates went into, or
+     * the install whose static shell runs it, with the truststore to copy
+     * into its instance: {@code trustStore}, or else its {@code domain1}'s.
+     *
+     * @param trustStore the truststore the goal names, or {@code null}
+     * @param trustStorePassword the password that opens it, or the staged one
+     */
+    public static EmbeddedGlassFish embeddedGlassFish(StageSpec spec, Path trustStore, String trustStorePassword)
+            throws MojoExecutionException {
+        if (Edition.isJar(spec.distribution())) {
+            Path jar = GlassFishStaging.stagedJar(spec.stageDir(), spec.distribution());
+            Path staged = spec.stageDir().resolve(GlassFishStaging.EMBEDDED_TRUST_STORE);
+            Path jarTrustStore = (trustStore != null) ? trustStore : spec.certImport().hasWork() ? staged : null;
+            return EmbeddedGlassFish.jar(spec.stageDir(), jar, jarTrustStore, trustStorePassword);
+        }
+        if (spec.home() == null) {
+            throw new MojoExecutionException("Can't run GlassFish Embedded: its install root isn't known");
+        }
+
+        try {
+            return EmbeddedGlassFish.install(spec.stageDir(), spec.home(),
+                    (trustStore != null) ? trustStore : GlassFishStaging.domainTrustStore(spec.home()),
+                    trustStorePassword);
+        } catch (IOException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
     }
 
     private static void requireVersion(DistributionCoord distribution) throws MojoExecutionException {

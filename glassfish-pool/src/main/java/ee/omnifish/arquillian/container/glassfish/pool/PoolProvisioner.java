@@ -20,12 +20,15 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import ee.omnifish.glassfish.admin.AsAdmin;
 import ee.omnifish.glassfish.admin.DomainXmlEditor;
 import ee.omnifish.glassfish.admin.PostBootCommands;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedProcesses;
 
 /**
  * Provisions a single slot: clone the source install, patch the per-slot
@@ -41,6 +44,12 @@ import ee.omnifish.glassfish.admin.PostBootCommands;
  *
  * <p>Idempotent: a slot whose admin port already responds is left alone.
  * Lets {@link PoolBootstrap#up} be re-run safely after a partial failure.
+ *
+ * <p>For GlassFish Embedded ({@link PoolConfig#embedded}), a slot is a block
+ * of ports, with nothing to clone or start: provisioning it writes its
+ * {@code ports.properties}. Each deployment starts a child on those ports,
+ * which the stage directory records with the slot it serves, so a child its
+ * test JVM left behind is found and ended.
  */
 public final class PoolProvisioner {
 
@@ -60,6 +69,9 @@ public final class PoolProvisioner {
 
     private static final int HEALTH_PROBE_TIMEOUT_MILLIS = 1000;
 
+    /** How long a GlassFish Embedded child gets to stop before it's killed. */
+    private static final Duration CHILD_STOP_TIMEOUT = Duration.ofSeconds(60);
+
     private final PoolConfig config;
 
     public PoolProvisioner(PoolConfig config) {
@@ -75,7 +87,9 @@ public final class PoolProvisioner {
      * path does, so a free lock always means nobody is building the slot.
      */
     public SlotPorts provisionSlot(int idx) throws IOException {
-        requireSource();
+        if (!config.embedded()) {
+            requireSource();
+        }
         Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
         Files.createDirectories(PoolPaths.slotDir(config.poolDir(), idx));
 
@@ -88,6 +102,13 @@ public final class PoolProvisioner {
         }
 
         try (lock) {
+            if (config.embedded()) {
+                if (Files.exists(portsFile) && SlotPorts.readFrom(portsFile).isEmbedded()) {
+                    LOG.fine(() -> "Slot " + idx + " already provisioned for GlassFish Embedded");
+                    return SlotPorts.readFrom(portsFile);
+                }
+                return createEmbeddedSlot(idx);
+            }
             if (Files.exists(portsFile) && isPortHealthy(config.adminPort(idx))) {
                 LOG.fine(() -> "Slot " + idx + " already provisioned (adminPort=" + config.adminPort(idx) + ")");
                 return SlotPorts.readFrom(portsFile);
@@ -103,6 +124,9 @@ public final class PoolProvisioner {
      * check and always re-creates the slot.
      */
     SlotPorts provisionClaimedSlot(int idx) throws IOException {
+        if (config.embedded()) {
+            return createEmbeddedSlot(idx);
+        }
         requireSource();
         return createSlot(idx);
     }
@@ -130,7 +154,9 @@ public final class PoolProvisioner {
         Files.deleteIfExists(portsFile);
 
         // A setup abandoned after start-domain, or a failed stop, can leave a
-        // server running from the old install, on the slot's ports.
+        // server running from the old install, on the slot's ports, and an
+        // Embedded slot of an earlier build a child.
+        endChildren(idx);
         stopIfStarted(idx, adminPort);
         if (isPortHealthy(adminPort)) {
             throw new IOException("Slot " + idx + ": a server still answers on admin port " + adminPort
@@ -175,6 +201,98 @@ public final class PoolProvisioner {
         }
         LOG.info("Slot " + idx + " provisioned: adminPort=" + adminPort + ", http=" + httpPort);
         return ports;
+    }
+
+    /**
+     * Create Embedded slot {@code idx}: end a child the slot still serves,
+     * stop a {@code domain1} left from a pool of domains and remove its
+     * install, then publish the slot's ports. Its children's debugger, on the
+     * slot's debug port, is there when this pool starts with one.
+     */
+    private SlotPorts createEmbeddedSlot(int idx) throws IOException {
+        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
+        Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
+        Files.createDirectories(slotDir);
+        Files.deleteIfExists(portsFile);
+
+        endChildren(idx);
+        Path slotInstall = slotDir.resolve(SLOT_INSTALL_DIRNAME);
+        if (Files.isDirectory(slotInstall)) {
+            int adminPort = config.adminPort(idx);
+            stopIfStarted(idx, adminPort);
+            if (isPortHealthy(adminPort)) {
+                throw new IOException("Slot " + idx + ": a server still answers on admin port " + adminPort
+                        + " and didn't stop");
+            }
+            deleteRecursive(slotInstall);
+        }
+
+        int debugPort = (config.debug() || config.suspend()) ? config.debugPort(idx) : 0;
+        SlotPorts ports = SlotPorts.embedded(config.httpPort(idx), config.httpsPort(idx), debugPort,
+                config.iiopPort(idx), config.iiopSslPort(idx), config.iiopMutualAuthPort(idx), config.jmsPort(idx),
+                config.jmsRmiPort(idx));
+        ports.writeTo(portsFile);
+        LOG.info("Slot " + idx + " provisioned for GlassFish Embedded: http=" + ports.httpPort());
+        return ports;
+    }
+
+    /**
+     * The GlassFish Embedded children that the stage directory records as
+     * serving slot {@code idx}, and that still run.
+     */
+    public List<ProcessHandle> children(int idx) {
+        Optional<Path> stageDir = stageDir();
+        return stageDir.isPresent()
+                ? EmbeddedProcesses.serving(stageDir.get(), PoolPaths.slotDir(config.poolDir(), idx))
+                : List.of();
+    }
+
+    /**
+     * End the GlassFish Embedded children that serve slot {@code idx}, and
+     * remove their records. The caller holds the slot, so they're children a
+     * JVM that held it before left behind, as a test fork that died.
+     */
+    public void endChildren(int idx) throws IOException {
+        Optional<Path> stageDir = stageDir();
+        if (stageDir.isEmpty()) {
+            return;
+        }
+
+        for (ProcessHandle child : children(idx)) {
+            LOG.info("Ending GlassFish Embedded's child " + child.pid() + ", which slot " + idx
+                    + "'s previous holder left running");
+            EmbeddedProcesses.end(child, CHILD_STOP_TIMEOUT);
+            EmbeddedProcesses.forget(stageDir.get(), child);
+        }
+    }
+
+    /**
+     * Stop Embedded slot {@code idx}: end its children, and remove its
+     * {@code ports.properties}, so the next build sets the slot up afresh,
+     * with its own settings, as it does a domain slot that stopped. A domain
+     * slot is left to {@link #stopSlot}.
+     */
+    public void stopEmbeddedSlot(int idx) throws IOException {
+        endChildren(idx);
+        Path portsFile = PoolPaths.portsFile(config.poolDir(), idx);
+        try {
+            if (Files.exists(portsFile) && SlotPorts.readFrom(portsFile).isEmbedded()) {
+                Files.deleteIfExists(portsFile);
+            }
+        } catch (RuntimeException e) {
+            // Half-written, or not written by this class: there's nothing to set up afresh.
+            LOG.log(Level.FINE, "Could not read " + portsFile, e);
+        }
+    }
+
+    /** The stage directory GlassFish Embedded runs from, as the pool's description names it, if there is one. */
+    private Optional<Path> stageDir() {
+        try {
+            return EmbeddedPool.read(config.poolDir()).map(EmbeddedGlassFish::stageDir);
+        } catch (IOException e) {
+            LOG.log(Level.FINE, "Could not read the pool's description of GlassFish Embedded", e);
+            return Optional.empty();
+        }
     }
 
     /**

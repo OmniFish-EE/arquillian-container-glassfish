@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Execute;
@@ -22,15 +23,20 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
+import ee.omnifish.arquillian.container.glassfish.pool.EmbeddedPool;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotLease;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotLeaser;
 import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
 import ee.omnifish.glassfish.admin.ServerLogTailer;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedCommand;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedPorts;
 import ee.omnifish.glassfish.admin.rest.AdminConnection;
 import ee.omnifish.glassfish.admin.rest.AdminRestClient;
 import ee.omnifish.glassfish.admin.rest.GlassFishClientException;
+import ee.omnifish.glassfish.maven.EmbeddedRun;
 import ee.omnifish.glassfish.maven.LifecycleSupport;
 import ee.omnifish.glassfish.maven.RunDeployer;
 import ee.omnifish.glassfish.maven.RunningDomain;
@@ -58,12 +64,20 @@ import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
  * {@code war}, {@code ear}, {@code ejb} and {@code rar} projects are
  * deployed; for others, this goal does nothing. {@code -DskipTests} skips the
  * tests of the {@code package} this goal runs, not this goal.
+ *
+ * <p>On an Embedded {@code <edition>}, it runs the artifact on GlassFish
+ * Embedded, from the command line, in a JVM of its own, on the slot's ports,
+ * as {@code glassfish:run} does on its own, whatever {@code <embeddedMode>}
+ * says: there's no test JVM to run it in.
  */
 @Mojo(name = "run", threadSafe = true)
 @Execute(phase = LifecyclePhase.PACKAGE)
 public class RunMojo extends AbstractStagingPoolMojo {
 
     private static final String GOAL = "glassfish-pool:run";
+
+    /** How long GlassFish Embedded gets to deploy the artifact, or a debugger to attach to it with {@code suspend}. */
+    private static final Duration START_TIMEOUT = Duration.ofMinutes(5);
 
     /**
      * The application's name. GlassFish takes it from an EAR's
@@ -120,7 +134,11 @@ public class RunMojo extends AbstractStagingPoolMojo {
         }
         PoolConfig poolConfig = poolConfig();
         try {
-            run(poolConfig, preStage, archive);
+            if (poolConfig.embedded()) {
+                runEmbedded(poolConfig, preStage, archive);
+            } else {
+                run(poolConfig, preStage, archive);
+            }
         } finally {
             stopPool(poolConfig);
         }
@@ -147,6 +165,67 @@ public class RunMojo extends AbstractStagingPoolMojo {
         running.logWhere(debugPort > 0);
         getLog().info("Ctrl+C ends the run, and hands slot " + slot + " back to the pool");
         running.untilStopped();
+    }
+
+    /**
+     * Run {@code archive} on GlassFish Embedded, on a leased slot's ports:
+     * start a child with the archive, in a working directory under the
+     * slot's, with the slot's setup, and keep running, with its output on the
+     * console, until Ctrl+C stops it, or it ends otherwise, as when
+     * {@code glassfish-pool:down} from another terminal ends it. Then hand
+     * the slot back.
+     */
+    private void runEmbedded(PoolConfig poolConfig, Runnable preStage, Path archive) throws MojoExecutionException {
+        SlotLease lease = lease(poolConfig, preStage);
+        int slot = lease.slotIndex();
+        try {
+            EmbeddedGlassFish glassfish = embeddedGlassFish(poolConfig);
+            EmbeddedPorts ports = lease.ports().embeddedPorts(poolConfig.debugPort(slot));
+            for (int port : ports.listening(glassfish.isJar())) {
+                if (GlassFishDomain.isAnswering(port)) {
+                    throw new MojoExecutionException("Something already answers on port " + port + " of slot " + slot
+                            + ", where GlassFish Embedded would start");
+                }
+            }
+            String packaging = executedProject.getPackaging();
+            EmbeddedCommand command = new EmbeddedCommand(glassfish, archive.getFileName().toString(),
+                    "war".equals(packaging))
+                    .debug(debug, suspend)
+                    .messagesOnly(logMessagesOnly)
+                    .jvmOptions(poolConfig.setup().childJvmOptions())
+                    .commands(poolConfig.setup().childCommands())
+                    .name(name)
+                    .contextRoot(contextRoot);
+
+            if (suspend) {
+                getLog().info("Waiting up to " + START_TIMEOUT.toSeconds() + " seconds for a debugger to attach on "
+                        + ports.debugAddress());
+            }
+            String prefix = ServerLogTailer.prefix("glassfish:slot-" + slot, slot - 1,
+                    LifecycleSupport.isConsoleColored());
+            EmbeddedRun run = EmbeddedRun.start(command, archive, glassfish, ports, lease.slotDir(), lease.slotDir(),
+                    false, prefix, GOAL, getLog());
+            run.awaitStarted(START_TIMEOUT);
+            getLog().info(RunDeployer.deployed(run.name(), run.urls(archive, packaging, ports.http())));
+            if (debug || suspend) {
+                getLog().info("Debugger at " + ports.debugAddress());
+            }
+            getLog().info("Ctrl+C ends the run, and hands slot " + slot + " back to the pool");
+            run.untilStopped();
+        } finally {
+            lease.close();
+            getLog().info("Handed slot " + slot + " back to the pool");
+        }
+    }
+
+    /** The GlassFish Embedded the pool's slots run, as its staging described it. */
+    private static EmbeddedGlassFish embeddedGlassFish(PoolConfig poolConfig) throws MojoExecutionException {
+        try {
+            return EmbeddedPool.read(poolConfig.poolDir()).orElseThrow(() -> new IOException("the pool at "
+                    + poolConfig.poolDir() + " doesn't describe one"));
+        } catch (IOException e) {
+            throw new MojoExecutionException("Can't run GlassFish Embedded: " + e.getMessage(), e);
+        }
     }
 
     /**
