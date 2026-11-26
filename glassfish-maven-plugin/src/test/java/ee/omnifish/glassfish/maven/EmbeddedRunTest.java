@@ -12,6 +12,7 @@ package ee.omnifish.glassfish.maven;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
@@ -57,6 +58,30 @@ class EmbeddedRunTest {
         assertThat(run.process().isAlive(), is(false));
         assertThat(Files.exists(workDir.dir()), is(false));
         assertThat(log.infos, hasItem("GlassFish Embedded stopped"));
+    }
+
+    /**
+     * A second run from the same stage directory, as with suspend, whose
+     * child doesn't open the HTTP port yet, fails, and leaves the first
+     * child's name there, by which staging finds it on Windows.
+     */
+    @Test
+    void aSecondRunLeavesTheFirstChildsName() throws Exception {
+        EmbeddedRun first = start(workDir("work-1"), "war-messages.log", "idle", true);
+        try {
+            first.awaitStarted(START);
+
+            MojoExecutionException e = assertThrows(MojoExecutionException.class,
+                    () -> start(workDir("work-2"), "war-messages.log", "idle", true));
+
+            assertThat(e.getMessage(), containsString("GlassFish Embedded already runs from " + tmp));
+            assertThat(Files.readString(tmp.resolve("glassfish-embedded.pid")).split(" ")[0],
+                    equalTo(String.valueOf(first.process().pid())));
+            assertThat(Files.exists(tmp.resolve("work-2/run-" + ProcessHandle.current().pid())), is(false));
+        } finally {
+            first.close();
+        }
+        assertThat(Files.exists(tmp.resolve("glassfish-embedded.pid")), is(false));
     }
 
     @Test
@@ -114,8 +139,13 @@ class EmbeddedRunTest {
     }
 
     private EmbeddedWorkDir workDir() throws IOException {
+        return workDir("work");
+    }
+
+    /** A working directory under {@code parent}, of a run from the stage directory {@code tmp}. */
+    private EmbeddedWorkDir workDir(String parent) throws IOException {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
-        return EmbeddedWorkDir.create(tmp.resolve("work"), archive,
+        return EmbeddedWorkDir.create(tmp.resolve(parent), archive,
                 EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null));
     }
 

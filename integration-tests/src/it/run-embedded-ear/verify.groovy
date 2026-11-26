@@ -52,7 +52,8 @@ try {
 
     // Ctrl+C: see run-embedded.
     if (windows) {
-        run.toHandle().descendants().each { it.destroy() }
+        def pid = new File(ear, 'target/dist/glassfish-embedded.pid').text.tokenize()[0] as long
+        ProcessHandle.of(pid).ifPresent { it.destroy() }
         assert finished(run, 'The run') == 0
     } else {
         run.destroy()

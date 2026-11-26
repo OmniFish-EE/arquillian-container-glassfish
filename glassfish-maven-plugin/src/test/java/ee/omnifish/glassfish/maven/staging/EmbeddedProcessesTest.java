@@ -13,8 +13,10 @@ package ee.omnifish.glassfish.maven.staging;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -55,6 +57,17 @@ class EmbeddedProcessesTest {
         Files.writeString(tmp.resolve(EmbeddedProcesses.PID_FILE), ProcessHandle.current().pid() + " 0");
 
         assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.empty()));
+    }
+
+    /** Without its name, staging wouldn't find the child that runs, as on Windows. */
+    @Test
+    void theNameOfAChildThatRunsIsntReplaced() throws Exception {
+        EmbeddedProcesses.record(tmp, ProcessHandle.current());
+
+        assertThrows(IOException.class,
+                () -> EmbeddedProcesses.record(tmp, ProcessHandle.current().parent().orElseThrow()));
+
+        assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.of(ProcessHandle.current())));
     }
 
     @Test

@@ -37,8 +37,20 @@ final class EmbeddedProcesses {
     private EmbeddedProcesses() {
     }
 
-    /** Name {@code child} as the one that runs from {@code stageDir}. */
+    /**
+     * Name {@code child} as the one that runs from {@code stageDir}.
+     *
+     * @throws IOException if the name of another child that still runs is
+     *         there, which staging would no longer find without it, as on
+     *         Windows
+     */
     static void record(Path stageDir, ProcessHandle child) throws IOException {
+        Optional<ProcessHandle> running = recorded(stageDir);
+        if (running.isPresent() && !running.get().equals(child)) {
+            throw new IOException("GlassFish Embedded already runs from " + stageDir + ", for another glassfish:run. "
+                    + "End that one first.");
+        }
+
         Files.writeString(stageDir.resolve(PID_FILE),
                 child.pid() + child.info().startInstant().map(start -> " " + start.toEpochMilli()).orElse(""));
     }

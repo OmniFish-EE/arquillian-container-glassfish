@@ -140,10 +140,11 @@ try {
     assert page(url).contains('marker: from a post-boot command')
 
     // Ctrl+C: a SIGTERM runs the JVM's shutdown hooks, as Ctrl+C's SIGINT does, and bin/mvn execs that JVM; the
-    // plugin stops the child. On Windows, destroy() ends a process without running them, so the child is ended
-    // first there, which ends the run.
+    // plugin stops the child. On Windows, destroy() ends a process without running them, also Maven's own JVM
+    // under mvn.cmd, so only the child, which the stage directory names, is ended there, which ends the run.
     if (windows) {
-        first.toHandle().descendants().each { it.destroy() }
+        def pid = new File(basedir, 'target/dist/glassfish-embedded.pid').text.tokenize()[0] as long
+        ProcessHandle.of(pid).ifPresent { it.destroy() }
         assert finished(first, 'The first run') == 0
     } else {
         first.destroy()
