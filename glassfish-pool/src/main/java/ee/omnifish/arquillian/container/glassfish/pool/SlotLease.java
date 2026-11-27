@@ -11,6 +11,7 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.function.Consumer;
 
@@ -20,6 +21,9 @@ import ee.omnifish.glassfish.admin.ServerLogTailer;
  * Active hold on one slot. Closed when the test JVM is done with the slot;
  * also closed automatically at JVM exit (via the lock file's {@link FileChannel}
  * being released).
+ *
+ * <p>On GlassFish Embedded, the slot runs one child at a time, which the
+ * archive that claims it holds, also for containers that share the slot.
  */
 public final class SlotLease implements AutoCloseable {
 
@@ -27,19 +31,25 @@ public final class SlotLease implements AutoCloseable {
     private final SlotPorts ports;
     private final PoolLocks.Held lock;
     private final PoolLocks.Held runLock;
+    private final Path slotDir;
     private volatile boolean released;
     private ServerLogTailer serverLog;
+    private String child;
 
     SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock) {
-        this(slotIndex, ports, lock, null);
+        this(slotIndex, ports, lock, null, null);
     }
 
-    /** With {@code runLock}, the slot's {@code run.lock}, for a {@code glassfish-pool:run}. */
-    SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock, PoolLocks.Held runLock) {
+    /**
+     * With {@code runLock}, the slot's {@code run.lock}, for a
+     * {@code glassfish-pool:run}, and the slot's directory.
+     */
+    SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock, PoolLocks.Held runLock, Path slotDir) {
         this.slotIndex = slotIndex;
         this.ports = ports;
         this.lock = lock;
         this.runLock = runLock;
+        this.slotDir = slotDir;
     }
 
     public int slotIndex() {
@@ -48,6 +58,36 @@ public final class SlotLease implements AutoCloseable {
 
     public SlotPorts ports() {
         return ports;
+    }
+
+    /** The slot's directory, where its GlassFish Embedded children get their working directories. */
+    public Path slotDir() {
+        return slotDir;
+    }
+
+    /**
+     * Claim the slot's one GlassFish Embedded child for the archive
+     * {@code archiveId}: false while another archive holds it.
+     */
+    public synchronized boolean claimChild(String archiveId) {
+        if (child != null) {
+            return false;
+        }
+
+        child = archiveId;
+        return true;
+    }
+
+    /** Release the claim of {@code archiveId}, and only its. */
+    public synchronized void releaseChild(String archiveId) {
+        if (archiveId.equals(child)) {
+            child = null;
+        }
+    }
+
+    /** The archive whose child the slot runs, or {@code null}. */
+    synchronized String child() {
+        return child;
     }
 
     /**

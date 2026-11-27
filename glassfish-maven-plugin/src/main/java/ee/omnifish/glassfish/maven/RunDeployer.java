@@ -104,7 +104,7 @@ public final class RunDeployer {
     }
 
     /** What a run logs once it deployed {@code name}, which answers at {@code urls}. */
-    static String deployed(String name, List<String> urls) {
+    public static String deployed(String name, List<String> urls) {
         return "Deployed " + name + (urls.isEmpty() ? "" : ", at " + String.join(", ", urls));
     }
 }

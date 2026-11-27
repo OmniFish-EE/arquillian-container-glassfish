@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
+    </parent>
+
+    <groupId>ee.omnifish.arquillian.test</groupId>
+    <artifactId>pool-embedded-test</artifactId>
+    <packaging>war</packaging>
+    <name>Integration Test: the pool on GlassFish Embedded</name>
+
+    <description>
+        Runs the Arquillian tests of arquillian-glassfish-server-pool on
+        GlassFish Embedded, from the command line: each deployment starts a
+        child JVM of its own, on the ports of the slot its test JVM leases.
+        The tests run in one test JVM, which leases two slots, and in two
+        test JVMs at once. verify.groovy then runs glassfish-pool:run on the
+        project's WAR, and the tests again, with an overlay, through the
+        static shell of the Full ZIP.
+    </description>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <failOnMissingWebXml>false</failOnMissingWebXml>
+        <container.version>@project.version@</container.version>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+        <mojarra.overlay>@mojarra.overlay@</mojarra.overlay>
+        <!-- verify.groovy sets both for the run with an overlay, faces.split from GlassFish 9 on. -->
+        <pool.it.overlay>false</pool.it.overlay>
+        <faces.split>false</faces.split>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>ee.omnifish.arquillian</groupId>
+            <artifactId>arquillian-glassfish-server-pool</artifactId>
+            <version>${container.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.arquillian.junit5</groupId>
+            <artifactId>arquillian-junit5-container</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.hamcrest</groupId>
+            <artifactId>hamcrest</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.shrinkwrap</groupId>
+            <artifactId>shrinkwrap-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                <edition>embedded</edition> makes each slot a block of ports.
+                up stages GlassFish Embedded's JAR under target/dist, and
+                describes it in target/pool, where the test JVMs find it.
+                Each deployment then starts a child of its own, on its slot's
+                ports, with the archive.
+            -->
+            <plugin>
+                <groupId>ee.omnifish.arquillian</groupId>
+                <artifactId>glassfish-pool-maven-plugin</artifactId>
+                <version>${container.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <poolDir>${project.build.directory}/pool</poolDir>
+                    <poolSize>2</poolSize>
+                    <edition>embedded</edition>
+                    <version>${glassfish.version}</version>
+                    <!-- In a copy of the JDK's trust anchors next to the JAR, or in domain1's truststore. -->
+                    <trustedCerts>
+                        <trustedCert>
+                            <alias>pool-embedded-it</alias>
+                            <file>${project.basedir}/trusted.pem</file>
+                        </trustedCert>
+                    </trustedCerts>
+                    <!-- Every child gets the slot setup, as its JVM options and its startup commands. -->
+                    <systemProperties>
+                        pool.it.sysprop=present
+                    </systemProperties>
+                    <maxHeapSize>1g</maxHeapSize>
+                    <postBootCommands>
+                        create-system-properties pool.it.postboot=applied
+                    </postBootCommands>
+                    <postStartCommands>
+                        create-system-properties "pool.it.poststart=applied after start"
+                    </postStartCommands>
+                </configuration>
+            </plugin>
+
+            <!--
+                Two executions: the tests that share one test JVM, and two
+                that run at once in a test JVM each, and wait for each other.
+                The extension forwards the pool's layout to both.
+            -->
+            <plugin>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <pool.it.overlay>${pool.it.overlay}</pool.it.overlay>
+                        <pool.it.barrier>${project.build.directory}/barrier</pool.it.barrier>
+                        <glassfish.serverLogToConsole>true</glassfish.serverLogToConsole>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>one-jvm</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/Fork*IT.java</exclude>
+                            </excludes>
+                            <summaryFile>${project.build.directory}/failsafe-reports/one-jvm.xml</summaryFile>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>two-jvms</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>**/Fork*IT.java</include>
+                            </includes>
+                            <forkCount>2</forkCount>
+                            <reuseForks>false</reuseForks>
+                            <summaryFile>${project.build.directory}/failsafe-reports/two-jvms.xml</summaryFile>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+            With an applied overlay, up stages the Full ZIP instead, and the
+            children run Embedded through its static shell, with domain1's
+            key, so they serve HTTPS too. From GlassFish 9 on, Mojarra comes
+            as its API and its implementation, which faces.split overlays
+            apart.
+        -->
+        <profile>
+            <id>overlay</id>
+            <activation>
+                <property>
+                    <name>pool.it.overlay</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>ee.omnifish.arquillian</groupId>
+                        <artifactId>glassfish-pool-maven-plugin</artifactId>
+                        <configuration>
+                            <overlays>
+                                <overlay>
+                                    <groupId>org.glassfish</groupId>
+                                    <artifactId>jakarta.faces</artifactId>
+                                    <version>${mojarra.overlay}</version>
+                                    <destFileName>jakarta.faces.jar</destFileName>
+                                    <skip>${faces.split}</skip>
+                                </overlay>
+                                <overlay>
+                                    <groupId>jakarta.faces</groupId>
+                                    <artifactId>jakarta.faces-api</artifactId>
+                                    <version>${mojarra.overlay}</version>
+                                    <destFileName>jakarta.faces-api.jar</destFileName>
+                                    <apply>${faces.split}</apply>
+                                </overlay>
+                                <overlay>
+                                    <groupId>org.glassfish.mojarra</groupId>
+                                    <artifactId>mojarra</artifactId>
+                                    <version>${mojarra.overlay}</version>
+                                    <destFileName>mojarra.jar</destFileName>
+                                    <apply>${faces.split}</apply>
+                                </overlay>
+                            </overlays>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

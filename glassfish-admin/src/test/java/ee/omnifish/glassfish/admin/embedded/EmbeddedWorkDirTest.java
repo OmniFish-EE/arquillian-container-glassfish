@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.glassfish.maven.staging;
+package ee.omnifish.glassfish.admin.embedded;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -37,6 +37,21 @@ import org.junit.jupiter.api.io.TempDir;
 
 class EmbeddedWorkDirTest {
 
+    private static final EmbeddedPorts STANDARD = EmbeddedPorts.standard();
+
+    /** Slot 1 of a pool with the default ports. */
+    private static final EmbeddedPorts SLOT = EmbeddedPorts.of(14849, 14850, 14857, 14851, 14852, 14853, 14854,
+            14855);
+
+    /** The part of Embedded's own domain.xml that has the IIOP and JMS ports. */
+    private static final String DOMAIN_XML = "<domain><servers><server name=\"server\" config-ref=\"server-config\"/>"
+            + "</servers><configs><config name=\"server-config\"><iiop-service>"
+            + "<iiop-listener address=\"0.0.0.0\" id=\"orb-listener-1\" port=\"3700\"/>"
+            + "<iiop-listener security-enabled=\"true\" address=\"0.0.0.0\" id=\"SSL\" port=\"3820\"/>"
+            + "<iiop-listener security-enabled=\"true\" address=\"0.0.0.0\" id=\"SSL_MUTUALAUTH\" port=\"3920\"/>"
+            + "</iiop-service><jms-service type=\"EMBEDDED\" default-jms-host=\"default_JMS_host\">"
+            + "<jms-host name=\"default_JMS_host\" port=\"7676\"/></jms-service></config></configs></domain>";
+
     /** Stands in for the pid of the Maven that runs the child. */
     private static final long OWNER = Long.MAX_VALUE;
 
@@ -47,7 +62,8 @@ class EmbeddedWorkDirTest {
     void theJarsChildGetsACopyOfTheArchive() throws IOException {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
-        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar())) {
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar(),
+                STANDARD)) {
             assertThat(workDir.dir(), equalTo(tmp.resolve("work/run-" + OWNER)));
             assertThat(workDir.archiveName(), equalTo("shop.war"));
             assertThat(names(workDir.dir()), containsInAnyOrder("shop.war"));
@@ -62,7 +78,8 @@ class EmbeddedWorkDirTest {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
         try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive,
-                EmbeddedGlassFish.jar(tmp, tmp.resolve("glassfish-embedded-all-8.0.5.jar"), trustStore, "secret"))) {
+                EmbeddedGlassFish.jar(tmp, tmp.resolve("glassfish-embedded-all-8.0.5.jar"), trustStore, "secret"),
+                STANDARD)) {
             assertThat(names(workDir.dir()), containsInAnyOrder("shop.war", EmbeddedWorkDir.TRUST_STORE));
             assertThat(load(workDir.dir().resolve(EmbeddedWorkDir.TRUST_STORE), "changeit").getCertificate("idp"),
                     equalTo(certificate()));
@@ -71,12 +88,12 @@ class EmbeddedWorkDirTest {
 
     @Test
     void anInstallsChildGetsADomainDirectory() throws Exception {
-        Path home = install(tmp.resolve("glassfish8"), true);
+        Path home = install(tmp.resolve("glassfish8"), "<domain embedded=\"true\"/>");
         Path trustStore = trustStore(tmp.resolve("custom.p12"), "secret");
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
         try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive,
-                EmbeddedGlassFish.install(tmp, home, trustStore, "secret"))) {
+                EmbeddedGlassFish.install(tmp, home, trustStore, "secret"), STANDARD)) {
             Path domain = workDir.dir().resolve(EmbeddedWorkDir.DOMAIN_DIR);
             assertThat(names(domain.resolve("config")), containsInAnyOrder("domain.xml", "keystore.p12",
                     "cacerts.p12"));
@@ -90,11 +107,11 @@ class EmbeddedWorkDirTest {
 
     @Test
     void aStaticShellWithoutEmbeddedsDomainCantRun() throws IOException {
-        Path home = install(tmp.resolve("glassfish7"), false);
+        Path home = install(tmp.resolve("glassfish7"), null);
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
         IOException e = assertThrows(IOException.class, () -> EmbeddedWorkDir.create(tmp.resolve("work"), OWNER,
-                archive, EmbeddedGlassFish.install(tmp, home, home.resolve("unused.p12"), "changeit")));
+                archive, EmbeddedGlassFish.install(tmp, home, home.resolve("unused.p12"), "changeit"), STANDARD));
 
         assertThat(e.getMessage(), containsString("has no org/glassfish/embed/domain.xml"));
     }
@@ -105,7 +122,7 @@ class EmbeddedWorkDirTest {
         Path archive = Files.writeString(tmp.resolve("my shop.war"), "war");
 
         IOException e = assertThrows(IOException.class,
-                () -> EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar()));
+                () -> EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar(), STANDARD));
 
         assertThat(e.getMessage(), containsString("<finalName>"));
     }
@@ -122,7 +139,7 @@ class EmbeddedWorkDirTest {
         Files.writeString(own, "of a run killed before");
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
 
-        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(work, OWNER, archive, jar())) {
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(work, OWNER, archive, jar(), STANDARD)) {
             assertThat(Files.exists(stale), is(false));
             assertThat(Files.exists(live), is(true));
             assertThat(Files.exists(other), is(true));
@@ -130,22 +147,45 @@ class EmbeddedWorkDirTest {
         }
     }
 
+    /** A pool slot's child gets its IIOP and JMS ports in its domain directory's domain.xml. */
     @Test
-    void whileTheChildRunsTheStageDirectoryNamesIt() throws IOException {
+    void anInstallsChildOnASlotHasItsPortsInItsDomainXml() throws Exception {
+        Path home = install(tmp.resolve("glassfish8"), DOMAIN_XML);
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
-        EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar());
 
-        workDir.runs(ProcessHandle.current());
-        assertThat(EmbeddedProcesses.runningFrom(tmp).isPresent(), is(true));
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive,
+                EmbeddedGlassFish.install(tmp, home, trustStore(tmp.resolve("custom.p12"), "secret"), "secret"),
+                SLOT)) {
+            String domainXml = Files.readString(workDir.dir().resolve("domain/config/domain.xml"));
+            assertThat(domainXml, containsString("id=\"orb-listener-1\" port=\"14851\""));
+            assertThat(domainXml, containsString("id=\"SSL\" port=\"14852\""));
+            assertThat(domainXml, containsString("id=\"SSL_MUTUALAUTH\" port=\"14853\""));
+            assertThat(domainXml, containsString("name=\"default_JMS_host\" port=\"14854\""));
+        }
+    }
 
-        workDir.close();
-        assertThat(Files.exists(tmp.resolve(EmbeddedProcesses.PID_FILE)), is(false));
+    /** So does the JAR's, which then gets a domain directory, from its own domain.xml, and keeps its truststore. */
+    @Test
+    void theJarsChildOnASlotGetsADomainDirectory() throws Exception {
+        Path jar = jar(tmp.resolve("glassfish-embedded-all-8.0.5.jar"), DOMAIN_XML);
+        Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
+
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive,
+                EmbeddedGlassFish.jar(tmp, jar, trustStore(tmp.resolve("custom.p12"), "secret"), "secret"), SLOT)) {
+            Path domain = workDir.dir().resolve(EmbeddedWorkDir.DOMAIN_DIR);
+            assertThat(names(workDir.dir()), containsInAnyOrder("shop.war", EmbeddedWorkDir.TRUST_STORE,
+                    EmbeddedWorkDir.DOMAIN_DIR));
+            assertThat(names(domain.resolve("config")), containsInAnyOrder("domain.xml"));
+            assertThat(Files.readString(domain.resolve("config/domain.xml")),
+                    containsString("id=\"orb-listener-1\" port=\"14851\""));
+            assertThat(Files.isDirectory(domain.resolve("docroot")), is(true));
+        }
     }
 
     @Test
     void closingRemovesTheDirectory() throws IOException {
         Path archive = Files.writeString(tmp.resolve("shop.war"), "war");
-        EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar());
+        EmbeddedWorkDir workDir = EmbeddedWorkDir.create(tmp.resolve("work"), OWNER, archive, jar(), STANDARD);
 
         workDir.close();
 
@@ -179,17 +219,24 @@ class EmbeddedWorkDirTest {
         return EmbeddedGlassFish.jar(tmp, tmp.resolve("glassfish-embedded-all-8.0.5.jar"), null, null);
     }
 
-    /** An install with domain1's keystore, and a kernel.jar that has Embedded's domain.xml when {@code embedded}. */
-    private static Path install(Path home, boolean embedded) throws IOException {
-        Path config = Files.createDirectories(home.resolve(GlassFishStaging.DOMAIN_CONFIG));
+    /** An install with domain1's keystore, and a kernel.jar with Embedded's {@code domainXml}, unless {@code null}. */
+    private static Path install(Path home, String domainXml) throws IOException {
+        Path config = Files.createDirectories(home.resolve(EmbeddedGlassFish.DOMAIN_CONFIG));
         Files.writeString(config.resolve("keystore.p12"), "key of s1as");
         Path modules = Files.createDirectories(home.resolve("glassfish/modules"));
-        try (ZipOutputStream kernel = new ZipOutputStream(Files.newOutputStream(modules.resolve("kernel.jar")))) {
-            kernel.putNextEntry(new ZipEntry(embedded ? EmbeddedWorkDir.EMBEDDED_DOMAIN_XML : "org/glassfish/x.class"));
-            kernel.write("<domain embedded=\"true\"/>".getBytes());
-            kernel.closeEntry();
-        }
+        jar(modules.resolve("kernel.jar"), domainXml);
         return home;
+    }
+
+    /** A JAR with Embedded's {@code domainXml}, unless {@code null}. */
+    private static Path jar(Path file, String domainXml) throws IOException {
+        try (ZipOutputStream jar = new ZipOutputStream(Files.newOutputStream(file))) {
+            jar.putNextEntry(new ZipEntry((domainXml != null) ? EmbeddedWorkDir.EMBEDDED_DOMAIN_XML
+                    : "org/glassfish/x.class"));
+            jar.write(((domainXml != null) ? domainXml : "class").getBytes());
+            jar.closeEntry();
+        }
+        return file;
     }
 
     private static List<String> names(Path dir) throws IOException {

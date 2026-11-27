@@ -15,6 +15,7 @@ import java.nio.file.Path;
 
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
@@ -191,7 +192,12 @@ abstract class AbstractPoolMojo extends AbstractMojo {
         return new File(buildDirectory, name);
     }
 
-    protected PoolConfig poolConfig() {
+    protected PoolConfig poolConfig() throws MojoExecutionException {
+        return poolConfig(false);
+    }
+
+    /** @param embedded whether the slots run GlassFish Embedded */
+    protected PoolConfig poolConfig(boolean embedded) {
         Path source = (poolSource == null) ? null : poolSource.toPath();
         SlotSetup setup = new SlotSetup(
                 PoolConfig.parseLines(systemProperties),
@@ -200,6 +206,7 @@ abstract class AbstractPoolMojo extends AbstractMojo {
                 PoolConfig.parseLines(postBootCommands),
                 PoolConfig.parseLines(postStartCommands),
                 failOnCommandError);
-        return new PoolConfig(poolDir().toPath(), source, poolSize, adminPortBase, portStride, setup, debug, suspend);
+        return new PoolConfig(poolDir().toPath(), source, poolSize, adminPortBase, portStride, setup, debug, suspend,
+                embedded);
     }
 }

@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +28,11 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -36,6 +41,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import ee.omnifish.glassfish.admin.embedded.EmbeddedProcesses;
 import ee.omnifish.glassfish.maven.staging.GlassFishStaging.ArtifactResolver;
 
 class GlassFishStagingTest {
@@ -599,22 +605,102 @@ class GlassFishStagingTest {
         }
     }
 
-    /** Also where the system doesn't say what a process runs, by the name glassfish:run gives its child there. */
+    /** Also where the system doesn't say what a process runs, by the record of the child that runs from it. */
     @Test
-    void aJarANamedChildRunsFromIsNotStagedAfresh(@TempDir Path tmp) throws Exception {
+    void aJarARecordedChildRunsFromIsNotStagedAfresh(@TempDir Path tmp) throws Exception {
         Path jar = zip(tmp, "build-1");
         Path stage = tmp.resolve("stage");
         GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
-        EmbeddedProcesses.record(stage, ProcessHandle.current());
+        Process child = EmbeddedProcesses.start(stage, null, false, () -> sleeper(tmp));
+        try {
+            zip(tmp, "build-2");
+            Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+            IOException e = assertThrows(IOException.class,
+                    () -> GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar));
+
+            assertThat(e.getMessage(), containsString("GlassFish Embedded runs from it"));
+            assertThat(new String(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar"))),
+                    containsString("build-1"));
+        } finally {
+            child.destroyForcibly();
+        }
+    }
+
+    /** The lock a child takes to start stays, also when staging replaces everything else. */
+    @Test
+    void theStageLockSurvivesAStagingAfresh(@TempDir Path tmp) throws Exception {
+        Path jar = zip(tmp, "build-1");
+        Path stage = tmp.resolve("stage");
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
 
         zip(tmp, "build-2");
         Files.setLastModifiedTime(jar, FileTime.from(Instant.now().plus(1, ChronoUnit.HOURS)));
-        IOException e = assertThrows(IOException.class,
-                () -> GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar));
+        GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> jar);
 
-        assertThat(e.getMessage(), containsString("GlassFish Embedded runs from it"));
+        assertThat(Files.exists(stage.resolve(EmbeddedProcesses.LOCK_FILE)), is(true));
         assertThat(new String(Files.readAllBytes(stage.resolve("glassfish-embedded-all-9.0.0.jar"))),
-                containsString("build-1"));
+                containsString("build-2"));
+    }
+
+    /** No child starts from what staging checks or replaces: its start waits until the staging is done. */
+    @Test
+    void aChildStartsOnceTheStagingIsDone(@TempDir Path tmp) throws Exception {
+        Path jar = zip(tmp, "build-1");
+        Path stage = tmp.resolve("stage");
+        CountDownLatch resolving = new CountDownLatch(1);
+        CountDownLatch resolve = new CountDownLatch(1);
+        AtomicLong stagedAt = new AtomicLong();
+        AtomicLong startedAt = new AtomicLong();
+        Thread staging = new Thread(() -> {
+            try {
+                GlassFishStaging.stage(embeddedSpec(stage, CertImport.NONE), coord -> {
+                    resolving.countDown();
+                    try {
+                        resolve.await(30, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        throw new InterruptedIOException();
+                    }
+                    return jar;
+                });
+                stagedAt.set(System.nanoTime());
+            } catch (IOException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        staging.start();
+        resolving.await(30, TimeUnit.SECONDS);
+        List<Process> children = new CopyOnWriteArrayList<>();
+        Thread starting = new Thread(() -> {
+            try {
+                children.add(EmbeddedProcesses.start(stage, null, false, () -> {
+                    startedAt.set(System.nanoTime());
+                    return sleeper(tmp);
+                }));
+            } catch (IOException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        starting.start();
+        try {
+            Thread.sleep(500);
+            assertThat(startedAt.get(), is(0L));
+
+            resolve.countDown();
+            staging.join(30_000);
+            starting.join(30_000);
+
+            assertThat(startedAt.get() > stagedAt.get(), is(true));
+        } finally {
+            children.forEach(Process::destroyForcibly);
+        }
+    }
+
+    /** A process that sleeps until it's ended, as a child that runs. */
+    private static Process sleeper(Path tmp) throws IOException {
+        Path sleeper = Files.writeString(tmp.resolve("Sleeper.java"),
+                "class Sleeper { public static void main(String[] args) throws Exception { Thread.sleep(120_000); } }");
+        return new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                sleeper.toString()).start();
     }
 
     // --- trusted certificates ---

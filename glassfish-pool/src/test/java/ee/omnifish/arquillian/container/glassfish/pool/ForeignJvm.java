@@ -54,16 +54,18 @@ final class ForeignJvm {
             process.destroyForcibly();
             throw new IllegalStateException("Another JVM could not lock " + file);
         }
-        return new Holder(process);
+        return new Holder(process, file);
     }
 
     /** A lock held by another JVM. */
     static final class Holder implements AutoCloseable {
 
         private final Process process;
+        private final Path file;
 
-        private Holder(Process process) {
+        private Holder(Process process, Path file) {
             this.process = process;
+            this.file = file;
         }
 
         /** Release the lock: the holder exits once its stdin closes. */
@@ -75,10 +77,23 @@ final class ForeignJvm {
             }
         }
 
-        /** Kill the holder, as a crash or failsafe's fork timeout would. The OS releases its lock. */
+        /**
+         * Kill the holder, as a crash or failsafe's fork timeout would, and
+         * wait until the OS released its lock, as the pool then finds it: on
+         * Windows, that can take a moment after the holder ended.
+         */
         void kill() throws InterruptedException {
             process.destroyForcibly();
-            process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("The JVM that holds " + file + " didn't end when killed");
+            }
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+            while (PoolLocks.isBusy(file)) {
+                if (System.nanoTime() > deadline) {
+                    throw new IllegalStateException("The OS kept the lock on " + file + " of a killed JVM");
+                }
+                Thread.sleep(20);
+            }
         }
     }
 

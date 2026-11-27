@@ -8,7 +8,7 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.glassfish.maven.staging;
+package ee.omnifish.glassfish.admin.embedded;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -25,7 +25,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -34,6 +36,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class EmbeddedCommandTest {
+
+    /** Slot 1 of a pool with the default ports. */
+    private static final EmbeddedPorts SLOT = EmbeddedPorts.of(14849, 14850, 14857, 14851, 14852, 14853, 14854,
+            14855);
 
     @TempDir
     Path tmp;
@@ -109,8 +115,99 @@ class EmbeddedCommandTest {
 
     @Test
     void theOpenPortsDependOnTheForm() {
-        assertThat(EmbeddedCommand.ports(true), contains(8080));
-        assertThat(EmbeddedCommand.ports(false), contains(8080, 8181));
+        assertThat(EmbeddedPorts.standard().listening(true), contains(8080));
+        assertThat(EmbeddedPorts.standard().listening(false), contains(8080, 8181));
+    }
+
+    /**
+     * A pool slot's ports: HTTP, HTTPS and the debugger's, and for the JAR,
+     * its own domain directory, with the IIOP and JMS ports, and the JMS
+     * broker's RMI registry's as a system property.
+     */
+    @Test
+    void theJarRunsOnTheSlotsPortsWithADomainDirectoryOfItsOwn() throws IOException {
+        Path jar = tmp.resolve("glassfish-embedded-all-8.0.5.jar");
+
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, jar, null, null), "shop.war", true)
+                .ports(SLOT)
+                .debug(true, false)
+                .jvmOptions(List.of("-Xmx1g", "-Dpool.marker=a b"))
+                .build();
+
+        assertThat(line.subList(1, 9), contains("-Xmx1g", "-Dpool.marker=a b",
+                "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=localhost:14857",
+                "-Dcom.sun.enterprise.connectors.system.mq.rmiport=14855",
+                "-jar", jar.toAbsolutePath().toString(), "--domainDir=domain", "--httpPort=14849"));
+    }
+
+    @Test
+    void anInstallRunsOnTheSlotsHttpAndHttpsPorts() throws IOException {
+        Path home = install(tmp.resolve("glassfish8"));
+
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.install(tmp, home, null, null), "shop.war", true)
+                .ports(SLOT)
+                .build();
+
+        assertThat(line, hasItem("-Dcom.sun.enterprise.connectors.system.mq.rmiport=14855"));
+        assertThat(line, hasItem("--httpPort=14849"));
+        assertThat(line, hasItem("--httpsPort=14850"));
+    }
+
+    /** The deploy's own options come before the archive, and the servlets of a WAR are listed after its query. */
+    @Test
+    void theServletsOfAWarAreListedAfterItsContextRoot() throws IOException {
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null),
+                "shop.war", true)
+                .name("shop")
+                .deployOptions(List.of("--libraries=lib/a.jar", "--properties=a=b"))
+                .listServlets(Map.of())
+                .build();
+
+        assertThat(line.subList(line.size() - 3, line.size()), contains(
+                "deploy --name=shop --libraries=lib/a.jar --properties=a=b shop.war",
+                EmbeddedCommand.CONTEXT_ROOT_QUERY,
+                "list-sub-components shop"));
+    }
+
+    @Test
+    void theServletsOfAnEarAreListedPerWebModule() throws IOException {
+        Map<String, String> webModules = new LinkedHashMap<>();
+        webModules.put("alpha.war", "/alpha");
+        webModules.put("web/beta.war", "/beta");
+
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null),
+                "pair.ear", false)
+                .name("pair app")
+                .listServlets(webModules)
+                .build();
+
+        assertThat(line.subList(line.size() - 4, line.size()), contains(
+                "deploy --name=pair\\ app pair.ear",
+                "list-sub-components pair\\ app",
+                "list-sub-components --appname=pair\\ app alpha.war",
+                "list-sub-components --appname=pair\\ app web/beta.war"));
+    }
+
+    /** An EJB JAR has no servlets to list. */
+    @Test
+    void anArchiveWithoutWebModulesListsNoServlets() throws IOException {
+        List<String> line = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null, null),
+                "bean.jar", false)
+                .name("bean")
+                .listServlets(Map.of())
+                .build();
+
+        assertThat(line.get(line.size() - 1), equalTo("deploy --name=bean bean.jar"));
+    }
+
+    @Test
+    void listingTheServletsNeedsTheName() {
+        EmbeddedCommand command = new EmbeddedCommand(EmbeddedGlassFish.jar(tmp, tmp.resolve("embedded.jar"), null,
+                null), "shop.war", true).listServlets(Map.of());
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, command::build);
+
+        assertThat(e.getMessage(), containsString("needs its name"));
     }
 
     /** GlassFish splits commands where whitespace has no backslash before it, and doesn't read quotes. */
@@ -166,7 +263,7 @@ class EmbeddedCommandTest {
 
     /** An install whose domain.xml has module options among others, in two configs. */
     static Path install(Path home) throws IOException {
-        Path config = Files.createDirectories(home.resolve(GlassFishStaging.DOMAIN_CONFIG));
+        Path config = Files.createDirectories(home.resolve(EmbeddedGlassFish.DOMAIN_CONFIG));
         Files.writeString(config.resolve("domain.xml"), "<domain><configs>"
                 + "<config name=\"server-config\"><java-config>"
                 + "<jvm-options>--add-opens=java.base/java.lang=ALL-UNNAMED</jvm-options>"

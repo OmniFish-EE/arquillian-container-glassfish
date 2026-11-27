@@ -18,6 +18,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 
+import ee.omnifish.glassfish.admin.embedded.EmbeddedPorts;
+
 /**
  * Per-slot {@code ports.properties}: produced by the provisioner once a slot's
  * GlassFish is up, consumed by the test JVM at lease time.
@@ -26,6 +28,10 @@ import java.util.Properties;
  * {@link ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration}
  * expects so a leased slot's properties can be applied to a container config
  * verbatim.
+ *
+ * <p>A slot for GlassFish Embedded ({@link #isEmbedded}) has no admin port
+ * and no install: each deployment starts a child on its ports, which also
+ * has the IIOP and JMS ports of the slot's own.
  */
 public final class SlotPorts {
 
@@ -35,12 +41,25 @@ public final class SlotPorts {
     public static final String GLASSFISH_HOME = "glassfish.home";
     /** The port a debugger attaches on; only there when the slot started with one. */
     public static final String DEBUG_PORT = "glassfish.debugPort";
+    /** Whether the slot runs GlassFish Embedded; only there when it does. */
+    public static final String EMBEDDED = "glassfish.embedded";
+    public static final String IIOP_PORT = "glassfish.iiopPort";
+    public static final String IIOP_SSL_PORT = "glassfish.iiopSslPort";
+    public static final String IIOP_MUTUAL_AUTH_PORT = "glassfish.iiopMutualAuthPort";
+    public static final String JMS_PORT = "glassfish.jmsPort";
+    public static final String JMS_RMI_PORT = "glassfish.jmsRmiPort";
 
     private final int adminPort;
     private final int httpPort;
     private final int httpsPort;
     private final String glassFishHome;
     private final int debugPort;
+    private final boolean embedded;
+    private final int iiopPort;
+    private final int iiopSslPort;
+    private final int iiopMutualAuthPort;
+    private final int jmsPort;
+    private final int jmsRmiPort;
 
     public SlotPorts(int adminPort, int httpPort, int httpsPort, String glassFishHome) {
         this(adminPort, httpPort, httpsPort, glassFishHome, 0);
@@ -48,13 +67,37 @@ public final class SlotPorts {
 
     /** @param debugPort the port a debugger attaches on, or 0 for a slot that started without one */
     public SlotPorts(int adminPort, int httpPort, int httpsPort, String glassFishHome, int debugPort) {
+        this(adminPort, httpPort, httpsPort, glassFishHome, debugPort, false, 0, 0, 0, 0, 0);
+    }
+
+    private SlotPorts(int adminPort, int httpPort, int httpsPort, String glassFishHome, int debugPort,
+                      boolean embedded, int iiopPort, int iiopSslPort, int iiopMutualAuthPort, int jmsPort,
+                      int jmsRmiPort) {
         this.adminPort = adminPort;
         this.httpPort = httpPort;
         this.httpsPort = httpsPort;
         this.glassFishHome = glassFishHome;
         this.debugPort = debugPort;
+        this.embedded = embedded;
+        this.iiopPort = iiopPort;
+        this.iiopSslPort = iiopSslPort;
+        this.iiopMutualAuthPort = iiopMutualAuthPort;
+        this.jmsPort = jmsPort;
+        this.jmsRmiPort = jmsRmiPort;
     }
 
+    /**
+     * The ports of a slot for GlassFish Embedded, whose children open them.
+     *
+     * @param debugPort the port its children's debugger listens on, or 0 when they start without one
+     */
+    public static SlotPorts embedded(int httpPort, int httpsPort, int debugPort, int iiopPort, int iiopSslPort,
+                                     int iiopMutualAuthPort, int jmsPort, int jmsRmiPort) {
+        return new SlotPorts(0, httpPort, httpsPort, null, debugPort, true, iiopPort, iiopSslPort,
+                iiopMutualAuthPort, jmsPort, jmsRmiPort);
+    }
+
+    /** The domain's admin port, or 0 for a slot for GlassFish Embedded, which has none. */
     public int adminPort() {
         return adminPort;
     }
@@ -67,6 +110,7 @@ public final class SlotPorts {
         return httpsPort;
     }
 
+    /** The slot's install, or {@code null} for a slot for GlassFish Embedded, which has none. */
     public String glassFishHome() {
         return glassFishHome;
     }
@@ -76,14 +120,39 @@ public final class SlotPorts {
         return debugPort;
     }
 
+    /** Whether the slot runs GlassFish Embedded, a child per deployment, rather than a domain. */
+    public boolean isEmbedded() {
+        return embedded;
+    }
+
+    /**
+     * The ports of a child of this slot for GlassFish Embedded, with its
+     * debugger on {@code debugPort}, when it starts with one.
+     */
+    public EmbeddedPorts embeddedPorts(int debugPort) {
+        return EmbeddedPorts.of(httpPort, httpsPort, debugPort, iiopPort, iiopSslPort, iiopMutualAuthPort, jmsPort,
+                jmsRmiPort);
+    }
+
     public void writeTo(Path file) throws IOException {
         Properties props = new Properties();
-        props.setProperty(ADMIN_PORT, String.valueOf(adminPort));
+        if (embedded) {
+            props.setProperty(EMBEDDED, "true");
+        } else {
+            props.setProperty(ADMIN_PORT, String.valueOf(adminPort));
+            props.setProperty(GLASSFISH_HOME, glassFishHome);
+        }
         props.setProperty(HTTP_PORT, String.valueOf(httpPort));
         props.setProperty(HTTPS_PORT, String.valueOf(httpsPort));
-        props.setProperty(GLASSFISH_HOME, glassFishHome);
         if (debugPort > 0) {
             props.setProperty(DEBUG_PORT, String.valueOf(debugPort));
+        }
+        if (embedded) {
+            props.setProperty(IIOP_PORT, String.valueOf(iiopPort));
+            props.setProperty(IIOP_SSL_PORT, String.valueOf(iiopSslPort));
+            props.setProperty(IIOP_MUTUAL_AUTH_PORT, String.valueOf(iiopMutualAuthPort));
+            props.setProperty(JMS_PORT, String.valueOf(jmsPort));
+            props.setProperty(JMS_RMI_PORT, String.valueOf(jmsRmiPort));
         }
         // Atomic publish: write to sibling tmp + move. A test JVM scanning
         // mid-write would otherwise see a half-formed properties file and
@@ -102,12 +171,25 @@ public final class SlotPorts {
         try (InputStream in = Files.newInputStream(file)) {
             props.load(in);
         }
+        int debugPort = props.containsKey(DEBUG_PORT) ? requireInt(props, DEBUG_PORT) : 0;
+        if (Boolean.parseBoolean(props.getProperty(EMBEDDED))) {
+            return embedded(
+                    requireInt(props, HTTP_PORT),
+                    requireInt(props, HTTPS_PORT),
+                    debugPort,
+                    requireInt(props, IIOP_PORT),
+                    requireInt(props, IIOP_SSL_PORT),
+                    requireInt(props, IIOP_MUTUAL_AUTH_PORT),
+                    requireInt(props, JMS_PORT),
+                    requireInt(props, JMS_RMI_PORT));
+        }
+
         return new SlotPorts(
                 requireInt(props, ADMIN_PORT),
                 requireInt(props, HTTP_PORT),
                 requireInt(props, HTTPS_PORT),
                 require(props, GLASSFISH_HOME),
-                props.containsKey(DEBUG_PORT) ? requireInt(props, DEBUG_PORT) : 0);
+                debugPort);
     }
 
     private static String require(Properties p, String key) {

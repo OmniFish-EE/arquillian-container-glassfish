@@ -12,7 +12,9 @@ package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Component;
@@ -21,9 +23,12 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.RemoteRepository;
 
+import ee.omnifish.arquillian.container.glassfish.pool.EmbeddedPool;
+import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.glassfish.maven.Stager;
 import ee.omnifish.glassfish.maven.staging.CertImport;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
+import ee.omnifish.glassfish.maven.staging.Edition;
 import ee.omnifish.glassfish.maven.staging.OverlayCoord;
 import ee.omnifish.glassfish.maven.staging.StageSpec;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
@@ -38,18 +43,61 @@ import ee.omnifish.glassfish.maven.staging.TrustedCert;
  * <p>The staging itself is {@code glassfish:provision}'s, from
  * {@code glassfish-maven-plugin} (see {@link Stager}); only the parameters
  * live here, because their {@code gf.pool.*} names differ.
+ *
+ * <p>On an Embedded {@code <edition>}, each slot is a block of ports, on
+ * which each deployment starts GlassFish Embedded in a JVM of its own. The
+ * staging then describes that GlassFish in the pool directory
+ * ({@link EmbeddedPool}), for the test JVMs.
  */
 abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
 
     /** How the pool spells its explicit install root, for staging messages. */
     private static final String POOL_SOURCE = "<poolSource> (gf.pool.source)";
 
+    /** The {@code <embeddedMode>} that starts each child from the command line. */
+    static final String COMMAND_LINE = "command-line";
+
+    /** The {@code <embeddedMode>} that runs GlassFish Embedded inside the test JVM, which #99 adds. */
+    static final String IN_PROCESS = "in-process";
+
     /**
-     * GlassFish distribution to resolve and unpack. When unset, no unpack
-     * happens and {@code gf.pool.source} must already point at a staged install.
-     * {@code groupId}, {@code artifactId} and {@code type} default to the
-     * Eclipse GlassFish zip ({@code org.glassfish.main.distributions:glassfish:zip}),
-     * so only {@code <version>} is required.
+     * The GlassFish edition: {@code full}, {@code web}, {@code embedded} or
+     * {@code embedded-web}. {@code full} and {@code web} unpack their
+     * distribution ZIP and start a {@code domain1} per slot. {@code embedded}
+     * and {@code embedded-web} make each slot a block of ports, on which each
+     * deployment starts GlassFish Embedded, in a JVM of its own, with the
+     * archive: from its self-contained JAR, or, when a module is overlaid,
+     * from the static shell of the Full or Web ZIP.
+     */
+    @Parameter(property = "gf.pool.edition", defaultValue = "full")
+    protected String edition;
+
+    /**
+     * The GlassFish version, for the artifact {@code <edition>} names.
+     * {@code <distribution>} overrides it, and with {@code <poolSource>}, it
+     * doesn't apply.
+     */
+    @Parameter(property = "gf.pool.version")
+    protected String version;
+
+    /**
+     * How GlassFish Embedded starts, on an Embedded {@code <edition>}:
+     * {@code command-line}, through its own launcher, in a JVM of its own per
+     * deployment, with the archive, which the undeploy ends. {@code in-process},
+     * inside the test JVM, isn't supported yet. {@code full} and {@code web}
+     * ignore it, and {@code glassfish-pool:run} always runs from the command
+     * line.
+     */
+    @Parameter(property = "gf.pool.embeddedMode", defaultValue = COMMAND_LINE)
+    protected String embeddedMode;
+
+    /**
+     * GlassFish distribution to resolve and unpack, overriding {@code <version>}.
+     * When neither is set, no unpack happens and {@code gf.pool.source} must
+     * already point at a staged install. {@code groupId}, {@code artifactId}
+     * and {@code type} default to the artifact of {@code <edition>}, the
+     * Eclipse GlassFish zip ({@code org.glassfish.main.distributions:glassfish:zip})
+     * by default, so only {@code <version>} is required.
      */
     @Parameter
     protected DistributionCoord distribution;
@@ -143,35 +191,95 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     /**
      * Build the {@code Runnable} that {@link
      * ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap#up} runs
-     * inside its provisioning lock. Returns {@code null} if there's no work,
-     * which keeps the provisioning hot-path branch-free.
+     * inside its provisioning lock: the staging, then, on an Embedded
+     * edition, the description of what the slots run, or else its removal.
      *
      * <p>Also derives {@link #poolSource} from the distribution when it isn't
      * set, so callers must invoke this <em>before</em> {@link #poolConfig()}.
      */
     protected Runnable buildPreStage() throws MojoExecutionException {
+        Edition edition = edition();
+        boolean overlaid = OverlayCoord.anyApplied(overlays, overlaySkip);
+        // A pom's version property mustn't make an existing install unpack one.
+        DistributionCoord dist = edition.distribution((poolSource == null) ? version : null, distribution, overlaid);
+        Stager.checkEdition(edition, dist, poolSource, unpackSkip, overlaid, POOL_SOURCE);
         StagingCommands sourceCommands = new StagingCommands(sourcePostBootCommands, failOnCommandError);
-        requireUnpack(sourceCommands, unpackSkip, distribution);
+        if (edition.isEmbedded() && sourceCommands.hasWork()) {
+            throw new MojoExecutionException("<sourcePostBootCommands> run on a brief start of domain1, which "
+                    + "GlassFish Embedded doesn't have. Its children run <postBootCommands> on every start instead.");
+        }
+        requireUnpack(sourceCommands, unpackSkip, dist);
 
         Stager stager = new Stager(repoSystem, repoSession, remoteRepos, getLog());
         CertImport certImport = new CertImport(trustedCerts, (trustStore == null) ? null : trustStore.toPath(),
                 trustStorePassword, certsSkip);
-        StageSpec spec = stager.spec(distribution, stageDir(), unpackSkip, poolSource, overlays, overlayTargetDir,
+        StageSpec spec = stager.spec(dist, stageDir(), unpackSkip, poolSource, overlays, overlayTargetDir,
                 overlaySkip, certImport, sourceCommands, POOL_SOURCE);
         if (poolSource == null && spec.home() != null) {
             poolSource = spec.home().toFile();
-            getLog().info("poolSource not set; using " + poolSource + " from " + distribution.toGav());
+            getLog().info("poolSource not set; using " + poolSource + " from " + dist.toGav());
         }
-        if (!spec.hasWork()) {
-            return null;
-        }
+        Path pool = poolDir().toPath();
+        Path explicitTrustStore = (trustStore == null) ? null : trustStore.toPath();
         return () -> {
             try {
-                stager.stage(spec);
-            } catch (IOException e) {
+                if (spec.hasWork()) {
+                    stager.stage(spec);
+                }
+                if (edition.isEmbedded()) {
+                    EmbeddedPool.write(pool, Stager.embeddedGlassFish(spec, explicitTrustStore, trustStorePassword),
+                            edition.toString());
+                } else {
+                    EmbeddedPool.remove(pool);
+                }
+            } catch (IOException | MojoExecutionException e) {
                 throw new RuntimeException("Pool staging failed: " + e.getMessage(), e);
             }
         };
+    }
+
+    /** With the slots of an Embedded {@code <edition>}. */
+    @Override
+    protected PoolConfig poolConfig() throws MojoExecutionException {
+        return poolConfig(edition().isEmbedded());
+    }
+
+    /** The {@code <edition>}: {@code full} also when Maven didn't configure this goal, as in a unit test. */
+    protected Edition edition() throws MojoExecutionException {
+        if (edition == null) {
+            return Edition.FULL;
+        }
+
+        try {
+            return Edition.of(edition);
+        } catch (IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Fail on an {@code <embeddedMode>} that {@code up} and {@code provision}
+     * can't set an Embedded edition's slots up for. The other editions
+     * ignore it.
+     */
+    protected void requireCommandLineMode() throws MojoExecutionException {
+        if (edition().isEmbedded()) {
+            requireCommandLineMode(embeddedMode);
+        }
+    }
+
+    /** Package-private for unit tests. */
+    static void requireCommandLineMode(String embeddedMode) throws MojoExecutionException {
+        String mode = (embeddedMode == null) ? COMMAND_LINE : embeddedMode.trim().toLowerCase(Locale.ROOT);
+        if (IN_PROCESS.equals(mode)) {
+            throw new MojoExecutionException("<embeddedMode>in-process</embeddedMode> isn't supported yet: GlassFish "
+                    + "Embedded runs from the command line, in a JVM of its own per deployment. Leave out "
+                    + "<embeddedMode>, or set it to command-line.");
+        }
+        if (!COMMAND_LINE.equals(mode)) {
+            throw new MojoExecutionException("<embeddedMode> is command-line or in-process, not '" + embeddedMode
+                    + "'");
+        }
     }
 
     /** {@code stageDir}, or its default. */

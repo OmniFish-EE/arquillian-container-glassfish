@@ -182,6 +182,72 @@ class UpMojoTest {
                 withUnpackSkip.getMessage());
     }
 
+    /** #99 adds in-process; until then, up and provision set slots up for children from the command line only. */
+    @Test
+    void anEmbeddedPoolStartsItsChildrenFromTheCommandLine() {
+        assertDoesNotThrow(() -> AbstractStagingPoolMojo.requireCommandLineMode("command-line"));
+        assertDoesNotThrow(() -> AbstractStagingPoolMojo.requireCommandLineMode(null));
+        MojoExecutionException inProcess = assertThrows(MojoExecutionException.class,
+                () -> AbstractStagingPoolMojo.requireCommandLineMode("in-process"));
+        MojoExecutionException other = assertThrows(MojoExecutionException.class,
+                () -> AbstractStagingPoolMojo.requireCommandLineMode("forked"));
+
+        assertTrue(inProcess.getMessage().contains("isn't supported yet"), inProcess.getMessage());
+        assertTrue(other.getMessage().contains("is command-line or in-process, not 'forked'"), other.getMessage());
+    }
+
+    /** The full and web editions ignore <embeddedMode>, which a parent pom may set for others. */
+    @Test
+    void onlyAnEmbeddedEditionChecksItsMode() {
+        UpMojo up = upInModule(true);
+        up.embeddedMode = "in-process";
+
+        up.edition = "web";
+        assertDoesNotThrow(() -> up.requireCommandLineMode());
+
+        up.edition = "embedded-web";
+        assertThrows(MojoExecutionException.class, () -> up.requireCommandLineMode());
+    }
+
+    @Test
+    void anEmbeddedEditionsSlotsRunGlassFishEmbedded() throws Exception {
+        UpMojo up = upInModule(true);
+        up.adminPortBase = PoolConfig.DEFAULT_ADMIN_BASE;
+        up.portStride = PoolConfig.DEFAULT_PORT_STRIDE;
+
+        assertFalse(up.poolConfig().embedded());
+
+        up.edition = "embedded";
+        assertTrue(up.poolConfig().embedded());
+    }
+
+    /** GlassFish Embedded has no domain1 to run them on: its children run <postBootCommands> instead. */
+    @Test
+    void anEmbeddedEditionTakesNoSourcePostBootCommands() {
+        UpMojo up = upInModule(true);
+        up.edition = "embedded";
+        up.version = "8.0.5";
+        up.sourcePostBootCommands = "create-file-user --groups g u";
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class, up::buildPreStage);
+
+        assertTrue(e.getMessage().contains("Its children run <postBootCommands> on every start"), e.getMessage());
+    }
+
+    /** It stages what it runs, as glassfish:provision does, so it doesn't take an install of its own. */
+    @Test
+    void anEmbeddedEditionTakesNoPoolSource() {
+        UpMojo up = upInModule(true);
+        up.edition = "embedded";
+        up.version = "8.0.5";
+        up.poolSource = SOURCE.toFile();
+
+        MojoExecutionException e = assertThrows(MojoExecutionException.class, up::buildPreStage);
+
+        assertTrue(e.getMessage().contains("<poolSource> (gf.pool.source) and <unpackSkip> work with the full and "
+                + "web editions"), e.getMessage());
+    }
+
     /** {@code up} running in a module of a build whose top-level project is the module's parent. */
     private static UpMojo upInModule(boolean multiModule) {
         MavenProject root = new MavenProject();

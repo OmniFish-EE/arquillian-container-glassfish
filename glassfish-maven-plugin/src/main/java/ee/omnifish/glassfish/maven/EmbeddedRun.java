@@ -10,27 +10,35 @@
  */
 package ee.omnifish.glassfish.maven;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 
-import ee.omnifish.glassfish.maven.staging.EmbeddedWorkDir;
+import ee.omnifish.glassfish.admin.embedded.EarWebModules;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedChild;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedChild.StartFailedException;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedCommand;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedPorts;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedStartup;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedWorkDir;
 
 /**
  * A GlassFish Embedded child that runs the application, with its output on
  * the console, and the one ending of the run, however it ends: from a
  * shutdown hook on plain Maven's Ctrl+C, after mvnd's Ctrl+C interrupts the
  * wait, after a failed start, or once the child ended otherwise. The ending
- * stops the child, then removes its working directory.
+ * stops the child, removes its record and its working directory, then runs
+ * what the caller has follow it. Shared by {@code glassfish:run} and the pool
+ * plugin's {@code glassfish-pool:run}.
  */
-final class EmbeddedRun implements AutoCloseable {
+public final class EmbeddedRun implements AutoCloseable {
 
     /** How long the child gets to stop before it's killed. */
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(60);
@@ -38,70 +46,63 @@ final class EmbeddedRun implements AutoCloseable {
     /** Exit codes of a child that was stopped, by Ctrl+C's SIGINT or a SIGTERM, rather than failed. */
     private static final List<Integer> STOPPED = List.of(0, 130, 143);
 
-    private final Process process;
-    private final EmbeddedStartup startup;
+    private final EmbeddedChild child;
     private final Log log;
-    private final Thread output;
     private final RunEnding ending;
 
     private volatile boolean stopping;
 
-    private EmbeddedRun(Process process, EmbeddedStartup startup, String prefix, EmbeddedWorkDir workDir, String goal,
-            Log log) {
-        this.process = process;
-        this.startup = startup;
+    private EmbeddedRun(EmbeddedChild child, String goal, Log log, Runnable afterwards) {
+        this.child = child;
         this.log = log;
-        output = new Thread(() -> pump(prefix), goal + " output");
-        output.setDaemon(true);
-        output.start();
-        ending = new RunEnding(goal, log, this::stop, workDir::close);
+        ending = new RunEnding(goal, log, this::stop, () -> {
+            try {
+                child.close();
+            } finally {
+                afterwards.run();
+            }
+        });
     }
 
     /**
-     * Start {@code command} in {@code workDir}, printing each line of its
-     * output after {@code prefix}, and end the run when the JVM exits.
+     * Start the child {@code command} describes, on {@code ports}, in a
+     * working directory under {@code workParent} with a copy of
+     * {@code archive}, printing each line of its output after
+     * {@code prefix}, and end the run when the JVM exits.
      *
+     * @param slotDir the pool slot the child serves, or {@code null}
+     * @param exclusive whether to refuse while another child runs from the
+     *        same stage directory, as for {@code glassfish:run}
      * @param goal the goal that runs, which names the shutdown hook's thread
+     * @param afterwards what follows the ending, as {@code glassfish-pool:run}'s
+     *        hand-back of its slot: on Ctrl+C, it runs in the shutdown hook,
+     *        as the JVM exits once its hooks return
      */
-    static EmbeddedRun start(List<String> command, EmbeddedWorkDir workDir, EmbeddedStartup startup, String prefix,
-            String goal, Log log) throws MojoExecutionException {
-        Process process = null;
+    public static EmbeddedRun start(EmbeddedCommand command, Path archive, EmbeddedGlassFish glassfish,
+            EmbeddedPorts ports, Path workParent, Path slotDir, boolean exclusive, String prefix, String goal, Log log,
+            Runnable afterwards) throws MojoExecutionException {
+        List<String> line;
+        EmbeddedWorkDir workDir;
         try {
-            process = new ProcessBuilder(command)
-                    .directory(workDir.dir().toFile())
-                    .redirectErrorStream(true)
-                    .start();
-            // So staging leaves what it runs from alone.
-            workDir.runs(process.toHandle());
-            // GlassFish Embedded reads nothing without --prompt.
-            process.getOutputStream().close();
-        } catch (IOException e) {
-            if (process != null) {
-                process.destroyForcibly();
-            }
-            workDir.close();
-            throw new MojoExecutionException("Starting GlassFish Embedded failed: " + e.getMessage(), e);
+            glassfish.requireMainClass();
+            line = command.ports(ports).build();
+            workDir = EmbeddedWorkDir.create(workParent, archive, glassfish, ports);
+        } catch (IOException | IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
         }
 
-        return new EmbeddedRun(process, startup, prefix, workDir, goal, log);
+        return start(line, workDir, command.startup(), slotDir, exclusive, prefix, goal, log, afterwards);
     }
 
-    private void pump(String prefix) {
-        try (BufferedReader lines = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = lines.readLine()) != null) {
-                System.out.println(prefix + line);
-                synchronized (startup) {
-                    startup.accept(line);
-                    startup.notifyAll();
-                }
-            }
+    /** Start {@code line} in {@code workDir}. Package-private for unit tests, which start a stand-in child. */
+    static EmbeddedRun start(List<String> line, EmbeddedWorkDir workDir, EmbeddedStartup startup, Path slotDir,
+            boolean exclusive, String prefix, String goal, Log log, Runnable afterwards)
+            throws MojoExecutionException {
+        try {
+            return new EmbeddedRun(EmbeddedChild.start(line, workDir, startup, slotDir, exclusive,
+                    output -> System.out.println(prefix + output)), goal, log, afterwards);
         } catch (IOException e) {
-            // The child's output closed with the child.
-        } finally {
-            synchronized (startup) {
-                startup.notifyAll();
-            }
+            throw new MojoExecutionException("Starting GlassFish Embedded failed: " + e.getMessage(), e);
         }
     }
 
@@ -110,45 +111,48 @@ final class EmbeddedRun implements AutoCloseable {
      * {@code timeout}. When it ends first, fails, or doesn't start in time,
      * the run ends, and this fails.
      */
-    void awaitStarted(Duration timeout) throws MojoExecutionException {
-        long deadline = System.nanoTime() + timeout.toNanos();
-        String failure;
+    public void awaitStarted(Duration timeout) throws MojoExecutionException {
         try {
-            synchronized (startup) {
-                while (!startup.isStarted() && startup.failure() == null && output.isAlive()) {
-                    long left = deadline - System.nanoTime();
-                    if (left <= 0) {
-                        break;
-                    }
-                    TimeUnit.NANOSECONDS.timedWait(startup, left);
-                }
-                if (startup.isStarted()) {
-                    return;
-                }
-                failure = startup.failure();
-            }
-            if (failure == null && !output.isAlive()) {
-                failure = "GlassFish Embedded ended with exit code " + process.waitFor() + " before it started";
-            }
+            child.awaitStarted(timeout);
+        } catch (StartFailedException e) {
+            close();
+            throw new MojoExecutionException(e.getMessage(), e);
         } catch (InterruptedException e) {
             close();
             Thread.currentThread().interrupt();
             throw new MojoExecutionException("Interrupted while GlassFish Embedded started", e);
         }
-
-        close();
-        throw new MojoExecutionException((failure != null) ? failure
-                : "GlassFish Embedded didn't start within " + timeout.toSeconds() + " seconds");
     }
 
     /** The name GlassFish deployed the application under. */
-    String name() {
-        return startup.name();
+    public String name() {
+        return child.name();
     }
 
     /** A WAR's context root; empty for other archives. */
     List<String> contextRoots() {
-        return startup.contextRoots();
+        return child.contextRoots();
+    }
+
+    /**
+     * Where the application answers, on {@code httpPort}: a WAR at the
+     * context root GlassFish gave it, an EAR at those of its descriptor. If
+     * the EAR can't be read, the run ends, and this fails.
+     */
+    public List<String> urls(Path archive, String packaging, int httpPort) throws MojoExecutionException {
+        List<String> contextRoots;
+        try {
+            contextRoots = "ear".equals(packaging) ? EarWebModules.contextRoots(archive) : child.contextRoots();
+        } catch (IOException e) {
+            close();
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+
+        List<String> urls = new ArrayList<>();
+        for (String root : contextRoots) {
+            urls.add(RunDeployer.url(httpPort, root));
+        }
+        return urls;
     }
 
     /**
@@ -156,13 +160,13 @@ final class EmbeddedRun implements AutoCloseable {
      * run. A child that ended by itself is reported, with its exit code
      * unless it's a stopped one's.
      */
-    void untilStopped() {
-        ending.untilExit(Optional.of(process.toHandle()));
-        if (stopping || process.isAlive()) {
+    public void untilStopped() {
+        ending.untilExit(Optional.of(child.handle()));
+        if (stopping || child.isAlive()) {
             return;
         }
 
-        int exitCode = process.exitValue();
+        int exitCode = child.exitValue();
         if (STOPPED.contains(exitCode)) {
             log.info("GlassFish Embedded ended");
         } else {
@@ -172,24 +176,14 @@ final class EmbeddedRun implements AutoCloseable {
 
     /** Stop the child: a SIGTERM, then, if it hasn't ended within {@link #STOP_TIMEOUT}, a kill. */
     private void stop() throws IOException {
-        if (!process.isAlive()) {
+        if (!child.isAlive()) {
             return;
         }
 
         stopping = true;
-        process.destroy();
-        try {
-            if (!process.waitFor(STOP_TIMEOUT.toSeconds(), TimeUnit.SECONDS)) {
-                process.destroyForcibly().waitFor();
-            }
-            // Its last lines, before what the run logs next.
-            output.join(TimeUnit.SECONDS.toMillis(5));
-        } catch (InterruptedException e) {
-            process.destroyForcibly();
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while GlassFish Embedded stopped", e);
+        if (child.stop(STOP_TIMEOUT)) {
+            log.info("GlassFish Embedded stopped");
         }
-        log.info("GlassFish Embedded stopped");
     }
 
     /** End the run, if it hasn't ended, and drop the shutdown hook. */
@@ -198,8 +192,8 @@ final class EmbeddedRun implements AutoCloseable {
         ending.close();
     }
 
-    /** Package-private for unit tests. */
-    Process process() {
-        return process;
+    /** The child's process. Package-private for unit tests. */
+    ProcessHandle handle() {
+        return child.handle();
     }
 }

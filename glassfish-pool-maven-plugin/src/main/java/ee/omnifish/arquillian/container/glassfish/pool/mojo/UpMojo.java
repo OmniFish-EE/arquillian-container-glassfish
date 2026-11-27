@@ -108,6 +108,7 @@ public class UpMojo extends AbstractStagingPoolMojo {
             return;
         }
 
+        requireCommandLineMode();
         // Before poolConfig(): may derive poolSource from <distribution>.
         Runnable preStage = buildPreStage();
         PoolConfig poolConfig = poolConfig();

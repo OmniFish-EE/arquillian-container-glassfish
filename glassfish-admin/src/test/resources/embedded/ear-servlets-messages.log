@@ -1,0 +1,66 @@
+GlassFish will start now. Welcome!
+Cannot find javadb client jar file, derby jdbc driver will not be available by default: DerbyDB home is not set.
+Loaded embedded server named: server
+Authorization Service has successfully initialized.
+HV000001: Hibernate Validator 9.1.4.Final
+Setting system property org.glassfish.embeddable.autoDelete from GlassFish properties, it doesn't match any known property
+Grizzly Framework 5.0.3 started in: 13 ms - bound to [/0.0.0.0:18080]
+Network listener https-listener on port 0 disabled per domain.xml
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+Admin Console Adapter: context root: /admin
+GlassFish  (commit: null) startup time: Embedded (466 ms), startup services (203 ms), total (669 ms)
+No JMS RA installation RAR found on path /tmp/gfembed4549312360200877888/lib/install/applications/jmsra/imqjmsra.rar. Nothing for upgrade.
+JMXStartupService has disabled JMXConnector system
+Loading policy provider org.glassfish.exousia.modules.def.DefaultPolicy.
+Entering Security Startup Service.
+Realm [admin-realm] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [file] of classtype [com.sun.enterprise.security.auth.realm.file.FileRealm] successfully created.
+Realm [certificate] of classtype [com.sun.enterprise.security.auth.realm.certificate.CertificateRealm] successfully created.
+Security Service(s) started successfully.
+The GlassFishLogHandler was not found, returning null
+Created HTTP listener http-listener on host/port 0.0.0.0:18080
+Error adding HttpProbes. NetworkListener https-listeners GrizzlyProxy is NULL
+Created virtual server server
+Setting JAAS app name glassfish-web
+Virtual server server loaded default web module 
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@542f6803[name=alpha_war], urls=[
+file:/tmp/gfembed4549312360200877888/applications/pairapp/alpha_war/WEB-INF/classes/
+file:/tmp/gfembed4549312360200877888/generated/ejb/pairapp/alpha_war/
+][delegate=true, context=alpha_war, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=0, pathTimestamps.size=0, resourceEntryCache.size=0]
+close(), this:
+org.glassfish.web.loader.WebappClassLoader@5f5effb0[name=beta_war], urls=[
+file:/tmp/gfembed4549312360200877888/applications/pairapp/beta_war/WEB-INF/classes/
+file:/tmp/gfembed4549312360200877888/generated/ejb/pairapp/beta_war/
+][delegate=true, context=beta_war, status=RUNNING, antiJARLocking=false, repositories=RepositoryManager[WEB-INF/classes/], notFound.size=0, pathTimestamps.size=0, resourceEntryCache.size=0]
+Loading application [pairapp#alpha.war] at [alpha]
+Loading application [pairapp#beta.war] at [/beta-root]
+pairapp was successfully deployed in 500 milliseconds.
+SUCCESS: PlainTextActionReporterSUCCESSDescription: deploy AdminCommandApplication deployed with name pairapp.
+    [name=pairapp
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [beta.war=WebModule
+    [alpha.war=WebModule
+    alpha.war  <WebModule>  
+        [moduleInfo=alpha.war:war:alpha
+    beta.war   <WebModule>  
+        [moduleInfo=beta.war:war:/beta-root
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [default=Servlet
+    [jsp=Servlet
+    [probe.HelloServlet=Servlet
+    probe.HelloServlet  <Servlet>  
+    default             <Servlet>  
+    jsp                 <Servlet>  
+
+SUCCESS: PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [default=Servlet
+    [jsp=Servlet
+    [probe.HelloServlet=Servlet
+    probe.HelloServlet  <Servlet>  
+    default             <Servlet>  
+    jsp                 <Servlet>  
+

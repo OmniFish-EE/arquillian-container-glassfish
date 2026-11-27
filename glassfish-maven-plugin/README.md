@@ -552,8 +552,11 @@ until Ctrl+C stops it.
   `run` runs.
 - **The GlassFish a `run` runs:** while it runs GlassFish Embedded from
   `target/dist`, staging doesn't replace it there, so neither a second `run`
-  nor a `provision` pulls it out from under it. `target/dist` names its
-  process meanwhile, in `glassfish-embedded.pid`.
+  nor a `provision` pulls it out from under it. `target/dist` records its
+  process meanwhile, in `glassfish-embedded-<pid>.pid`. The child starts,
+  and gets its record, under `target/dist/.staging-glassfish.lock`, which
+  staging holds too while it checks and replaces the install, so no child
+  starts from an install that's being replaced.
 - **Trusted certificates:** for the JAR, `provision` copies the JDK's trust
   anchors to `target/dist/cacerts.p12`, imports the certificates into that
   copy, and `run` has GlassFish use it. For the static shell, they go into
@@ -574,8 +577,9 @@ until Ctrl+C stops it.
   archive whose file name has a space can't be deployed; give it a
   `<finalName>` without one.
 - **The URLs:** for a WAR, with the context root GlassFish reports; for an
-  EAR, with those its `application.xml` gives its web modules; none for an
-  EJB jar or RAR. Applications a command deploys aren't among them.
+  EAR, with those its `application.xml` gives its web modules, or without
+  one, each WAR's file name, also of a WAR in a directory; none for an EJB
+  jar or RAR. Applications a command deploys aren't among them.
 - **As for `domain1`:** `name`, `contextRoot`, `logMessagesOnly`, `debug`,
   `suspend` and `startTimeout` apply as they do there. The debugger listens
   on localhost:9009.

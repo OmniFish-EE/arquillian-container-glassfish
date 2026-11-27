@@ -13,16 +13,13 @@ package ee.omnifish.glassfish.maven.staging;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
-import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.MessageDigest;
@@ -31,7 +28,6 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
@@ -46,6 +42,9 @@ import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import ee.omnifish.glassfish.admin.TrustStores;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedProcesses;
 
 /**
  * Resolve and unpack a GlassFish distribution zip, copy overlay artifacts into
@@ -65,7 +64,9 @@ import org.slf4j.LoggerFactory;
  * <p>Concurrency: {@link #stage} runs one caller at a time per stage
  * directory, so modules of a {@code -T} build that share one stage it once.
  * The fingerprint check makes the later runs no-ops; staging itself is not
- * safe to interleave.
+ * safe to interleave. A staging it owns holds the stage directory's lock,
+ * which a GlassFish Embedded child takes to start from it, also in another
+ * JVM, so none starts while staging checks or replaces what it runs from.
  */
 public final class GlassFishStaging {
 
@@ -147,7 +148,12 @@ public final class GlassFishStaging {
         Path lockKey = spec.stageDir().toAbsolutePath().normalize();
         synchronized (STAGE_DIR_LOCKS.computeIfAbsent(lockKey, dir -> new Object())) {
             if (!spec.unpackSkip() && spec.distribution() != null) {
-                stageOwned(spec, resolver, commandRunner);
+                // From the check of the children that run from it through the end of a replacement, so none starts
+                // meanwhile.
+                EmbeddedProcesses.withStageLock(spec.stageDir(), () -> {
+                    stageOwned(spec, resolver, commandRunner);
+                    return null;
+                });
             } else if ((!spec.overlaySkip() && !spec.overlays().isEmpty()) || spec.certImport().hasWork()) {
                 forgetFingerprint(spec.stageDir().resolve(MARKER_FILE));
                 applyOverlaysAndCerts(spec, resolver);
@@ -197,7 +203,7 @@ public final class GlassFishStaging {
                 }
                 LOG.info("Re-staging " + stageDir + ": its inputs changed");
             }
-        } else if (!isEmpty(stageDir)) {
+        } else if (!isEmptyButTheLock(stageDir)) {
             throw new IOException(stageDir + " isn't empty, and this plugin didn't stage it. Empty it, or point "
                     + "the stage directory elsewhere.");
         }
@@ -206,7 +212,7 @@ public final class GlassFishStaging {
         // interrupted from here on is redone by the next run.
         Files.createDirectories(stageDir);
         writeMarker(marker, gav, spec.home(), null);
-        wipeAllBut(stageDir, marker);
+        wipeAllBut(stageDir, List.of(marker, stageDir.resolve(EmbeddedProcesses.LOCK_FILE)));
         if (Edition.isJar(spec.distribution())) {
             Path jar = stagedJar(stageDir, spec.distribution());
             LOG.info("Copying " + gav + " to " + jar);
@@ -346,12 +352,13 @@ public final class GlassFishStaging {
         }
     }
 
-    private static boolean isEmpty(Path dir) throws IOException {
+    /** Whether {@code dir} holds nothing but the lock staging holds. */
+    private static boolean isEmptyButTheLock(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {
             return !Files.exists(dir);
         }
         try (var entries = Files.list(dir)) {
-            return entries.findAny().isEmpty();
+            return entries.allMatch(entry -> entry.getFileName().toString().equals(EmbeddedProcesses.LOCK_FILE));
         }
     }
 
@@ -418,30 +425,7 @@ public final class GlassFishStaging {
      * store is read without its password, which only checks its integrity.
      */
     private static void writeJdkTrustStore(Path trustStore, char[] password) throws IOException {
-        copyCertificates(jdkTrustStore(), null, trustStore, password);
-    }
-
-    /**
-     * Write the certificates of the truststore {@code source}, which
-     * {@code sourcePassword} opens, to {@code target}, as PKCS12 with
-     * {@code targetPassword}. The JDK probes the source's type from the file.
-     * Keys, which trust doesn't use, are left out.
-     */
-    public static void copyCertificates(Path source, char[] sourcePassword, Path target, char[] targetPassword)
-            throws IOException {
-        KeyStore store = loadTrustStore(source, sourcePassword);
-        try {
-            KeyStore copy = KeyStore.getInstance("PKCS12");
-            copy.load(null, null);
-            for (String alias : Collections.list(store.aliases())) {
-                if (store.isCertificateEntry(alias)) {
-                    copy.setCertificateEntry(alias, store.getCertificate(alias));
-                }
-            }
-            storeAtomically(copy, target, targetPassword);
-        } catch (GeneralSecurityException e) {
-            throw new IOException("Could not copy the certificates of " + source + ": " + e.getMessage(), e);
-        }
+        TrustStores.copyCertificates(jdkTrustStore(), null, trustStore, password);
     }
 
     /**
@@ -457,7 +441,7 @@ public final class GlassFishStaging {
      */
     private static void importCerts(CertImport certImport, Path trustStore) throws IOException {
         char[] password = certImport.password().toCharArray();
-        KeyStore store = loadTrustStore(trustStore, password);
+        KeyStore store = TrustStores.load(trustStore, password);
         boolean changed = false;
         for (TrustedCert trusted : certImport.certs()) {
             Certificate cert = readCertificate(trusted.getFile());
@@ -475,7 +459,7 @@ public final class GlassFishStaging {
             changed = true;
         }
         if (changed) {
-            storeAtomically(store, trustStore, password);
+            TrustStores.storeAtomically(store, trustStore, password);
         }
     }
 
@@ -495,38 +479,12 @@ public final class GlassFishStaging {
                 + "; set the truststore");
     }
 
-    private static KeyStore loadTrustStore(Path trustStore, char[] password) throws IOException {
-        if (!Files.isRegularFile(trustStore)) {
-            throw new IOException("Truststore " + trustStore + " doesn't exist");
-        }
-        try {
-            return KeyStore.getInstance(trustStore.toFile(), password);
-        } catch (IOException | GeneralSecurityException e) {
-            throw new IOException("Could not load truststore " + trustStore + ": " + e.getMessage(), e);
-        }
-    }
-
     /** The first certificate in a PEM or DER file. */
     private static Certificate readCertificate(File file) throws IOException {
         try (InputStream in = Files.newInputStream(file.toPath())) {
             return CertificateFactory.getInstance("X.509").generateCertificate(in);
         } catch (CertificateException e) {
             throw new IOException("Could not read a certificate from " + file + ": " + e.getMessage(), e);
-        }
-    }
-
-    private static void storeAtomically(KeyStore store, Path trustStore, char[] password) throws IOException {
-        Path tmp = trustStore.resolveSibling(trustStore.getFileName() + ".tmp");
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            store.store(out, password);
-        } catch (GeneralSecurityException e) {
-            throw new IOException("Could not write truststore " + trustStore + ": " + e.getMessage(), e);
-        }
-        try {
-            Files.move(tmp, trustStore, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException e) {
-            // Still replaces the file rather than rewriting it in place, just not crash-safe.
-            Files.move(tmp, trustStore, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -584,10 +542,10 @@ public final class GlassFishStaging {
      * example because a GlassFish running from the install keeps it open,
      * fails the staging.
      */
-    private static void wipeAllBut(Path dir, Path keep) throws IOException {
+    private static void wipeAllBut(Path dir, List<Path> keep) throws IOException {
         List<Path> paths;
         try (var entries = Files.walk(dir)) {
-            paths = entries.filter(path -> !path.equals(dir) && !path.equals(keep))
+            paths = entries.filter(path -> !path.equals(dir) && !keep.contains(path))
                     .sorted(Comparator.reverseOrder())
                     .collect(Collectors.toList());
         }

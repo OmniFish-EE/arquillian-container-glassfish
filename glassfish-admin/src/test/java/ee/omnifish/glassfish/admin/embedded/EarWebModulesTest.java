@@ -8,16 +8,18 @@
  * obtain a copy of the License at
  * https://github.com/payara/Payara/blob/master/LICENSE.txt
  */
-package ee.omnifish.glassfish.maven.staging;
+package ee.omnifish.glassfish.admin.embedded;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.equalTo;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -42,6 +44,47 @@ class EarWebModulesTest {
         assertThat(EarWebModules.contextRoots(ear), contains("/alpha-site", "/beta"));
     }
 
+    /** The modules come by their URIs, which the command lists the servlets of. */
+    @Test
+    void theDescriptorGivesTheModulesByUri() throws IOException {
+        Path ear = ear("META-INF/application.xml",
+                "<application xmlns=\"https://jakarta.ee/xml/ns/jakartaee\" version=\"10\">"
+                + "<module><web><web-uri>alpha.war</web-uri><context-root>alpha-site</context-root></web></module>"
+                + "<module><web><web-uri>web/beta.war</web-uri></web></module>"
+                + "</application>",
+                "alpha.war", "web/beta.war");
+
+        assertThat(EarWebModules.webModules(ear).keySet(), contains("alpha.war", "web/beta.war"));
+        assertThat(EarWebModules.webModules(ear).values(), contains("/alpha-site", "/beta"));
+    }
+
+    /**
+     * As Jakarta EE's rule for an EAR without a descriptor has it, and as
+     * GlassFish deploys them: every WAR, also one in a directory, the library
+     * directory included, by its whole URI.
+     */
+    @Test
+    void withoutADescriptorTheModulesAreAllItsWars() throws IOException {
+        Path ear = ear("alpha.war", "war", "some/gamma.war", "lib/util.war", "beta.war");
+
+        assertThat(EarWebModules.webModules(ear).keySet(),
+                contains("alpha.war", "some/gamma.war", "lib/util.war", "beta.war"));
+    }
+
+    /** GlassFish names the application after it when it isn't given a name. */
+    @Test
+    void theDescriptorGivesTheApplicationName() throws IOException {
+        Path named = ear("META-INF/application.xml",
+                "<application xmlns=\"https://jakarta.ee/xml/ns/jakartaee\" version=\"10\">"
+                + "<application-name>pairapp</application-name>"
+                + "<module><web><web-uri>alpha.war</web-uri></web></module></application>");
+        assertThat(EarWebModules.applicationName(named), equalTo(Optional.of("pairapp")));
+
+        // The helper writes the same file again.
+        Path unnamed = ear("alpha.war", "war");
+        assertThat(EarWebModules.applicationName(unnamed), equalTo(Optional.empty()));
+    }
+
     /** An old descriptor names its DTD, which isn't fetched. */
     @Test
     void anOldDescriptorIsReadWithoutItsDtd() throws IOException {
@@ -54,11 +97,12 @@ class EarWebModulesTest {
         assertThat(EarWebModules.contextRoots(ear), contains("/shop"));
     }
 
+    /** A WAR in a directory too, without its directory, as GlassFish names it. */
     @Test
-    void withoutADescriptorEachWarInTheRootIsNamedAfterItsFile() throws IOException {
-        Path ear = ear("alpha.war", "war", "lib/util.war", "bean.jar");
+    void withoutADescriptorEachWarIsNamedAfterItsFile() throws IOException {
+        Path ear = ear("alpha.war", "war", "some/gamma.war", "bean.jar");
 
-        assertThat(EarWebModules.contextRoots(ear), contains("/alpha"));
+        assertThat(EarWebModules.contextRoots(ear), contains("/alpha", "/gamma"));
     }
 
     @Test

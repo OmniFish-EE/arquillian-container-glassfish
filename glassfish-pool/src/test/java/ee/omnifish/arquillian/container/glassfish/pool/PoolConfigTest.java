@@ -25,6 +25,22 @@ class PoolConfigTest {
         assertThat(config.adminPort(4), equalTo(15148));
     }
 
+    /** An Embedded slot's children open their IIOP and JMS ports in its window, before its debugger. */
+    @Test
+    void anEmbeddedSlotsChildrenUseItsWindow() {
+        PoolConfig config = new PoolConfig(Paths.get("/tmp/pool"), null, 2, 14848, 100, SlotSetup.NONE, false, false,
+                true);
+
+        assertThat(config.embedded(), equalTo(true));
+        assertThat(config.iiopPort(1), equalTo(14851));
+        assertThat(config.iiopSslPort(1), equalTo(14852));
+        assertThat(config.iiopMutualAuthPort(1), equalTo(14853));
+        assertThat(config.jmsPort(1), equalTo(14854));
+        assertThat(config.jmsRmiPort(1), equalTo(14855));
+        assertThat(config.debugPort(1), equalTo(14857));
+        assertThat(config.iiopPort(2), equalTo(14951));
+    }
+
     @Test
     void rejectsTooSmallStride() {
         assertThrows(IllegalArgumentException.class,

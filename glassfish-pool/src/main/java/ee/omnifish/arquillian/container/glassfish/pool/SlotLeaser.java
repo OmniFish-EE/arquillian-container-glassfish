@@ -51,6 +51,13 @@ import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
  * the {@code deleteRecursive}+clone of that slot's GF install tree. If
  * provisioning fails, the claim is released and the slot left without
  * {@code ports.properties}, so the next grow recycles it.
+ *
+ * <p>A slot for GlassFish Embedded has nothing running between its leases,
+ * so it's healthy with all its listeners closed. Once the leaser holds its
+ * lock, it ends the children the stage directory records for the slot: a
+ * live holder would still hold the lock, so they're ones a test fork that
+ * died left behind. A slot of the other kind, domain or Embedded, is
+ * recycled into one of the pool's own.
  */
 public final class SlotLeaser {
 
@@ -171,6 +178,11 @@ public final class SlotLeaser {
                 lock.close();
                 return null;
             }
+            if (ports.isEmbedded() != config.embedded()) {
+                // Of the other kind: growing the pool recycles it.
+                lock.close();
+                return null;
+            }
             PoolLocks.Held runLock = null;
             if (forRun) {
                 runLock = markRun(poolDir, slot);
@@ -183,8 +195,9 @@ public final class SlotLeaser {
             // have OOM-crashed, been killed, or been mid-shutdown when we grabbed
             // the lock. Probe before committing. A run probes once it holds the
             // run's mark: another JVM's stop after its build holds that mark
-            // while it stops the slot.
-            if (!PoolProvisioner.isPortHealthy(ports.adminPort())) {
+            // while it stops the slot. An Embedded slot has nothing to probe, but
+            // may have children that a holder that died left running.
+            if (!isUsable(slot, ports)) {
                 if (runLock != null) {
                     runLock.close();
                 }
@@ -192,13 +205,33 @@ public final class SlotLeaser {
                 return null;
             }
             publishSlotProperty(slot);
-            LOG.fine(() -> "Leased slot " + slot + " (adminPort=" + ports.adminPort() + ")");
-            return new SlotLease(slot, ports, lock, runLock);
+            LOG.fine(() -> "Leased slot " + slot + (ports.isEmbedded() ? " (Embedded)" : " (adminPort="
+                    + ports.adminPort() + ")"));
+            return new SlotLease(slot, ports, lock, runLock, PoolPaths.slotDir(poolDir, slot));
         } catch (RuntimeException e) {
             // Always release the lock between tryLock() and successful return,
             // otherwise a transient failure leaks it.
             lock.close();
             throw e;
+        }
+    }
+
+    /**
+     * Whether slot {@code slot}, whose lock the caller holds, can be leased:
+     * a domain slot once its admin port answers, an Embedded one once the
+     * children a previous holder left running have ended.
+     */
+    private boolean isUsable(int slot, SlotPorts ports) {
+        if (!ports.isEmbedded()) {
+            return PoolProvisioner.isPortHealthy(ports.adminPort());
+        }
+
+        try {
+            new PoolProvisioner(config).endChildren(slot);
+            return true;
+        } catch (IOException e) {
+            LOG.warning(() -> "Slot " + slot + " keeps a child its previous holder left: " + e.getMessage());
+            return false;
         }
     }
 
@@ -221,10 +254,11 @@ public final class SlotLeaser {
      * reach.
      */
     private SlotLease tryGrow(Path poolDir, boolean forRun) throws IOException {
-        if (config.source() == null) {
+        if (config.source() == null && !config.embedded()) {
             // Caller didn't supply a source install — typical for test-JVM
             // leasers when the build hasn't forwarded gf.pool.source. Skip
-            // grow so the lease loop just waits for an existing slot.
+            // grow so the lease loop just waits for an existing slot. An
+            // Embedded slot needs none.
             return null;
         }
         ClaimedSlot claim = PoolLocks.withGrowLock(poolDir, () -> claimSlot(poolDir));
@@ -244,7 +278,7 @@ public final class SlotLeaser {
         try {
             SlotPorts ports = new PoolProvisioner(config).provisionClaimedSlot(claim.slot);
             publishSlotProperty(claim.slot);
-            return new SlotLease(claim.slot, ports, claim.lock, runLock);
+            return new SlotLease(claim.slot, ports, claim.lock, runLock, PoolPaths.slotDir(poolDir, claim.slot));
         } catch (CommandFailedException e) {
             // failOnCommandError: the command would fail on every new slot,
             // so fail the lease rather than retry until the lease timeout.
@@ -357,20 +391,25 @@ public final class SlotLeaser {
     }
 
     /**
-     * A slot whose GlassFish is dead (admin port closed), or that has no
-     * {@code ports.properties}. Whoever sets a slot up or restarts it holds
-     * its lock until {@code ports.properties} is written, so once the caller
-     * holds the lock, a slot without one was abandoned, for example by a JVM
-     * killed during its setup.
+     * A slot whose GlassFish is dead (admin port closed), that has no
+     * {@code ports.properties}, or that's of the other kind, domain or
+     * Embedded. Whoever sets a slot up or restarts it holds its lock until
+     * {@code ports.properties} is written, so once the caller holds the lock,
+     * a slot without one was abandoned, for example by a JVM killed during
+     * its setup. An Embedded slot has nothing that dies.
      */
-    private static boolean isRecyclable(Path poolDir, int slot) {
+    private boolean isRecyclable(Path poolDir, int slot) {
         Path portsFile = PoolPaths.portsFile(poolDir, slot);
         if (!Files.exists(portsFile)) {
             return true;
         }
 
         try {
-            return !PoolProvisioner.isPortHealthy(SlotPorts.readFrom(portsFile).adminPort());
+            SlotPorts ports = SlotPorts.readFrom(portsFile);
+            if (ports.isEmbedded() != config.embedded()) {
+                return true;
+            }
+            return !ports.isEmbedded() && !PoolProvisioner.isPortHealthy(ports.adminPort());
         } catch (IOException | RuntimeException e) {
             return false;
         }

@@ -67,6 +67,14 @@ public final class GlassFishDomain {
     /** How long a stopped server's process may take to end. */
     private static final Duration DEFAULT_EXIT_WAIT = Duration.ofSeconds(10);
 
+    /**
+     * How much later than its {@code config/pid}'s time a server may seem to
+     * have started: Windows stamps a file by a clock that moves only every
+     * 15.6 ms or so, by default, so a file written right after its process
+     * started can seem older than that process.
+     */
+    private static final Duration PID_FILE_CLOCK_SLACK = Duration.ofSeconds(1);
+
     private static final int PROBE_TIMEOUT_MILLIS = 1000;
 
     /** How GlassFish passes its server the domain's directory. */
@@ -142,7 +150,8 @@ public final class GlassFishDomain {
      * system doesn't say what a process runs, as on Windows, by when it
      * started. GlassFish writes {@code config/pid} after its server started,
      * while a process that got the number of a server killed since started
-     * after that. Package-private for unit tests.
+     * after that, by more than {@link #PID_FILE_CLOCK_SLACK}. Package-private
+     * for unit tests.
      */
     boolean isThisDomains(ProcessHandle.Info info, Path pidFile) {
         if (info.commandLine().isPresent()) {
@@ -150,7 +159,8 @@ public final class GlassFishDomain {
         }
         try {
             Instant written = Files.getLastModifiedTime(pidFile).toInstant();
-            return info.startInstant().map(started -> !started.isAfter(written)).orElse(false);
+            return info.startInstant().map(started -> !started.isAfter(written.plus(PID_FILE_CLOCK_SLACK)))
+                    .orElse(false);
         } catch (IOException e) {
             return false;
         }
