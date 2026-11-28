@@ -10,6 +10,7 @@
  */
 package ee.omnifish.glassfish.admin.embedded;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -44,6 +45,9 @@ public final class EmbeddedGlassFish {
 
     /** The JARs a static shell's manifest doesn't name, relative to an install's root. */
     static final String BOOTSTRAP_DIR = "glassfish/lib/bootstrap";
+
+    /** The JAR whose manifest names the {@link #classPath}, in the stage directory. */
+    static final String CLASS_PATH_JAR = "embedded-classpath.jar";
 
     /** Where {@code domain1}'s configuration lives, relative to an install's root. */
     static final Path DOMAIN_CONFIG = Paths.get("glassfish", "domains", "domain1", "config");
@@ -150,20 +154,45 @@ public final class EmbeddedGlassFish {
     }
 
     /**
-     * Write {@code file}, a JAR with only a manifest, whose {@code Class-Path}
-     * names the {@link #classPath}, for a class path that takes one entry
-     * per file, as Failsafe's {@code additionalClasspathElements} does. A
-     * file that already says the same is left alone: a test JVM may run
-     * from it, which on Windows keeps it from being replaced.
+     * The JAR with only a manifest, whose {@code Class-Path} names the
+     * {@link #classPath}, for a class path that takes one entry per file, as
+     * Failsafe's {@code additionalClasspathElements} does:
+     * {@code embedded-classpath.jar} in the stage directory, which
+     * {@link #writeClassPathJar} writes.
      */
-    public void writeClassPathJar(Path file) throws IOException {
-        String classPath = classPath().stream()
-                .map(entry -> entry.toAbsolutePath().normalize().toUri().toString())
-                .collect(Collectors.joining(" "));
+    public Path classPathJar() {
+        return stageDir.resolve(CLASS_PATH_JAR);
+    }
+
+    /**
+     * Write the {@link #classPathJar}. A file that already says the same is
+     * left alone: a test JVM may run from it, which on Windows keeps it from
+     * being replaced.
+     *
+     * <p>Each entry is relative to the JAR, as the JAR specification has it:
+     * GlassFish's JSP compiler reads each entry as a file path relative to
+     * the JAR, also an absolute URL, which Windows then refuses, and it
+     * doesn't decode an escaped space. Next to what it names, the JAR's
+     * entries hold the staged layout only, which has neither spaces nor
+     * another drive.
+     */
+    public void writeClassPathJar() throws IOException {
+        writeClassPathJar(classPathJar());
+    }
+
+    /** Write the class path JAR as {@code file}. Package-private for unit tests. */
+    void writeClassPathJar(Path file) throws IOException {
+        Path base = file.toAbsolutePath().normalize().getParent();
+        List<String> entries = new ArrayList<>();
+        for (Path entry : classPath()) {
+            entries.add(classPathEntry(base, entry.toAbsolutePath().normalize()));
+        }
+        String classPath = String.join(" ", entries);
         if (Files.isRegularFile(file) && classPath.equals(classPathOf(file))) {
             return;
         }
 
+        Files.createDirectories(base);
         Manifest manifest = new Manifest();
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
         manifest.getMainAttributes().put(Attributes.Name.CLASS_PATH, classPath);
@@ -180,6 +209,20 @@ public final class EmbeddedGlassFish {
             }
         } finally {
             Files.deleteIfExists(tmp);
+        }
+    }
+
+    /**
+     * {@code entry} as a manifest's {@code Class-Path} has it: relative to
+     * {@code base}, with {@code /} and with its spaces escaped, which separate
+     * entries; or, on another drive, as on Windows, as an absolute URI.
+     */
+    private static String classPathEntry(Path base, Path entry) {
+        try {
+            return base.relativize(entry).toString().replace(File.separatorChar, '/').replace(" ", "%20");
+        } catch (IllegalArgumentException e) {
+            // A path on another drive than base has no relative form.
+            return entry.toUri().toString();
         }
     }
 

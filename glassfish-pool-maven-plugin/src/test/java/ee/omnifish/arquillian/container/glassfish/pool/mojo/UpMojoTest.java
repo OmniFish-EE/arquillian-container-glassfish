@@ -236,7 +236,7 @@ class UpMojoTest {
         UpMojo.publishHosting(properties, new PoolConfig(pool, null, 1, PoolConfig.DEFAULT_ADMIN_BASE,
                 PoolConfig.DEFAULT_PORT_STRIDE));
 
-        assertEquals(EmbeddedPool.classPathJar(pool).toAbsolutePath().toString(),
+        assertEquals(jar.getParent().resolve("embedded-classpath.jar").toAbsolutePath().toString(),
                 properties.getProperty(UpMojo.EMBEDDED_CLASSPATH));
         assertEquals("--add-opens=java.base/java.lang=ALL-UNNAMED", properties.getProperty(UpMojo.EMBEDDED_JVM_OPTIONS));
     }

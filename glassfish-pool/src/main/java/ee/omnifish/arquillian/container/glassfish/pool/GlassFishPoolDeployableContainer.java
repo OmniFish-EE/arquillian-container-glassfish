@@ -241,7 +241,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
         } catch (ClassNotFoundException | LinkageError e) {
             throw new LifecycleException("GlassFish Embedded isn't on this test JVM's class path. With "
                     + "<extensions>true</extensions>, the pool plugin adds it to failsafe's additionalClasspathElements; "
-                    + "without, add " + EmbeddedPool.classPathJar(poolDir) + " there.", e);
+                    + "without, add " + glassfish.classPathJar() + " there.", e);
         } catch (URISyntaxException | RuntimeException e) {
             throw new LifecycleException("Could not tell where this test JVM's GlassFish Embedded comes from: "
                     + e.getMessage(), e);

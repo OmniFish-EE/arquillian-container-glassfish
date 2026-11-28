@@ -89,14 +89,27 @@ class EmbeddedGlassFishTest {
                 "--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED"));
     }
 
+    /**
+     * In the stage directory, relative to itself, as the JAR specification
+     * has it: GlassFish's JSP compiler reads an absolute URL as a file path
+     * relative to the JAR, which Windows then refuses, and doesn't decode an
+     * escaped space. Next to what it names, the entries hold the staged
+     * layout only, also where the stage directory's own path has a space.
+     */
     @Test
-    void theClassPathJarNamesTheClassPathAsUris() throws IOException {
-        Path jar = tmp.resolve("with space/glassfish-embedded-web-8.0.5.jar");
-        Path classPathJar = tmp.resolve("embedded-classpath.jar");
+    void theClassPathJarNamesTheClassPathRelativeToItself() throws IOException {
+        Path stage = tmp.resolve("with space/dist");
+        Path home = stage.resolve("glassfish8");
+        Path bootstrap = Files.createDirectories(home.resolve(EmbeddedGlassFish.BOOTSTRAP_DIR));
+        Files.writeString(bootstrap.resolve("glassfish.jar"), "bootstrap");
+        EmbeddedGlassFish glassfish = EmbeddedGlassFish.install(stage, home, null, null);
 
-        EmbeddedGlassFish.jar(tmp, jar, null, null).writeClassPathJar(classPathJar);
+        glassfish.writeClassPathJar();
 
-        assertThat(EmbeddedGlassFish.classPathOf(classPathJar), equalTo(jar.toUri().toString()));
+        assertThat(glassfish.classPathJar(), equalTo(stage.resolve("embedded-classpath.jar")));
+        assertThat(EmbeddedGlassFish.classPathOf(glassfish.classPathJar()), equalTo(
+                "glassfish8/glassfish/lib/embedded/glassfish-embedded-static-shell.jar "
+                + "glassfish8/glassfish/lib/bootstrap/glassfish.jar"));
     }
 
     /** A test JVM may run from it, which on Windows keeps it from being replaced. */

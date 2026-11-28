@@ -156,8 +156,7 @@ public class UpMojo extends AbstractStagingPoolMojo {
             }
 
             EmbeddedGlassFish glassfish = EmbeddedPool.read(poolDir).orElseThrow();
-            projectProperties.setProperty(EMBEDDED_CLASSPATH,
-                    EmbeddedPool.classPathJar(poolDir).toAbsolutePath().toString());
+            projectProperties.setProperty(EMBEDDED_CLASSPATH, glassfish.classPathJar().toAbsolutePath().toString());
             projectProperties.setProperty(EMBEDDED_JVM_OPTIONS, String.join(" ", glassfish.moduleOptions()));
         } catch (IOException e) {
             throw new MojoExecutionException("Could not read the pool's GlassFish Embedded: " + e.getMessage(), e);

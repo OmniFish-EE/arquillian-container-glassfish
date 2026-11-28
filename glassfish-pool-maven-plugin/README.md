@@ -754,8 +754,8 @@ runs.
   `<embeddedMode>` are in the plugin's configuration, or properties:
   - GlassFish's class path, as an `additionalClasspathElement`:
     `${gf.pool.embeddedClasspath}`, the JAR `up` writes as
-    `poolDir/embedded-classpath.jar`, whose manifest names the staged JAR,
-    or the static shell and its bootstrap JARs.
+    `stageDir/embedded-classpath.jar`, whose manifest names the staged JAR,
+    or the static shell and its bootstrap JARs, relative to it.
   - GlassFish's module options, at the end of the `argLine`:
     `@{gf.pool.embeddedJvmOptions}`, which `up` sets. Without an `argLine`
     of its own, failsafe's takes the `argLine` property, as jacoco and

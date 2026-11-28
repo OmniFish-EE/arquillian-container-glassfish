@@ -93,27 +93,26 @@ class EmbeddedPoolTest {
 
     /**
      * With in-process, the test JVMs host GlassFish themselves, from the class
-     * path that the pool directory's JAR names, which the extension adds to
-     * failsafe's.
+     * path that a JAR in the stage directory names, which the extension adds
+     * to failsafe's.
      */
     @Test
     void theDescriptionSaysWhetherTheTestJvmsHostGlassFish() throws Exception {
         Path pool = tmp.resolve("pool");
-        Path jar = tmp.resolve("dist/glassfish-embedded-web-8.0.5.jar");
+        Path stage = Files.createDirectories(tmp.resolve("dist"));
+        EmbeddedGlassFish glassfish = EmbeddedGlassFish.jar(stage, stage.resolve("glassfish-embedded-web-8.0.5.jar"),
+                null, null);
         assertThat(EmbeddedPool.isInProcess(pool), is(false));
 
-        EmbeddedPool.write(pool, EmbeddedGlassFish.jar(tmp, jar, null, null), "embedded-web", EmbeddedPool.IN_PROCESS);
+        EmbeddedPool.write(pool, glassfish, "embedded-web", EmbeddedPool.IN_PROCESS);
         assertThat(EmbeddedPool.isInProcess(pool), is(true));
-        try (JarFile classPathJar = new JarFile(EmbeddedPool.classPathJar(pool).toFile())) {
+        try (JarFile classPathJar = new JarFile(glassfish.classPathJar().toFile())) {
             assertThat(classPathJar.getManifest().getMainAttributes().getValue(Attributes.Name.CLASS_PATH),
-                    equalTo(jar.toAbsolutePath().toUri().toString()));
+                    equalTo("glassfish-embedded-web-8.0.5.jar"));
         }
 
-        EmbeddedPool.write(pool, EmbeddedGlassFish.jar(tmp, jar, null, null), "embedded-web");
+        EmbeddedPool.write(pool, glassfish, "embedded-web");
         assertThat(EmbeddedPool.isInProcess(pool), is(false));
-
-        EmbeddedPool.remove(pool);
-        assertThat(Files.exists(EmbeddedPool.classPathJar(pool)), is(false));
     }
 
     /**

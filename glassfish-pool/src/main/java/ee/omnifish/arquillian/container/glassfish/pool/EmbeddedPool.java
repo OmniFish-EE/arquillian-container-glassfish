@@ -43,9 +43,10 @@ import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
  *
  * <p>It also says how GlassFish starts, as {@code <embeddedMode>} names it:
  * from the command line, a child per deployment, or in-process, in the test
- * JVM. For the latter, the pool directory has {@code embedded-classpath.jar},
- * a JAR with only a manifest that names GlassFish's class path, which the
- * pool plugin's extension adds to Failsafe's class path.
+ * JVM. For the latter, the stage directory gets {@code embedded-classpath.jar}
+ * ({@link EmbeddedGlassFish#classPathJar}), a JAR with only a manifest that
+ * names GlassFish's class path, which the pool plugin's extension adds to
+ * Failsafe's class path.
  */
 public final class EmbeddedPool {
 
@@ -53,9 +54,6 @@ public final class EmbeddedPool {
 
     /** The copy of the truststore, with GlassFish's master password, in the pool directory. */
     static final String TRUST_STORE = "embedded-cacerts.p12";
-
-    /** The JAR whose manifest names GlassFish's class path, for a test JVM that hosts it. */
-    static final String CLASS_PATH_JAR = "embedded-classpath.jar";
 
     /** How the children start, as {@code <embeddedMode>} names it. */
     public static final String COMMAND_LINE = "command-line";
@@ -92,7 +90,7 @@ public final class EmbeddedPool {
             description.setProperty(HOME, absolute(glassfish.home()));
         }
         PoolLocks.withGrowLock(poolDir, () -> {
-            glassfish.writeClassPathJar(classPathJar(poolDir));
+            glassfish.writeClassPathJar();
             Path trustStore = poolDir.resolve(TRUST_STORE);
             if (glassfish.trustStore() != null) {
                 TrustStores.copyCertificates(glassfish.trustStore(), glassfish.trustStorePassword().toCharArray(),
@@ -144,11 +142,6 @@ public final class EmbeddedPool {
         return IN_PROCESS.equals(description.getProperty(MODE));
     }
 
-    /** The JAR whose manifest names the class path of the GlassFish Embedded of the pool in {@code poolDir}. */
-    public static Path classPathJar(Path poolDir) {
-        return poolDir.resolve(CLASS_PATH_JAR);
-    }
-
     /** The GlassFish Embedded the slots of the pool in {@code poolDir} run, or empty, when they run domains. */
     public static Optional<EmbeddedGlassFish> read(Path poolDir) throws IOException {
         Path file = poolDir.resolve(FILE);
@@ -172,14 +165,13 @@ public final class EmbeddedPool {
 
     /** Describe no GlassFish Embedded: the slots of the pool in {@code poolDir} run domains. */
     public static void remove(Path poolDir) throws IOException {
-        if (!exists(poolDir) && !Files.exists(poolDir.resolve(TRUST_STORE)) && !Files.exists(classPathJar(poolDir))) {
+        if (!exists(poolDir) && !Files.exists(poolDir.resolve(TRUST_STORE))) {
             return;
         }
 
         PoolLocks.withGrowLock(poolDir, () -> {
             Files.deleteIfExists(poolDir.resolve(FILE));
             Files.deleteIfExists(poolDir.resolve(TRUST_STORE));
-            Files.deleteIfExists(classPathJar(poolDir));
             return null;
         });
     }
