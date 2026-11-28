@@ -55,6 +55,12 @@
             <artifactId>jakarta.jakartaee-api</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- For HostedGlassFish's signatures; in-process, the staged GlassFish brings it along. -->
+        <dependency>
+            <groupId>org.glassfish.main.common</groupId>
+            <artifactId>simple-glassfish-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.jboss.arquillian.container</groupId>

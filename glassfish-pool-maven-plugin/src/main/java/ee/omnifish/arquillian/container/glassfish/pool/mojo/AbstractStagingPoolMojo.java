@@ -45,9 +45,10 @@ import ee.omnifish.glassfish.maven.staging.TrustedCert;
  * live here, because their {@code gf.pool.*} names differ.
  *
  * <p>On an Embedded {@code <edition>}, each slot is a block of ports, on
- * which each deployment starts GlassFish Embedded in a JVM of its own. The
- * staging then describes that GlassFish in the pool directory
- * ({@link EmbeddedPool}), for the test JVMs.
+ * which each deployment starts GlassFish Embedded in a JVM of its own, or,
+ * with {@code <embeddedMode>in-process</embeddedMode>}, on which the test JVM
+ * hosts it itself. The staging then describes that GlassFish in the pool
+ * directory ({@link EmbeddedPool}), for the test JVMs.
  */
 abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
 
@@ -55,10 +56,10 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     private static final String POOL_SOURCE = "<poolSource> (gf.pool.source)";
 
     /** The {@code <embeddedMode>} that starts each child from the command line. */
-    static final String COMMAND_LINE = "command-line";
+    static final String COMMAND_LINE = EmbeddedPool.COMMAND_LINE;
 
-    /** The {@code <embeddedMode>} that runs GlassFish Embedded inside the test JVM, which #99 adds. */
-    static final String IN_PROCESS = "in-process";
+    /** The {@code <embeddedMode>} that runs GlassFish Embedded inside the JVM that asks for it. */
+    static final String IN_PROCESS = EmbeddedPool.IN_PROCESS;
 
     /**
      * The GlassFish edition: {@code full}, {@code web}, {@code embedded} or
@@ -83,10 +84,14 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     /**
      * How GlassFish Embedded starts, on an Embedded {@code <edition>}:
      * {@code command-line}, through its own launcher, in a JVM of its own per
-     * deployment, with the archive, which the undeploy ends. {@code in-process},
-     * inside the test JVM, isn't supported yet. {@code full} and {@code web}
-     * ignore it, and {@code glassfish-pool:run} always runs from the command
-     * line.
+     * deployment, with the archive, which the undeploy ends, or per
+     * {@code glassfish-pool:run}; or {@code in-process}, inside the JVM that
+     * asks for it: the test JVM, which hosts it from the Arquillian
+     * Container's start to its stop, and deploys to it while it runs, or for
+     * {@code glassfish-pool:run}, Maven's own. With
+     * {@code <extensions>true</extensions>}, the plugin then puts GlassFish on
+     * failsafe's class path, with its module options. {@code full} and
+     * {@code web} ignore it.
      */
     @Parameter(property = "gf.pool.embeddedMode", defaultValue = COMMAND_LINE)
     protected String embeddedMode;
@@ -221,6 +226,7 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
         }
         Path pool = poolDir().toPath();
         Path explicitTrustStore = (trustStore == null) ? null : trustStore.toPath();
+        String mode = embeddedMode();
         return () -> {
             try {
                 if (spec.hasWork()) {
@@ -228,7 +234,7 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
                 }
                 if (edition.isEmbedded()) {
                     EmbeddedPool.write(pool, Stager.embeddedGlassFish(spec, explicitTrustStore, trustStorePassword),
-                            edition.toString());
+                            edition.toString(), mode);
                 } else {
                     EmbeddedPool.remove(pool);
                 }
@@ -258,28 +264,24 @@ abstract class AbstractStagingPoolMojo extends AbstractPoolMojo {
     }
 
     /**
-     * Fail on an {@code <embeddedMode>} that {@code up} and {@code provision}
-     * can't set an Embedded edition's slots up for. The other editions
-     * ignore it.
+     * The {@code <embeddedMode>}, {@code command-line} or {@code in-process},
+     * and the former for an edition that isn't Embedded, which ignores it.
+     *
+     * @throws MojoExecutionException on an Embedded edition with a value
+     *         that's neither
      */
-    protected void requireCommandLineMode() throws MojoExecutionException {
-        if (edition().isEmbedded()) {
-            requireCommandLineMode(embeddedMode);
-        }
+    protected String embeddedMode() throws MojoExecutionException {
+        return edition().isEmbedded() ? embeddedMode(embeddedMode) : COMMAND_LINE;
     }
 
     /** Package-private for unit tests. */
-    static void requireCommandLineMode(String embeddedMode) throws MojoExecutionException {
+    static String embeddedMode(String embeddedMode) throws MojoExecutionException {
         String mode = (embeddedMode == null) ? COMMAND_LINE : embeddedMode.trim().toLowerCase(Locale.ROOT);
-        if (IN_PROCESS.equals(mode)) {
-            throw new MojoExecutionException("<embeddedMode>in-process</embeddedMode> isn't supported yet: GlassFish "
-                    + "Embedded runs from the command line, in a JVM of its own per deployment. Leave out "
-                    + "<embeddedMode>, or set it to command-line.");
-        }
-        if (!COMMAND_LINE.equals(mode)) {
+        if (!COMMAND_LINE.equals(mode) && !IN_PROCESS.equals(mode)) {
             throw new MojoExecutionException("<embeddedMode> is command-line or in-process, not '" + embeddedMode
                     + "'");
         }
+        return mode;
     }
 
     /** {@code stageDir}, or its default. */

@@ -10,7 +10,9 @@
  */
 package ee.omnifish.arquillian.container.glassfish.pool;
 
+import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.function.Consumer;
@@ -24,6 +26,9 @@ import ee.omnifish.glassfish.admin.ServerLogTailer;
  *
  * <p>On GlassFish Embedded, the slot runs one child at a time, which the
  * archive that claims it holds, also for containers that share the slot.
+ * When the test JVM hosts GlassFish itself, the lease holds it
+ * ({@link #hostedSlot}), for the containers that share the slot, and closing
+ * the lease shuts it down first.
  */
 public final class SlotLease implements AutoCloseable {
 
@@ -35,6 +40,7 @@ public final class SlotLease implements AutoCloseable {
     private volatile boolean released;
     private ServerLogTailer serverLog;
     private String child;
+    private HostedSlot hostedSlot;
 
     SlotLease(int slotIndex, SlotPorts ports, PoolLocks.Held lock) {
         this(slotIndex, ports, lock, null, null);
@@ -91,6 +97,39 @@ public final class SlotLease implements AutoCloseable {
     }
 
     /**
+     * Whether {@code glassfish-pool:down} asked the run that holds the slot,
+     * and hosts GlassFish in its own JVM, to stop.
+     */
+    public boolean isStopRequested() {
+        return slotDir != null && Files.exists(slotDir.resolve(PoolPaths.STOP_REQUEST));
+    }
+
+    /** Forget a request to stop that a run before this one left, as a run does when it starts. */
+    public void clearStopRequest() throws IOException {
+        if (slotDir != null) {
+            Files.deleteIfExists(slotDir.resolve(PoolPaths.STOP_REQUEST));
+        }
+    }
+
+    /** Starts the GlassFish the test JVM hosts on the slot. */
+    @FunctionalInterface
+    interface HostedSlotStarter {
+        HostedSlot start() throws IOException;
+    }
+
+    /**
+     * The GlassFish the test JVM hosts on the slot: the one a container that
+     * shares the slot started already, or else the one {@code starter}
+     * starts.
+     */
+    synchronized HostedSlot hostedSlot(HostedSlotStarter starter) throws IOException {
+        if (hostedSlot == null) {
+            hostedSlot = starter.start();
+        }
+        return hostedSlot;
+    }
+
+    /**
      * Pass on what the slot's server writes to its log from now on, until
      * this lease is released, so for all containers that share the slot.
      */
@@ -106,6 +145,9 @@ public final class SlotLease implements AutoCloseable {
         }
         released = true;
         try {
+            if (hostedSlot != null) {
+                hostedSlot.close();
+            }
             if (serverLog != null) {
                 serverLog.close();
             }

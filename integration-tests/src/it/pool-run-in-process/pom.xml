@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+  Copyright (c) 2026 OmniFish and/or its affiliates. All rights reserved.
+
+  The contents of this file are subject to the terms of either the GNU
+  General Public License Version 2 only ("GPL") or the Common Development
+  and Distribution License("CDDL") (collectively, the "License").  You
+  may not use this file except in compliance with the License.  You can
+  obtain a copy of the License at
+  https://github.com/payara/Payara/blob/master/LICENSE.txt
+
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>ee.omnifish.arquillian</groupId>
+        <artifactId>glassfish-containers-main</artifactId>
+        <version>@project.version@</version>
+        <relativePath>../../../..</relativePath>
+    </parent>
+
+    <groupId>ee.omnifish.arquillian.test</groupId>
+    <artifactId>pool-run-in-process-test</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Integration Test: GlassFish Server Pool, run in Maven's JVM</name>
+    <description>
+        Two WAR modules, run with glassfish-pool:run at the same time, on
+        GlassFish Embedded in each run's own Maven JVM, on their own slots of
+        one pool: one from this project with -pl, the other from its module's
+        directory. The pool starts at initialize, and so during the package
+        run forks, which sees in-process first. Run via integration-tests'
+        maven-invoker harness.
+    </description>
+
+    <modules>
+        <module>module-a</module>
+        <module>module-b</module>
+    </modules>
+
+    <properties>
+        <container.version>@project.version@</container.version>
+        <glassfish.version>@glassfish.version@</glassfish.version>
+        <mojarra.overlay>@mojarra.overlay@</mojarra.overlay>
+        <!-- verify.groovy sets both for the run with an overlay, faces.split from GlassFish 9 on. -->
+        <pool.it.overlay>false</pool.it.overlay>
+        <faces.split>false</faces.split>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <configuration>
+                        <failOnMissingWebXml>false</failOnMissingWebXml>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <!--
+                The modules' pages say their pid, which is the Maven's that runs them, and the system property
+                the pool sets up; module a's also fetches HTTPS pages, and says which Faces it loads.
+            -->
+            <plugin>
+                <groupId>ee.omnifish.arquillian</groupId>
+                <artifactId>glassfish-pool-maven-plugin</artifactId>
+                <version>${container.version}</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <edition>embedded-web</edition>
+                    <version>${glassfish.version}</version>
+                    <embeddedMode>in-process</embeddedMode>
+                    <trustedCerts>
+                        <trustedCert>
+                            <alias>pool-run-in-process-it</alias>
+                            <file>${gf.pool.rootDirectory}/trusted.pem</file>
+                        </trustedCert>
+                    </trustedCerts>
+                    <systemProperties>
+                        run.marker=from-the-pool
+                    </systemProperties>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>pool-up</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>up</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <phase>disabled</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!--
+            With an applied overlay, up stages the Web ZIP instead, and the run hosts GlassFish through its
+            static shell. From GlassFish 9 on, Mojarra comes as its API and its implementation, which
+            faces.split overlays apart.
+        -->
+        <profile>
+            <id>overlay</id>
+            <activation>
+                <property>
+                    <name>pool.it.overlay</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>ee.omnifish.arquillian</groupId>
+                        <artifactId>glassfish-pool-maven-plugin</artifactId>
+                        <configuration>
+                            <overlays>
+                                <overlay>
+                                    <groupId>org.glassfish</groupId>
+                                    <artifactId>jakarta.faces</artifactId>
+                                    <version>${mojarra.overlay}</version>
+                                    <destFileName>jakarta.faces.jar</destFileName>
+                                    <skip>${faces.split}</skip>
+                                </overlay>
+                                <overlay>
+                                    <groupId>jakarta.faces</groupId>
+                                    <artifactId>jakarta.faces-api</artifactId>
+                                    <version>${mojarra.overlay}</version>
+                                    <destFileName>jakarta.faces-api.jar</destFileName>
+                                    <apply>${faces.split}</apply>
+                                </overlay>
+                                <overlay>
+                                    <groupId>org.glassfish.mojarra</groupId>
+                                    <artifactId>mojarra</artifactId>
+                                    <version>${mojarra.overlay}</version>
+                                    <destFileName>mojarra.jar</destFileName>
+                                    <apply>${faces.split}</apply>
+                                </overlay>
+                            </overlays>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

@@ -40,6 +40,13 @@ import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
  * published under the pool's {@code grow.lock}, so two JVMs that publish at
  * once, as the {@code glassfish-pool:run}s of two modules that share a pool,
  * take turns, and leave the description of one with that one's truststore.
+ *
+ * <p>It also says how GlassFish starts, as {@code <embeddedMode>} names it:
+ * from the command line, a child per deployment, or in-process, in the test
+ * JVM. For the latter, the stage directory gets {@code embedded-classpath.jar}
+ * ({@link EmbeddedGlassFish#classPathJar}), a JAR with only a manifest that
+ * names GlassFish's class path, which the pool plugin's extension adds to
+ * Failsafe's class path.
  */
 public final class EmbeddedPool {
 
@@ -49,7 +56,10 @@ public final class EmbeddedPool {
     static final String TRUST_STORE = "embedded-cacerts.p12";
 
     /** How the children start, as {@code <embeddedMode>} names it. */
-    static final String COMMAND_LINE = "command-line";
+    public static final String COMMAND_LINE = "command-line";
+
+    /** How a test JVM hosts GlassFish itself, as {@code <embeddedMode>} names it. */
+    public static final String IN_PROCESS = "in-process";
 
     private static final String EDITION = "edition";
     private static final String MODE = "mode";
@@ -63,10 +73,16 @@ public final class EmbeddedPool {
 
     /** Describe {@code glassfish}, of {@code edition}, as what the slots of the pool in {@code poolDir} run. */
     public static void write(Path poolDir, EmbeddedGlassFish glassfish, String edition) throws IOException {
+        write(poolDir, glassfish, edition, COMMAND_LINE);
+    }
+
+    /** As {@link #write(Path, EmbeddedGlassFish, String)}, started as {@code mode} says. */
+    public static void write(Path poolDir, EmbeddedGlassFish glassfish, String edition, String mode)
+            throws IOException {
         Files.createDirectories(poolDir);
         Properties description = new Properties();
         description.setProperty(EDITION, edition);
-        description.setProperty(MODE, COMMAND_LINE);
+        description.setProperty(MODE, mode);
         description.setProperty(STAGE_DIR, absolute(glassfish.stageDir()));
         if (glassfish.isJar()) {
             description.setProperty(JAR, absolute(glassfish.jar()));
@@ -74,6 +90,7 @@ public final class EmbeddedPool {
             description.setProperty(HOME, absolute(glassfish.home()));
         }
         PoolLocks.withGrowLock(poolDir, () -> {
+            glassfish.writeClassPathJar();
             Path trustStore = poolDir.resolve(TRUST_STORE);
             if (glassfish.trustStore() != null) {
                 TrustStores.copyCertificates(glassfish.trustStore(), glassfish.trustStorePassword().toCharArray(),
@@ -109,6 +126,20 @@ public final class EmbeddedPool {
     /** Whether the slots of the pool in {@code poolDir} run GlassFish Embedded. */
     public static boolean exists(Path poolDir) {
         return Files.isRegularFile(poolDir.resolve(FILE));
+    }
+
+    /** Whether a test JVM hosts the GlassFish Embedded of the pool in {@code poolDir} itself. */
+    public static boolean isInProcess(Path poolDir) throws IOException {
+        Path file = poolDir.resolve(FILE);
+        if (!Files.isRegularFile(file)) {
+            return false;
+        }
+
+        Properties description = new Properties();
+        try (InputStream in = Files.newInputStream(file)) {
+            description.load(in);
+        }
+        return IN_PROCESS.equals(description.getProperty(MODE));
     }
 
     /** The GlassFish Embedded the slots of the pool in {@code poolDir} run, or empty, when they run domains. */

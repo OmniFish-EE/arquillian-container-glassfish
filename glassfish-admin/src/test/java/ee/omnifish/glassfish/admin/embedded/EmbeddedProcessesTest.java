@@ -91,6 +91,55 @@ class EmbeddedProcessesTest {
         assertThat(EmbeddedProcesses.serving(tmp, tmp.resolve("pool/slot-3")), empty());
     }
 
+    /**
+     * A JVM that hosts GlassFish keeps staging from wiping the stage
+     * directory, as a child does, but the pool never ends it: it isn't one
+     * of the slot's children.
+     */
+    @Test
+    void aHostIsRecordedApartFromTheChildren() throws Exception {
+        Path slot = tmp.resolve("pool/slot-1");
+
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(tmp, slot, false)) {
+            assertThat(EmbeddedProcesses.hosts(tmp, slot), contains(ProcessHandle.current()));
+            assertThat(EmbeddedProcesses.hostingRuns(tmp, slot), empty());
+            assertThat(EmbeddedProcesses.serving(tmp, slot), empty());
+            assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.of(ProcessHandle.current())));
+            assertThat(EmbeddedProcesses.stageDirOf(slot), equalTo(Optional.of(tmp.toAbsolutePath().normalize())));
+        }
+
+        assertThat(EmbeddedProcesses.hosts(tmp, slot), empty());
+        assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.empty()));
+    }
+
+    /**
+     * A glassfish-pool:run's Maven says so in its record, as down asks it to
+     * stop, and the stop after the build, which holds the slot's run mark
+     * itself, can only tell it from a test JVM that way.
+     */
+    @Test
+    void aHostThatIsARunSaysSo() throws Exception {
+        Path slot = tmp.resolve("pool/slot-1");
+
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(tmp, slot, true)) {
+            assertThat(EmbeddedProcesses.hosts(tmp, slot), contains(ProcessHandle.current()));
+            assertThat(EmbeddedProcesses.hostingRuns(tmp, slot), contains(ProcessHandle.current()));
+        }
+
+        assertThat(EmbeddedProcesses.hostingRuns(tmp, slot), empty());
+    }
+
+    /** As glassfish:run's second run is, from the stage directory a JVM hosts GlassFish from. */
+    @Test
+    void anExclusiveStartIsRefusedWhileAJvmHostsGlassFish() throws Exception {
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(tmp, null, false)) {
+            IOException e = assertThrows(IOException.class,
+                    () -> EmbeddedProcesses.start(tmp, null, true, this::sleeper));
+
+            assertThat(e.getMessage(), containsString("already runs from"));
+        }
+    }
+
     @Test
     void aStartedChildIsRecordedForItsSlot() throws Exception {
         child = EmbeddedProcesses.start(tmp, tmp.resolve("pool/slot-1"), false, this::sleeper);

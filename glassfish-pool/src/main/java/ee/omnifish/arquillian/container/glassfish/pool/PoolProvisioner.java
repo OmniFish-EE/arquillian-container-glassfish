@@ -252,6 +252,30 @@ public final class PoolProvisioner {
     }
 
     /**
+     * The JVMs that a stage directory records as hosting GlassFish Embedded
+     * for slot {@code idx}, and that still run: test JVMs, or a
+     * {@code glassfish-pool:run}'s Maven. The pool never ends them.
+     */
+    public List<ProcessHandle> hosts(int idx) {
+        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
+        List<ProcessHandle> hosts = new ArrayList<>();
+        for (Path stageDir : stageDirs(slotDir)) {
+            hosts.addAll(EmbeddedProcesses.hosts(stageDir, slotDir));
+        }
+        return hosts;
+    }
+
+    /** Of the {@link #hosts} of slot {@code idx}, the {@code glassfish-pool:run}s' Mavens, which {@code down} asks to stop. */
+    public List<ProcessHandle> hostingRuns(int idx) {
+        Path slotDir = PoolPaths.slotDir(config.poolDir(), idx);
+        List<ProcessHandle> runs = new ArrayList<>();
+        for (Path stageDir : stageDirs(slotDir)) {
+            runs.addAll(EmbeddedProcesses.hostingRuns(stageDir, slotDir));
+        }
+        return runs;
+    }
+
+    /**
      * End the GlassFish Embedded children that serve slot {@code idx}, and
      * remove their records. The caller holds the slot, so they're children a
      * JVM that held it before left behind, as a test fork that died.

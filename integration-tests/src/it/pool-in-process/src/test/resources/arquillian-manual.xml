@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<arquillian xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="http://jboss.org/schema/arquillian"
+    xsi:schemaLocation="http://jboss.org/schema/arquillian https://jboss.org/schema/arquillian/arquillian_1_0.xsd">
+
+    <!--
+        ManualIT starts and stops these itself, one at a time: the test JVM
+        hosts one GlassFish at a time. ManualIT writes the user's domain.xml
+        and instance root before it starts the containers that take them.
+        Arquillian takes several containers in a group only.
+    -->
+    <group qualifier="manual" default="true">
+        <container qualifier="restartable" default="true" mode="manual">
+            <configuration>
+                <property name="poolDir">${gf.pool.dir}</property>
+                <property name="leaseTimeoutSeconds">120</property>
+            </configuration>
+        </container>
+        <container qualifier="with-domain-xml" mode="manual">
+            <configuration>
+                <property name="poolDir">${gf.pool.dir}</property>
+                <property name="leaseTimeoutSeconds">120</property>
+                <property name="configurationXml">${pool.it.userConfig}/domain.xml</property>
+            </configuration>
+        </container>
+        <container qualifier="with-instance-root" mode="manual">
+            <configuration>
+                <property name="poolDir">${gf.pool.dir}</property>
+                <property name="leaseTimeoutSeconds">120</property>
+                <property name="instanceRoot">${pool.it.userConfig}/instance</property>
+            </configuration>
+        </container>
+    </group>
+
+</arquillian>

@@ -184,6 +184,25 @@ class EmbeddedStartupTest {
         assertThat(startup.name(), nullValue());
     }
 
+    /**
+     * The output of the commands a host runs through GlassFish's
+     * {@code CommandRunner} has the records a child logs, without the
+     * {@code SUCCESS:} in front; the same in 7.1.0, 8.0.5 and 9.0.0-M4.
+     */
+    @Test
+    void aHostsCommandsGiveTheSameRecords() throws Exception {
+        assertThat(EmbeddedStartup.servletsIn(text("in-process-war-servlets.log")),
+                contains("default", "probe.ShopServlet", "jsp", "FragmentRunner"));
+        Map<String, String> webModules = new LinkedHashMap<>();
+        webModules.put("beta.war", "/beta");
+        webModules.put("alpha.war", "/alpha");
+        assertThat(EmbeddedStartup.webModulesIn(text("in-process-ear-modules.log")), equalTo(webModules));
+        assertThat(EmbeddedStartup.servletsIn(text("in-process-ear-module-servlets.log")),
+                contains("default", "jsp", "probe.HelloServlet"));
+        assertThat(EmbeddedStartup.contextRootsIn(text("in-process-war-context-root.log"), "shop"), contains("/shop"));
+        assertThat(EmbeddedStartup.contextRootsIn(text("in-process-war-context-root.log"), "other"), empty());
+    }
+
     /** Feed {@code recording} until {@code startup} has started, and return the index of the line it started after. */
     private static int feedUntilStarted(EmbeddedStartup startup, String recording) throws Exception {
         List<String> lines = lines(recording);
@@ -200,5 +219,9 @@ class EmbeddedStartupTest {
 
     private static List<String> lines(String recording) throws IOException, URISyntaxException {
         return Files.readAllLines(Path.of(EmbeddedStartupTest.class.getResource("/embedded/" + recording).toURI()));
+    }
+
+    private static String text(String recording) throws IOException, URISyntaxException {
+        return String.join("\n", lines(recording));
     }
 }

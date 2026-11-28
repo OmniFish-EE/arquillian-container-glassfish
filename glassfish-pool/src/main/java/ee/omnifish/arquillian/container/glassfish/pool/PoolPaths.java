@@ -24,6 +24,7 @@ final class PoolPaths {
     static final String RUN_LOCK_FILE = "run.lock";
     static final String PORTS_FILE = "ports.properties";
     static final String GROW_LOCK = "grow.lock";
+    static final String STOP_REQUEST = "stop-run";
 
     private PoolPaths() {
     }
@@ -42,6 +43,14 @@ final class PoolPaths {
      */
     static Path runLockFile(Path poolDir, int slot) {
         return slotDir(poolDir, slot).resolve(RUN_LOCK_FILE);
+    }
+
+    /**
+     * Created by {@code glassfish-pool:down} to ask a {@code glassfish-pool:run}
+     * that hosts GlassFish in its own JVM, which the pool never ends, to stop.
+     */
+    static Path stopRequest(Path poolDir, int slot) {
+        return slotDir(poolDir, slot).resolve(STOP_REQUEST);
     }
 
     static Path portsFile(Path poolDir, int slot) {

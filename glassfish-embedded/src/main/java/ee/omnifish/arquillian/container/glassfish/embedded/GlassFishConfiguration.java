@@ -83,6 +83,8 @@ public class GlassFishConfiguration implements ContainerConfiguration {
 
     private int bindHttpPort = 8181;
     private int bindHttpsPort = 8182;
+    private boolean bindHttpPortSet;
+    private boolean bindHttpsPortSet;
     private String instanceRoot;
     private String installRoot;
     private boolean configurationReadOnly = true;
@@ -103,10 +105,17 @@ public class GlassFishConfiguration implements ContainerConfiguration {
 
     /**
      * @param bindHttpPort
-     *     The port number of the http-listener for the embedded GlassFish server.
+     *     The port number of the http-listener for the embedded GlassFish server. Set, it also applies
+     *     with an {@code instanceRoot} or a {@code configurationXml}, whose domain.xml has a port of its own.
      */
     public void setBindHttpPort(int bindHttpPort) {
         this.bindHttpPort = bindHttpPort;
+        bindHttpPortSet = true;
+    }
+
+    /** Whether {@code bindHttpPort} was set, rather than left at its default. */
+    boolean isBindHttpPortSet() {
+        return bindHttpPortSet;
     }
 
     public int getBindHttpsPort() {
@@ -115,10 +124,17 @@ public class GlassFishConfiguration implements ContainerConfiguration {
 
     /**
      * @param bindHttpsPort
-     *     The port number of the https-listener for the embedded GlassFish server.
+     *     The port number of the https-listener for the embedded GlassFish server. Set, it also applies
+     *     with an {@code instanceRoot} or a {@code configurationXml}, whose domain.xml has a port of its own.
      */
     public void setBindHttpsPort(int bindHttpsPort) {
         this.bindHttpsPort = bindHttpsPort;
+        bindHttpsPortSet = true;
+    }
+
+    /** Whether {@code bindHttpsPort} was set, rather than left at its default. */
+    boolean isBindHttpsPortSet() {
+        return bindHttpsPortSet;
     }
 
     public String getInstanceRoot() {

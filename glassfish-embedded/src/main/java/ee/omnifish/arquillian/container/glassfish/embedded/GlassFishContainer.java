@@ -63,6 +63,7 @@ import com.sun.enterprise.web.WebModule;
 import jakarta.servlet.ServletRegistration;
 
 import java.io.File;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -75,12 +76,10 @@ import javax.naming.InitialContext;
 import javax.naming.NamingException;
 
 import org.apache.catalina.Container;
-import org.glassfish.embeddable.BootstrapProperties;
 import org.glassfish.embeddable.CommandResult;
 import org.glassfish.embeddable.CommandRunner;
 import org.glassfish.embeddable.GlassFish;
 import org.glassfish.embeddable.GlassFishException;
-import org.glassfish.embeddable.GlassFishProperties;
 import org.glassfish.embeddable.GlassFishRuntime;
 import org.glassfish.embeddable.web.Context;
 import org.glassfish.embeddable.web.VirtualServer;
@@ -98,12 +97,18 @@ import org.jboss.shrinkwrap.api.spec.EnterpriseArchive;
 import org.jboss.shrinkwrap.api.spec.WebArchive;
 import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 
+import ee.omnifish.glassfish.admin.embedded.HostedGlassFish;
+
 import static java.util.Arrays.asList;
 import static java.util.Arrays.copyOfRange;
 import static org.jboss.shrinkwrap.api.Filters.include;
 import static ee.omnifish.arquillian.container.glassfish.embedded.ShrinkWrapUtil.toURL;
 
 /**
+ * Runs GlassFish Embedded in the test JVM, from the test class path, through
+ * {@link HostedGlassFish}: it boots at {@link #start}, and {@link #stop}
+ * stops it, disposes of it and shuts its runtime down, so that it can start
+ * again in the same JVM.
  *
  * @author <a href="mailto:aslak@redhat.com">Aslak Knutsen</a>
  * @version $Revision: $
@@ -118,10 +123,11 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
     private static final String ADDRESS = "localhost";
 
     private GlassFishConfiguration configuration;
-    private GlassFishRuntime glassfishRuntime;
+    private HostedGlassFish hosted;
     private GlassFish glassfish;
 
-    private boolean shouldSetPort = true;
+    private boolean cleanup;
+    private boolean cleanupRegistered;
     private int bindHttpPort;
     private int bindHttpsPort;
 
@@ -138,67 +144,55 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
     @Override
     public void setup(GlassFishConfiguration configuration) {
         this.configuration = configuration;
-
-        BootstrapProperties bootstrapProps = new BootstrapProperties();
-        if (configuration.getInstallRoot() != null) {
-            bootstrapProps.setInstallRoot(configuration.getInstallRoot());
-        }
-
-        try {
-            glassfishRuntime = GlassFishRuntime.bootstrap(bootstrapProps);
-        } catch (Exception e) {
-            throw new RuntimeException("Could not setup GlassFish Embedded Bootstrap", e);
-        }
-
-        boolean cleanup = configuration.getCleanup();
-        GlassFishProperties serverProps = new GlassFishProperties();
-
-        if (configuration.getInstanceRoot() != null) {
-            File instanceRoot = new File(configuration.getInstanceRoot());
-            if (instanceRoot.exists()) {
-                cleanup = false;
-            }
-            serverProps.setInstanceRoot(configuration.getInstanceRoot());
-            shouldSetPort = false;
-        }
-
-        if (configuration.getConfigurationXml() != null) {
-            serverProps.setConfigFile(new File(configuration.getConfigurationXml()));
-            shouldSetPort = false;
-        }
-
-        serverProps.setConfigFileReadOnly(configuration.isConfigurationReadOnly());
-        if (shouldSetPort) {
-            bindHttpPort = configuration.getBindHttpPort();
-            serverProps.setPort("http-listener", bindHttpPort);
-            bindHttpsPort = configuration.getBindHttpsPort();
-            serverProps.setPort("https-listener", bindHttpsPort);
-        }
-
-        try {
-            glassfish = glassfishRuntime.newGlassFish(serverProps);
-        } catch (Exception e) {
-            throw new RuntimeException("Could not setup GlassFish Embedded Runtime", e);
-        }
-
-        if (cleanup) {
-            // Don't use GlassFishVariable or SystemPropertyConstants, they changed between
-            // GF versions 7.0.25 and 7.1.0
-            Runtime.getRuntime().addShutdownHook(new Thread(
-                () -> deleteRecursive(new File(System.getProperty("com.sun.aas.instanceRoot", "glassfish")))));
-
-        }
+        // An instance root that exists already is the user's, which stays.
+        cleanup = configuration.getCleanup()
+                && (configuration.getInstanceRoot() == null || !new File(configuration.getInstanceRoot()).exists());
     }
 
+    /**
+     * Boot GlassFish, on the configured ports: without an instance root or a
+     * {@code domain.xml} of the user's own, on {@code bindHttpPort} and
+     * {@code bindHttpsPort}, and with one, on those of the two that are set,
+     * and else on its own.
+     */
     @Override
     public void start() throws LifecycleException {
+        boolean ownConfig = configuration.getInstanceRoot() != null || configuration.getConfigurationXml() != null;
+        HostedGlassFish.Settings settings = new HostedGlassFish.Settings()
+                .configReadOnly(configuration.isConfigurationReadOnly());
+        if (configuration.getInstallRoot() != null) {
+            settings.installRoot(Paths.get(configuration.getInstallRoot()));
+        }
+        if (configuration.getInstanceRoot() != null) {
+            settings.instanceRoot(Paths.get(configuration.getInstanceRoot()));
+        }
+        if (configuration.getConfigurationXml() != null) {
+            settings.configFile(Paths.get(configuration.getConfigurationXml()));
+        }
+        boolean setsHttpPort = !ownConfig || configuration.isBindHttpPortSet();
+        if (setsHttpPort) {
+            bindHttpPort = configuration.getBindHttpPort();
+            settings.httpPort(bindHttpPort);
+        }
+        if (!ownConfig || configuration.isBindHttpsPortSet()) {
+            bindHttpsPort = configuration.getBindHttpsPort();
+            settings.httpsPort(bindHttpsPort);
+        }
+
         try {
-            glassfish.start();
-            if (!shouldSetPort) {
+            // The test class path's GlassFish, as GlassFishRuntime.bootstrap() takes it.
+            hosted = HostedGlassFish.start(GlassFishRuntime.class.getClassLoader(), settings);
+            glassfish = hosted.glassfish();
+            registerCleanup();
+            if (!setsHttpPort) {
                 readBindingHttpPort();
             }
             bindCommandRunner();
         } catch (Exception e) {
+            if (hosted != null) {
+                hosted.close();
+                hosted = null;
+            }
             throw new LifecycleException("Could not start GlassFish Embedded", e);
         }
 
@@ -234,12 +228,41 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
 
     @Override
     public void stop() throws LifecycleException {
+        if (hosted == null) {
+            return;
+        }
+
         try {
             unbindCommandRunner();
-            glassfish.stop();
         } catch (Exception e) {
             throw new LifecycleException("Could not stop GlassFish Embedded", e);
+        } finally {
+            hosted.close();
+            hosted = null;
+            glassfish = null;
         }
+    }
+
+    /**
+     * With {@code cleanup}, delete the instance root GlassFish runs on when the
+     * JVM exits. Taken while it runs: stopping it removes the system property
+     * that names it.
+     */
+    private void registerCleanup() {
+        String instanceRoot = System.getProperty("com.sun.aas.instanceRoot");
+        if (!cleanup || cleanupRegistered || instanceRoot == null) {
+            return;
+        }
+
+        cleanupRegistered = true;
+        // Don't use GlassFishVariable or SystemPropertyConstants, they changed between
+        // GF versions 7.0.25 and 7.1.0
+        File root = new File(instanceRoot);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (root.isDirectory()) {
+                deleteRecursive(root);
+            }
+        }));
     }
 
     @Override
@@ -353,7 +376,9 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
         switch (result.getExitStatus()) {
             case FAILURE:
             case WARNING:
-                throw result.getFailureCause();
+                Throwable cause = result.getFailureCause();
+                throw (cause != null) ? cause : new GlassFishException(command + " " + String.join(" ", parameterList)
+                        + ": " + result.getOutput());
             case SUCCESS:
                 output = result.getOutput();
                 log.log(Level.INFO, "command {0} parameters{1} result: {2}", new Object[]{command, parameterList, output});
@@ -414,8 +439,9 @@ public class GlassFishContainer implements DeployableContainer<GlassFishConfigur
                 + virtualServer + ".network-listeners");
 
             // Iterate through the network listeners, resolve the port number of the first one. Ignore the rest.
+            // Embedded's own domain.xml lists them as "http-listener, https-listener".
             for (String networkListener : networkListenerList.split(",")) {
-                Integer listenPort = readNetworkListenerPort(config, networkListener);
+                Integer listenPort = readNetworkListenerPort(config, networkListener.trim());
                 if (listenPort != null) {
                     bindHttpPort = listenPort;
                 }

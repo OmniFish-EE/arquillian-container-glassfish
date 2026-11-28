@@ -1,0 +1,9 @@
+PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [default=Servlet
+    [probe.ShopServlet=Servlet
+    [jsp=Servlet
+    [FragmentRunner=Servlet
+    probe.ShopServlet  <Servlet>  
+    FragmentRunner     <Servlet>  
+    default            <Servlet>  
+    jsp                <Servlet>  

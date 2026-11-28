@@ -15,8 +15,10 @@ import java.io.InputStream;
 import java.lang.System.Logger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
@@ -47,12 +49,22 @@ import static java.lang.System.Logger.Level.DEBUG;
  * <p>When its {@link EmbeddedPorts} move the IIOP and JMS ports, the domain
  * directory's {@code domain.xml} has them, and the self-contained JAR gets a
  * domain directory too, from its own {@code domain.xml}.
+ *
+ * <p>A JVM that hosts GlassFish itself gets one too ({@link #forHost}), named
+ * after itself and its how-manieth GlassFish it is, {@code run-<pid>-<n>},
+ * whose domain directory is the instance root it boots on, for either form,
+ * and which takes the archives as they're deployed. As a JVM may host
+ * GlassFish again, a directory of its own each time keeps a file the last
+ * GlassFish left open, as on Windows, from failing the next.
  */
 public final class EmbeddedWorkDir implements AutoCloseable {
 
     private static final Logger LOG = System.getLogger(EmbeddedWorkDir.class.getName());
 
     static final String PREFIX = "run-";
+
+    /** How many GlassFishes this JVM hosted, which names their working directories. */
+    private static final AtomicInteger HOSTED = new AtomicInteger();
 
     /** The domain directory of a child, relative to its working directory. */
     public static final String DOMAIN_DIR = "domain";
@@ -111,13 +123,13 @@ public final class EmbeddedWorkDir implements AutoCloseable {
         Files.createDirectories(dir);
         Files.copy(archive, dir.resolve(archiveName));
         if (!glassfish.isJar()) {
-            addDomain(dir.resolve(DOMAIN_DIR), glassfish, ports);
+            addDomain(dir.resolve(DOMAIN_DIR), glassfish, ports, null, null);
         } else {
             if (glassfish.trustStore() != null) {
                 copyTrustStore(glassfish, dir.resolve(TRUST_STORE));
             }
             if (ports.movesOthers()) {
-                addDomain(dir.resolve(DOMAIN_DIR), glassfish, ports);
+                addDomain(dir.resolve(DOMAIN_DIR), glassfish, ports, null, null);
             }
         }
 
@@ -125,17 +137,78 @@ public final class EmbeddedWorkDir implements AutoCloseable {
     }
 
     /**
-     * A domain directory: Embedded's own {@code domain.xml}, with the IIOP
-     * and JMS ports of {@code ports} when it moves them, and an empty
-     * {@code docroot}. An install's also has {@code domain1}'s keystore and a
-     * copy of the truststore; the JAR keeps selecting its truststore with
-     * {@code javax.net.ssl.trustStore}.
+     * The working directory of the GlassFish this JVM hosts, under
+     * {@code parent}: {@code run-<pid>}, emptied, with the domain directory
+     * GlassFish boots on as its instance root, and for the JAR, a copy of its
+     * truststore, if it has one, as {@link #TRUST_STORE}, which the host
+     * selects with {@code javax.net.ssl.trustStore}.
+     *
+     * @param instanceRoot an instance root to start the domain directory
+     *        from, which is copied, or {@code null}
+     * @param domainXml a {@code domain.xml} to run on, which is copied, or
+     *        {@code null} for the instance root's, or else Embedded's own
      */
-    private static void addDomain(Path domain, EmbeddedGlassFish glassfish, EmbeddedPorts ports) throws IOException {
+    public static EmbeddedWorkDir forHost(Path parent, EmbeddedGlassFish glassfish, EmbeddedPorts ports,
+            Path instanceRoot, Path domainXml) throws IOException {
+        return forHost(parent, ProcessHandle.current().pid(), glassfish, ports, instanceRoot, domainXml);
+    }
+
+    /** Package-private for unit tests. */
+    static EmbeddedWorkDir forHost(Path parent, long pid, EmbeddedGlassFish glassfish, EmbeddedPorts ports,
+            Path instanceRoot, Path domainXml) throws IOException {
+        Files.createDirectories(parent);
+        removeStale(parent, pid);
+        Path dir = parent.resolve(PREFIX + pid + "-" + HOSTED.incrementAndGet());
+        delete(dir);
+        Files.createDirectories(dir);
+        if (glassfish.isJar() && glassfish.trustStore() != null) {
+            copyTrustStore(glassfish, dir.resolve(TRUST_STORE));
+        }
+        addDomain(dir.resolve(DOMAIN_DIR), glassfish, ports, instanceRoot, domainXml);
+
+        return new EmbeddedWorkDir(dir, null, glassfish.stageDir());
+    }
+
+    /**
+     * A domain directory: Embedded's own {@code domain.xml}, or that of an
+     * instance root or a {@code domain.xml} of the user's own, with the IIOP
+     * and JMS ports of {@code ports} when it moves them, and a
+     * {@code docroot}. An install's also has {@code domain1}'s keystore,
+     * unless the instance root brings one, and a copy of the truststore; the
+     * JAR keeps selecting its truststore with {@code javax.net.ssl.trustStore}.
+     *
+     * @param instanceRoot an instance root, which is copied first, or {@code null}
+     * @param userDomainXml a {@code domain.xml} to copy in, or {@code null}
+     */
+    private static void addDomain(Path domain, EmbeddedGlassFish glassfish, EmbeddedPorts ports, Path instanceRoot,
+            Path userDomainXml) throws IOException {
+        if (instanceRoot != null) {
+            copyTree(instanceRoot, domain);
+        }
         Path config = Files.createDirectories(domain.resolve("config"));
         Files.createDirectories(domain.resolve("docroot"));
-        Path source = glassfish.isJar() ? glassfish.jar() : glassfish.home().resolve("glassfish/modules/kernel.jar");
         Path domainXml = config.resolve("domain.xml");
+        if (userDomainXml != null) {
+            Files.copy(userDomainXml, domainXml, StandardCopyOption.REPLACE_EXISTING);
+        } else if (!Files.exists(domainXml)) {
+            copyEmbeddedDomainXml(glassfish, domainXml);
+        }
+        if (ports.movesOthers()) {
+            DomainXmlEditor.setIiopAndJmsPorts(domainXml, ports.iiop(), ports.iiopSsl(), ports.iiopMutualAuth(),
+                    ports.jms());
+        }
+        if (!glassfish.isJar()) {
+            Path keyStore = config.resolve("keystore.p12");
+            if (!Files.exists(keyStore)) {
+                Files.copy(glassfish.domainConfig().resolve("keystore.p12"), keyStore);
+            }
+            copyTrustStore(glassfish, config.resolve("cacerts.p12"));
+        }
+    }
+
+    /** Embedded's own {@code domain.xml}, from the JAR, or from the install's {@code kernel.jar}. */
+    private static void copyEmbeddedDomainXml(EmbeddedGlassFish glassfish, Path domainXml) throws IOException {
+        Path source = glassfish.isJar() ? glassfish.jar() : glassfish.home().resolve("glassfish/modules/kernel.jar");
         try (ZipFile zip = new ZipFile(source.toFile())) {
             ZipEntry entry = zip.getEntry(EMBEDDED_DOMAIN_XML);
             if (entry == null) {
@@ -146,13 +219,20 @@ public final class EmbeddedWorkDir implements AutoCloseable {
                 Files.copy(in, domainXml);
             }
         }
-        if (ports.movesOthers()) {
-            DomainXmlEditor.setIiopAndJmsPorts(domainXml, ports.iiop(), ports.iiopSsl(), ports.iiopMutualAuth(),
-                    ports.jms());
+    }
+
+    private static void copyTree(Path source, Path target) throws IOException {
+        List<Path> paths;
+        try (Stream<Path> entries = Files.walk(source)) {
+            paths = entries.collect(Collectors.toList());
         }
-        if (!glassfish.isJar()) {
-            Files.copy(glassfish.domainConfig().resolve("keystore.p12"), config.resolve("keystore.p12"));
-            copyTrustStore(glassfish, config.resolve("cacerts.p12"));
+        for (Path path : paths) {
+            Path copy = target.resolve(source.relativize(path).toString());
+            if (Files.isDirectory(path)) {
+                Files.createDirectories(copy);
+            } else {
+                Files.copy(path, copy, StandardCopyOption.REPLACE_EXISTING);
+            }
         }
     }
 
@@ -162,7 +242,11 @@ public final class EmbeddedWorkDir implements AutoCloseable {
                 TRUST_STORE_PASSWORD.toCharArray());
     }
 
-    /** Remove the working directories under {@code parent} of JVMs other than {@code pid} that no longer run. */
+    /**
+     * Remove the working directories under {@code parent} of JVMs other than
+     * {@code pid} that no longer run, and those of GlassFishes that
+     * {@code pid} hosted before, as far as they can be removed.
+     */
     private static void removeStale(Path parent, long pid) throws IOException {
         List<Path> dirs;
         try (Stream<Path> entries = Files.list(parent)) {
@@ -170,14 +254,22 @@ public final class EmbeddedWorkDir implements AutoCloseable {
                     .collect(Collectors.toList());
         }
         for (Path dir : dirs) {
+            String name = dir.getFileName().toString().substring(PREFIX.length());
+            int dash = name.indexOf('-');
             long owner;
             try {
-                owner = Long.parseLong(dir.getFileName().toString().substring(PREFIX.length()));
+                owner = Long.parseLong((dash < 0) ? name : name.substring(0, dash));
             } catch (NumberFormatException e) {
                 continue;
             }
             if (owner != pid && !ProcessHandle.of(owner).map(ProcessHandle::isAlive).orElse(false)) {
                 delete(dir);
+            } else if (owner == pid && dash >= 0) {
+                try {
+                    delete(dir);
+                } catch (IOException e) {
+                    LOG.log(DEBUG, "Could not remove " + dir + " yet: " + e.getMessage());
+                }
             }
         }
     }
@@ -186,9 +278,14 @@ public final class EmbeddedWorkDir implements AutoCloseable {
         return dir;
     }
 
-    /** The archive's file name, by which the child deploys it. */
+    /** The archive's file name, by which the child deploys it, or {@code null} for a host's. */
     public String archiveName() {
         return archiveName;
+    }
+
+    /** The domain directory, which a host boots on as its instance root. */
+    public Path domainDir() {
+        return dir.resolve(DOMAIN_DIR);
     }
 
     /** The stage directory the child runs from, which records it while it runs. */

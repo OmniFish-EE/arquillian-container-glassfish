@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<arquillian xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns="http://jboss.org/schema/arquillian"
+    xsi:schemaLocation="http://jboss.org/schema/arquillian https://jboss.org/schema/arquillian/arquillian_1_0.xsd">
+
+    <!--
+        The test JVM leases a slot when the container starts, and hosts
+        GlassFish Embedded on it until the container stops. Arquillian expands
+        ${...} from system properties; failsafe forwards gf.pool.dir.
+    -->
+    <container qualifier="hosted" default="true">
+        <configuration>
+            <property name="poolDir">${gf.pool.dir}</property>
+            <property name="leaseTimeoutSeconds">120</property>
+        </configuration>
+    </container>
+
+</arquillian>

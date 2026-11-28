@@ -11,6 +11,8 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -31,6 +33,7 @@ import org.jboss.shrinkwrap.descriptor.api.Descriptor;
 import ee.omnifish.arquillian.container.glassfish.CommonGlassFishManager;
 import ee.omnifish.glassfish.admin.AsAdmin;
 import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
+import ee.omnifish.glassfish.admin.embedded.ModuleOptions;
 import ee.omnifish.glassfish.admin.DomainXmlEditor;
 import ee.omnifish.glassfish.admin.PostBootCommands;
 import ee.omnifish.glassfish.admin.PostBootCommands.CommandFailedException;
@@ -69,6 +72,13 @@ import ee.omnifish.glassfish.admin.ServerLogTailer;
  * and each deployment starts a child of its own on them, with the archive;
  * see {@link EmbeddedSlotDeployer}. There's no admin connection, no server
  * log to follow, and nothing to restart.
+ *
+ * <p>With {@code <embeddedMode>in-process</embeddedMode>}, the test JVM hosts
+ * GlassFish Embedded itself, on the leased slot's ports, from {@code start()}
+ * to {@code stop()}, and deploys to it while it runs; see {@link HostedSlot}.
+ * GlassFish has to be on the test JVM's class path, after the project's
+ * dependencies, and the JVM needs GlassFish's module options: the pool
+ * plugin's extension adds both to Failsafe.
  */
 public class GlassFishPoolDeployableContainer implements DeployableContainer<GlassFishPoolConfiguration> {
 
@@ -85,10 +95,14 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
     private static final AtomicBoolean SETTINGS_CHECKED = new AtomicBoolean();
     private static final AtomicBoolean RESTART_SKIP_LOGGED = new AtomicBoolean();
 
+    /** The class through which a test JVM hosts GlassFish, which only GlassFish's class path has. */
+    private static final String RUNTIME_CLASS = "org.glassfish.embeddable.GlassFishRuntime";
+
     private GlassFishPoolConfiguration configuration;
     private PoolConfig poolConfig;
     private CommonGlassFishManager<GlassFishPoolConfiguration> manager;
     private EmbeddedSlotDeployer embedded;
+    private HostedSlot hosted;
     private LeaseHandle handle;
 
     @Override
@@ -174,9 +188,11 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
      */
     private void startEmbedded(Path poolDir, SlotPorts ports, String slotGroup) throws LifecycleException {
         EmbeddedGlassFish glassfish;
+        boolean inProcess;
         try {
             glassfish = EmbeddedPool.read(poolDir).orElseThrow(() -> new IOException(poolDir
                     + " has a slot for GlassFish Embedded, but no " + EmbeddedPool.FILE + " that says which"));
+            inProcess = EmbeddedPool.isInProcess(poolDir);
         } catch (IOException e) {
             throw new LifecycleException("Could not read the pool's GlassFish Embedded: " + e.getMessage(), e);
         }
@@ -185,12 +201,75 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
                     + "serve without a server key. With an overlay, the pool runs the static shell of a ZIP, with "
                     + "domain1's key.");
         }
+        if (!inProcess && (configuration.getInstanceRoot() != null || configuration.getConfigurationXml() != null)) {
+            throw new LifecycleException("instanceRoot and configurationXml are for GlassFish Embedded in the test "
+                    + "JVM, with the pool plugin's <embeddedMode>in-process</embeddedMode>");
+        }
 
         configuration.setHttpPort(ports.httpPort());
         configuration.setHttpsPort(ports.httpsPort());
         LOG.info("Leased pool slot " + handle.slotIndex() + " for GlassFish Embedded (http=" + ports.httpPort() + ")"
-                + (slotGroup != null ? " [shared group: " + slotGroup + "]" : ""));
-        embedded = new EmbeddedSlotDeployer(handle.lease(), glassfish, poolConfig, configuration);
+                + (inProcess ? ", in this test JVM" : "") + (slotGroup != null ? " [shared group: " + slotGroup + "]"
+                : ""));
+        if (!inProcess) {
+            embedded = new EmbeddedSlotDeployer(handle.lease(), glassfish, poolConfig, configuration);
+            return;
+        }
+
+        requireHostable(glassfish, poolDir);
+        try {
+            hosted = handle.lease().hostedSlot(() -> HostedSlot.start(handle.lease(), glassfish, poolConfig,
+                    configuration));
+        } catch (IOException e) {
+            throw new LifecycleException("Could not start GlassFish Embedded in this test JVM, on pool slot "
+                    + handle.slotIndex() + ": " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Fail unless this test JVM can host the pool's GlassFish: it's on the
+     * class path, and nothing else masks it there, and the JVM has GlassFish's
+     * module options. With {@code <extensions>true</extensions>}, the pool
+     * plugin adds both to Failsafe.
+     */
+    private static void requireHostable(EmbeddedGlassFish glassfish, Path poolDir) throws LifecycleException {
+        ClassLoader loader = GlassFishPoolDeployableContainer.class.getClassLoader();
+        Path source;
+        try {
+            Class<?> runtime = Class.forName(RUNTIME_CLASS, false, loader);
+            source = Paths.get(runtime.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (ClassNotFoundException | LinkageError e) {
+            throw new LifecycleException("GlassFish Embedded isn't on this test JVM's class path. With "
+                    + "<extensions>true</extensions>, the pool plugin adds it to failsafe's additionalClasspathElements; "
+                    + "without, add " + glassfish.classPathJar() + " there.", e);
+        } catch (URISyntaxException | RuntimeException e) {
+            throw new LifecycleException("Could not tell where this test JVM's GlassFish Embedded comes from: "
+                    + e.getMessage(), e);
+        }
+
+        try {
+            if (glassfish.classPath().stream().noneMatch(entry -> isSameFile(entry, source))) {
+                throw new LifecycleException("This test JVM runs GlassFish from " + source + ", which masks the "
+                        + "GlassFish Embedded the pool staged, " + glassfish.launcher() + ", and its overlays. Remove "
+                        + "that dependency from the tests, or exclude it with failsafe's classpathDependencyExcludes.");
+            }
+            List<String> missing = ModuleOptions.missing(glassfish.moduleOptions(), loader.getUnnamedModule());
+            if (!missing.isEmpty()) {
+                throw new LifecycleException("This test JVM lacks the module options GlassFish Embedded needs. With "
+                        + "<extensions>true</extensions>, the pool plugin adds them to failsafe's argLine; without, add "
+                        + String.join(" ", missing));
+            }
+        } catch (IOException e) {
+            throw new LifecycleException("Could not read the pool's GlassFish Embedded: " + e.getMessage(), e);
+        }
+    }
+
+    private static boolean isSameFile(Path a, Path b) {
+        try {
+            return Files.isSameFile(a, b);
+        } catch (IOException e) {
+            return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
+        }
     }
 
     /**
@@ -216,6 +295,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             embedded.close();
             embedded = null;
         }
+        hosted = null;
         SlotLease toFinalize = handle.release();
         if (toFinalize != null) {
             toFinalize.close();
@@ -298,6 +378,8 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             embedded.close();
             embedded = null;
         }
+        // Closing the lease shuts down the GlassFish this test JVM hosts, once its last holder releases it.
+        hosted = null;
         // For a shared slot only the LAST holder finalizes it; earlier holders
         // get null here and leave the slot up for their siblings.
         SlotLease toFinalize = handle.release();
@@ -308,7 +390,7 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
             if (configuration.isRestartOnRelease() && toFinalize.ports().isEmbedded()) {
                 if (RESTART_SKIP_LOGGED.compareAndSet(false, true)) {
                     LOG.info("restartOnRelease has nothing to restart on GlassFish Embedded: each deployment "
-                            + "starts a child of its own");
+                            + "starts a child of its own, or the test JVM's GlassFish stops with the container");
                 }
             } else if (configuration.isRestartOnRelease()) {
                 restartLeasedDomain(toFinalize);
@@ -344,12 +426,17 @@ public class GlassFishPoolDeployableContainer implements DeployableContainer<Gla
 
     @Override
     public ProtocolMetaData deploy(Archive<?> archive) throws DeploymentException {
+        if (hosted != null) {
+            return hosted.deploy(archive, configuration);
+        }
         return (embedded != null) ? embedded.deploy(archive) : manager.deploy(archive);
     }
 
     @Override
     public void undeploy(Archive<?> archive) throws DeploymentException {
-        if (embedded != null) {
+        if (hosted != null) {
+            hosted.undeploy(archive);
+        } else if (embedded != null) {
             embedded.undeploy(archive);
         } else {
             manager.undeploy(archive);

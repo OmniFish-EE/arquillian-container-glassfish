@@ -57,6 +57,14 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!--
+            GlassFish's embeddable API, through which glassfish-pool:run hosts GlassFish
+            Embedded in Maven's JVM: GlassFish's class loader shares this copy.
+        -->
+        <dependency>
+            <groupId>org.glassfish.main.common</groupId>
+            <artifactId>simple-glassfish-api</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-plugin-api</artifactId>

@@ -4,6 +4,7 @@
 package ee.omnifish.arquillian.container.glassfish.pool;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
@@ -18,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -164,6 +166,100 @@ class EmbeddedSlotsTest {
         PoolBootstrap.down(config);
 
         assertThat(orphan.isAlive(), is(false));
+    }
+
+    /**
+     * A test JVM that hosts GlassFish on its slot, as this one stands in for,
+     * is a host in the stage directory: status shows it, and neither the
+     * slot's next lease nor down ends it, as the pool never ends a test JVM.
+     */
+    @Test
+    void aHostIsShownAndNeverEnded() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+        Path slot = PoolPaths.slotDir(pool, 1);
+
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot, false)) {
+            assertThat(status(config), containsString("| 1    | -         | host       | no     |"));
+            try (SlotLease lease = new SlotLeaser(config(0), 30L).lease()) {
+                assertThat(lease.slotIndex(), equalTo(1));
+            }
+            PoolBootstrap.down(config);
+
+            assertThat(EmbeddedProcesses.hosts(stage, slot), contains(ProcessHandle.current()));
+        }
+    }
+
+    /**
+     * The stop after the build holds each slot's run mark itself, so it can't
+     * tell a run by the mark: a test JVM that still hosts GlassFish on its
+     * slot, as on Ctrl+C, isn't a run that keeps it running, and is left alone.
+     */
+    @Test
+    void theStopAfterTheBuildLeavesATestJvmThatHostsGlassFishAlone() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+
+        try (HostStandIn testJvm = HostStandIn.start(stage, PoolPaths.slotDir(pool, 1), false)) {
+            PoolBootstrap.downAfterBuild(config);
+
+            assertThat(testJvm.isAlive(), is(true));
+        }
+    }
+
+    /**
+     * On Ctrl+C, a glassfish-pool:run ends in its own shutdown hook, side by
+     * side with the stop after the build, in the same JVM, as this test stands
+     * in for: the run doesn't keep the slot running.
+     */
+    @Test
+    void theStopAfterTheBuildDoesntCountARunOfItsOwnJvm() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+        Path slot = PoolPaths.slotDir(pool, 1);
+
+        try (PoolLocks.Held runMark = PoolLocks.tryLock(PoolPaths.runLockFile(pool, 1));
+             EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot, true)) {
+            PoolBootstrap.downAfterBuild(config);
+        }
+    }
+
+    /**
+     * A glassfish-pool:run that hosts GlassFish in its own JVM, as this test
+     * stands in for with the slot's run mark and the stage directory's record,
+     * which says it's a run, is Maven itself, which down doesn't end: it asks
+     * the run to stop, and waits until the run has handed its slot back.
+     */
+    @Test
+    void downAsksARunThatHostsGlassFishToStop() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+        Path slot = PoolPaths.slotDir(pool, 1);
+        PoolLocks.Held runMark = PoolLocks.tryLock(PoolPaths.runLockFile(pool, 1));
+        AtomicBoolean asked = new AtomicBoolean();
+        Thread run = new Thread(() -> {
+            try {
+                while (!Files.exists(PoolPaths.stopRequest(pool, 1))) {
+                    Thread.sleep(50);
+                }
+                asked.set(true);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                runMark.close();
+            }
+        });
+
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot, true)) {
+            run.start();
+            PoolBootstrap.down(config);
+            run.join(10_000);
+
+            assertThat(asked.get(), is(true));
+            assertThat(Files.exists(PoolPaths.stopRequest(pool, 1)), is(false));
+        } finally {
+            run.interrupt();
+        }
     }
 
     /** As after the build: what's left of the slots' children ends with the pool. */

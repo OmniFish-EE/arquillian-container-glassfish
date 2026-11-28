@@ -15,6 +15,9 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -179,6 +182,84 @@ class EmbeddedWorkDirTest {
             assertThat(Files.readString(domain.resolve("config/domain.xml")),
                     containsString("id=\"orb-listener-1\" port=\"14851\""));
             assertThat(Files.isDirectory(domain.resolve("docroot")), is(true));
+        }
+    }
+
+    /** A host boots the JAR on its domain directory, and selects a copy of the truststore itself. */
+    @Test
+    void aHostOfTheJarGetsADomainDirectoryAndATruststore() throws Exception {
+        Path jar = jar(tmp.resolve("glassfish-embedded-all-8.0.5.jar"), DOMAIN_XML);
+
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.forHost(tmp.resolve("work"), OWNER,
+                EmbeddedGlassFish.jar(tmp, jar, trustStore(tmp.resolve("custom.p12"), "secret"), "secret"), SLOT,
+                null, null)) {
+            assertThat(workDir.dir().getFileName().toString(), startsWith("run-" + OWNER + "-"));
+            assertThat(workDir.archiveName(), nullValue());
+            assertThat(names(workDir.dir()), containsInAnyOrder(EmbeddedWorkDir.TRUST_STORE,
+                    EmbeddedWorkDir.DOMAIN_DIR));
+            assertThat(Files.readString(workDir.domainDir().resolve("config/domain.xml")),
+                    containsString("id=\"orb-listener-1\" port=\"14851\""));
+            assertThat(load(workDir.dir().resolve(EmbeddedWorkDir.TRUST_STORE), "changeit").getCertificate("idp"),
+                    equalTo(certificate()));
+        }
+    }
+
+    /**
+     * An instance root of the user's own is copied, so test JVMs on other
+     * slots don't share it, and the copy gets the slot's ports and the
+     * pool's truststore. The user's keystore stays.
+     */
+    @Test
+    void aHostCopiesAnInstanceRoot() throws Exception {
+        Path home = install(tmp.resolve("glassfish8"), "<domain embedded=\"true\"/>");
+        Path template = tmp.resolve("instance");
+        Files.createDirectories(template.resolve("config"));
+        Files.writeString(template.resolve("config/domain.xml"), DOMAIN_XML);
+        Files.writeString(template.resolve("config/keystore.p12"), "key of the user");
+        Files.createDirectories(template.resolve("lib"));
+        Files.writeString(template.resolve("lib/driver.jar"), "driver");
+
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.forHost(tmp.resolve("work"), OWNER,
+                EmbeddedGlassFish.install(tmp, home, trustStore(tmp.resolve("custom.p12"), "secret"), "secret"),
+                SLOT, template, null)) {
+            Path domain = workDir.domainDir();
+            assertThat(Files.readString(domain.resolve("lib/driver.jar")), equalTo("driver"));
+            assertThat(Files.readString(domain.resolve("config/keystore.p12")), equalTo("key of the user"));
+            assertThat(Files.readString(domain.resolve("config/domain.xml")), containsString("id=\"SSL\" port=\"14852\""));
+            assertThat(load(domain.resolve("config/cacerts.p12"), "changeit").getCertificate("idp"),
+                    equalTo(certificate()));
+            assertThat(Files.isDirectory(domain.resolve("docroot")), is(true));
+            assertThat(Files.readString(template.resolve("config/domain.xml")), equalTo(DOMAIN_XML));
+        }
+    }
+
+    /**
+     * A JVM may host GlassFish again: each time in a directory of its own, so
+     * a file the last one left open, as on Windows, fails nothing.
+     */
+    @Test
+    void eachGlassFishAHostBootsGetsADirectoryOfItsOwn() throws Exception {
+        Path jar = jar(tmp.resolve("glassfish-embedded-all-8.0.5.jar"), DOMAIN_XML);
+        EmbeddedGlassFish glassfish = EmbeddedGlassFish.jar(tmp, jar, null, null);
+
+        try (EmbeddedWorkDir first = EmbeddedWorkDir.forHost(tmp.resolve("work"), OWNER, glassfish, SLOT, null, null);
+                EmbeddedWorkDir second = EmbeddedWorkDir.forHost(tmp.resolve("work"), OWNER, glassfish, SLOT, null,
+                        null)) {
+            assertThat(second.dir(), not(equalTo(first.dir())));
+            assertThat(Files.exists(first.dir()), is(false));
+        }
+    }
+
+    @Test
+    void aHostRunsOnACopyOfADomainXml() throws Exception {
+        Path jar = jar(tmp.resolve("glassfish-embedded-all-8.0.5.jar"), "<domain embedded=\"true\"/>");
+        Path template = Files.writeString(tmp.resolve("my-domain.xml"), DOMAIN_XML);
+
+        try (EmbeddedWorkDir workDir = EmbeddedWorkDir.forHost(tmp.resolve("work"), OWNER,
+                EmbeddedGlassFish.jar(tmp, jar, null, null), SLOT, null, template)) {
+            assertThat(Files.readString(workDir.domainDir().resolve("config/domain.xml")),
+                    containsString("name=\"default_JMS_host\" port=\"14854\""));
+            assertThat(Files.readString(template), equalTo(DOMAIN_XML));
         }
     }
 

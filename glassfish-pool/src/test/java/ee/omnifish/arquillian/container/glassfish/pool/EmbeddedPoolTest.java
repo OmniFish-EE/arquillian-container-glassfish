@@ -23,6 +23,8 @@ import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.jar.Attributes;
+import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -87,6 +89,30 @@ class EmbeddedPoolTest {
         EmbeddedPool.remove(pool);
         assertThat(PoolConfig.forTestJvm(pool).embedded(), is(false));
         assertThat(EmbeddedPool.read(pool).isPresent(), is(false));
+    }
+
+    /**
+     * With in-process, the test JVMs host GlassFish themselves, from the class
+     * path that a JAR in the stage directory names, which the extension adds
+     * to failsafe's.
+     */
+    @Test
+    void theDescriptionSaysWhetherTheTestJvmsHostGlassFish() throws Exception {
+        Path pool = tmp.resolve("pool");
+        Path stage = Files.createDirectories(tmp.resolve("dist"));
+        EmbeddedGlassFish glassfish = EmbeddedGlassFish.jar(stage, stage.resolve("glassfish-embedded-web-8.0.5.jar"),
+                null, null);
+        assertThat(EmbeddedPool.isInProcess(pool), is(false));
+
+        EmbeddedPool.write(pool, glassfish, "embedded-web", EmbeddedPool.IN_PROCESS);
+        assertThat(EmbeddedPool.isInProcess(pool), is(true));
+        try (JarFile classPathJar = new JarFile(glassfish.classPathJar().toFile())) {
+            assertThat(classPathJar.getManifest().getMainAttributes().getValue(Attributes.Name.CLASS_PATH),
+                    equalTo("glassfish-embedded-web-8.0.5.jar"));
+        }
+
+        EmbeddedPool.write(pool, glassfish, "embedded-web");
+        assertThat(EmbeddedPool.isInProcess(pool), is(false));
     }
 
     /**
