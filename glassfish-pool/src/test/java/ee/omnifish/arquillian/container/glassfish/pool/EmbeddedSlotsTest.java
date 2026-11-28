@@ -179,7 +179,7 @@ class EmbeddedSlotsTest {
         PoolBootstrap.up(config);
         Path slot = PoolPaths.slotDir(pool, 1);
 
-        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot)) {
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot, false)) {
             assertThat(status(config), containsString("| 1    | -         | host       | no     |"));
             try (SlotLease lease = new SlotLeaser(config(0), 30L).lease()) {
                 assertThat(lease.slotIndex(), equalTo(1));
@@ -191,10 +191,44 @@ class EmbeddedSlotsTest {
     }
 
     /**
+     * The stop after the build holds each slot's run mark itself, so it can't
+     * tell a run by the mark: a test JVM that still hosts GlassFish on its
+     * slot, as on Ctrl+C, isn't a run that keeps it running, and is left alone.
+     */
+    @Test
+    void theStopAfterTheBuildLeavesATestJvmThatHostsGlassFishAlone() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+
+        try (HostStandIn testJvm = HostStandIn.start(stage, PoolPaths.slotDir(pool, 1), false)) {
+            PoolBootstrap.downAfterBuild(config);
+
+            assertThat(testJvm.isAlive(), is(true));
+        }
+    }
+
+    /**
+     * On Ctrl+C, a glassfish-pool:run ends in its own shutdown hook, side by
+     * side with the stop after the build, in the same JVM, as this test stands
+     * in for: the run doesn't keep the slot running.
+     */
+    @Test
+    void theStopAfterTheBuildDoesntCountARunOfItsOwnJvm() throws Exception {
+        PoolConfig config = config(1);
+        PoolBootstrap.up(config);
+        Path slot = PoolPaths.slotDir(pool, 1);
+
+        try (PoolLocks.Held runMark = PoolLocks.tryLock(PoolPaths.runLockFile(pool, 1));
+             EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot, true)) {
+            PoolBootstrap.downAfterBuild(config);
+        }
+    }
+
+    /**
      * A glassfish-pool:run that hosts GlassFish in its own JVM, as this test
      * stands in for with the slot's run mark and the stage directory's record,
-     * is Maven itself, which down doesn't end: it asks the run to stop, and
-     * waits until the run has handed its slot back.
+     * which says it's a run, is Maven itself, which down doesn't end: it asks
+     * the run to stop, and waits until the run has handed its slot back.
      */
     @Test
     void downAsksARunThatHostsGlassFishToStop() throws Exception {
@@ -216,7 +250,7 @@ class EmbeddedSlotsTest {
             }
         });
 
-        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot)) {
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(stage, slot, true)) {
             run.start();
             PoolBootstrap.down(config);
             run.join(10_000);

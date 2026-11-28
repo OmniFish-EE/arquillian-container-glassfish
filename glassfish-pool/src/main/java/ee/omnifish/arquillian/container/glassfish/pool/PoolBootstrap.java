@@ -267,7 +267,7 @@ public final class PoolBootstrap {
         PoolProvisioner provisioner = new PoolProvisioner(config);
         List<Integer> asked = new ArrayList<>();
         for (int slot : slots) {
-            if (!provisioner.hosts(slot).isEmpty() && PoolLocks.isBusy(PoolPaths.runLockFile(poolDir, slot))) {
+            if (!provisioner.hostingRuns(slot).isEmpty()) {
                 try {
                     Files.writeString(PoolPaths.stopRequest(poolDir, slot), "Stop, as glassfish-pool:down asks\n");
                     asked.add(slot);
@@ -331,12 +331,14 @@ public final class PoolBootstrap {
         List<String> running = new ArrayList<>();
         PoolProvisioner provisioner = new PoolProvisioner(config);
         for (int slot : slots) {
+            List<ProcessHandle> runs = provisioner.hostingRuns(slot);
             for (ProcessHandle host : provisioner.hosts(slot)) {
-                if (PoolLocks.isBusy(PoolPaths.runLockFile(poolDir, slot))) {
+                if (!runs.contains(host)) {
+                    LOG.info("Slot " + slot + ": the test JVM " + host.pid() + " hosts GlassFish Embedded itself, "
+                            + "which stops with its tests");
+                } else if (host.pid() != ProcessHandle.current().pid()) {
+                    // A run of this JVM ends with it, in its own shutdown hook, also while this stop runs.
                     running.add(slot + " (glassfish-pool:run in the JVM " + host.pid() + ")");
-                } else {
-                    LOG.info("Slot " + slot + ": the JVM " + host.pid() + " hosts GlassFish Embedded itself, which "
-                            + "stops with its tests");
                 }
             }
         }

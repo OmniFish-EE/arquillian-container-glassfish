@@ -55,8 +55,8 @@ The following configuration options are available for all GlassFish Arquillian c
 | `derbyPasswordFile` | `glassfish.derbyPasswordFile` | String | _none_ | Managed | Derby password file
 | `maxHeapSize` | `glassfish.maxHeapSize` | String | _none_ | Managed | JVM max heap size (e.g., `2048m`)
 | `enableAssertions` | `glassfish.enableAssertions` | String | _none_ | Managed | Enable JVM assertions for specific packages (e.g., `:org.jboss.cdi.tck...`)
-| `bindHttpPort` | _none_ | int | `8181` | Embedded | The port number of the http-listener for the embedded GlassFish server. Set, it also replaces the port of the domain.xml of `instanceRoot` or `configurationXml`
-| `bindHttpsPort` | _none_ | int | `8182` | Embedded | The port number of the https-listener for the embedded GlassFish server. Set, it also replaces the port of the domain.xml of `instanceRoot` or `configurationXml`
+| `bindHttpPort` | _none_ | int | `8181` | Embedded | The port number of the http-listener for the embedded GlassFish server. Set, it also replaces the port of the domain.xml of `instanceRoot` or `configurationXml`, on its first HTTP listener, such as a distribution's `http-listener-1`
+| `bindHttpsPort` | _none_ | int | `8182` | Embedded | The port number of the https-listener for the embedded GlassFish server. Set, it also replaces the port of the domain.xml of `instanceRoot` or `configurationXml`, on its first HTTPS listener, such as a distribution's `http-listener-2`
 | `instanceRoot` | _none_ | String | _none_ | Embedded | The instance root directory (parent of server instance directory)
 | `installRoot` | _none_ | String | _none_ | Embedded | The location of the GlassFish installation root directory
 | `configurationReadOnly` | _none_ | boolean | `true` | Embedded | Specifies whether GlassFish should writeback changes to configuration file

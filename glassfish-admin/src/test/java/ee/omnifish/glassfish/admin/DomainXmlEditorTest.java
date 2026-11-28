@@ -400,6 +400,47 @@ class DomainXmlEditorTest {
         assertTrue(template.contains("port=\"3700\"") && template.contains("port=\"7676\""), content);
     }
 
+    /** A distribution's domain1 names them http-listener-1 and http-listener-2; the admin listener is neither. */
+    @Test
+    void findsTheWebListenersAsADistributionNamesThem(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">"
+                + "<http-service>"
+                + "<virtual-server id=\"server\" network-listeners=\"http-listener-1,http-listener-2\"/>"
+                + "<virtual-server id=\"__asadmin\" network-listeners=\"admin-listener\"/>"
+                + "</http-service>"
+                + "<network-config><protocols>"
+                + "<protocol name=\"http-listener-1\"><http default-virtual-server=\"server\"/></protocol>"
+                + "<protocol security-enabled=\"true\" name=\"http-listener-2\">"
+                + "<http default-virtual-server=\"server\"/><ssl cert-nickname=\"s1as\"/></protocol>"
+                + "<protocol name=\"admin-listener\"><http default-virtual-server=\"__asadmin\"/></protocol>"
+                + "</protocols>" + FRAGMENT + "</network-config></config></configs></domain>");
+
+        assertEquals(List.of(HTTP_LISTENER), DomainXmlEditor.webListeners(domainXml, false));
+        assertEquals(List.of(HTTPS_LISTENER), DomainXmlEditor.webListeners(domainXml, true));
+    }
+
+    /** Embedded's own domain.xml names them http-listener and https-listener, and has no admin listener. */
+    @Test
+    void findsTheWebListenersAsEmbeddedNamesThem(@TempDir Path tmp) throws IOException {
+        Path domainXml = tmp.resolve("domain.xml");
+        Files.writeString(domainXml, "<domain><configs><config name=\"server-config\">"
+                + "<http-service>"
+                + "<virtual-server id=\"server\" network-listeners=\"http-listener, https-listener\"/>"
+                + "</http-service>"
+                + "<network-config><protocols>"
+                + "<protocol name=\"http-listener\"><http default-virtual-server=\"server\"/></protocol>"
+                + "<protocol security-enabled=\"true\" name=\"https-listener\">"
+                + "<http default-virtual-server=\"server\"/><ssl cert-nickname=\"s1as\"/></protocol>"
+                + "</protocols><network-listeners>"
+                + "<network-listener port=\"0\" protocol=\"http-listener\" name=\"http-listener\" enabled=\"false\"/>"
+                + "<network-listener port=\"0\" protocol=\"https-listener\" name=\"https-listener\" enabled=\"false\"/>"
+                + "</network-listeners></network-config></config></configs></domain>");
+
+        assertEquals(List.of("http-listener"), DomainXmlEditor.webListeners(domainXml, false));
+        assertEquals(List.of("https-listener"), DomainXmlEditor.webListeners(domainXml, true));
+    }
+
     /** A {@code domain.xml} with one config, {@code configName}, holding {@code listeners}. */
     private static String domain(String configName, String listeners) {
         return "<domain><configs><config name=\"" + configName + "\"><network-config>" + listeners

@@ -787,7 +787,9 @@ runs.
   - The container's `instanceRoot` or `configurationXml` give GlassFish an
     instance root or a `domain.xml` of your own, as for the
     `glassfish-embedded` Arquillian Container. Each test JVM boots on a
-    copy, in its slot's directory, and the slot's ports apply.
+    copy, in its slot's directory, and the slot's ports apply, also to
+    listeners named as a distribution's `domain1` names them,
+    `http-listener-1` and `http-listener-2`.
 - **Trusted certificates:** GlassFish replaces the JVM's default TLS
   context with one that trusts the pool's truststore copy, which the
   application uses, and so do the tests' own HTTPS requests while it runs.
@@ -797,7 +799,8 @@ runs.
   `java.util.logging` stays.
 - **The stage directory** records the test JVM as a host while GlassFish
   runs, so staging doesn't replace what it runs from. The pool never ends
-  a test JVM: `down` leaves it, and `status` shows its slot as `host`.
+  a test JVM: `down` and the stop after the build leave it, and `status`
+  shows its slot as `host`.
 
 ## Recipes
 

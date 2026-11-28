@@ -32,6 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -55,8 +56,9 @@ import static java.nio.file.StandardOpenOption.WRITE;
  *
  * <p>A JVM that hosts GlassFish Embedded itself, from a stage directory's
  * JAR or static shell, has a record there too, which says it's a host
- * ({@link #host}): staging doesn't wipe what it runs from either, but the
- * pool never ends it, as it's a test JVM or Maven.
+ * ({@link #host}), and whether it's a test JVM or a
+ * {@code glassfish-pool:run}'s Maven: staging doesn't wipe what it runs from
+ * either, but the pool never ends it.
  *
  * <p>A child starts, and gets its record, under a lock on
  * {@code .staging-glassfish.lock} in the stage directory, which staging holds
@@ -86,6 +88,10 @@ public final class EmbeddedProcesses {
     private static final String SLOT = "slot";
     private static final String HOST = "host";
     private static final String STAGE_DIR = "stageDir";
+
+    /** What a host's record says it is: a {@code glassfish-pool:run}'s Maven, or a test JVM. */
+    private static final String RUN = "run";
+    private static final String TESTS = "tests";
 
     /** Starts a child. */
     @FunctionalInterface
@@ -150,15 +156,18 @@ public final class EmbeddedProcesses {
      *
      * @param slotDir the pool slot it serves, or {@code null}; it gets the
      *        name of {@code stageDir}, as for a child
+     * @param run whether this JVM is a {@code glassfish-pool:run}'s Maven,
+     *        which {@code glassfish-pool:down} asks to stop, rather than a
+     *        test JVM
      */
-    public static Host host(Path stageDir, Path slotDir) throws IOException {
+    public static Host host(Path stageDir, Path slotDir, boolean run) throws IOException {
         ProcessHandle self = ProcessHandle.current();
         withStageLock(stageDir, () -> {
             removeEnded(stageDir);
             if (slotDir != null) {
                 nameStageDir(slotDir, stageDir);
             }
-            record(stageDir, self, slotDir, true);
+            record(stageDir, self, slotDir, run ? RUN : TESTS);
             return null;
         });
 
@@ -197,30 +206,31 @@ public final class EmbeddedProcesses {
      * slot isn't one of them: see {@link #hosts}.
      */
     public static List<ProcessHandle> serving(Path stageDir, Path slotDir) {
-        return recorded(stageDir, slotDir, false);
+        return recorded(stageDir, slotDir, record -> record.getProperty(HOST) == null);
     }
 
     /** The JVMs that {@code stageDir} records as hosting GlassFish for the pool slot {@code slotDir}, and still run. */
     public static List<ProcessHandle> hosts(Path stageDir, Path slotDir) {
-        return recorded(stageDir, slotDir, true);
+        return recorded(stageDir, slotDir, record -> record.getProperty(HOST) != null);
     }
 
-    private static List<ProcessHandle> recorded(Path stageDir, Path slotDir, boolean hosts) {
+    /** Of the {@link #hosts}, the {@code glassfish-pool:run}s' Mavens. */
+    public static List<ProcessHandle> hostingRuns(Path stageDir, Path slotDir) {
+        return recorded(stageDir, slotDir, record -> RUN.equals(record.getProperty(HOST)));
+    }
+
+    private static List<ProcessHandle> recorded(Path stageDir, Path slotDir, Predicate<Properties> kind) {
         Path slot = slotDir.toAbsolutePath().normalize();
         List<ProcessHandle> recorded = new ArrayList<>();
         for (Path file : recordFiles(stageDir)) {
             Optional<Properties> record = read(file);
             if (record.isPresent() && slot.toString().equals(record.get().getProperty(SLOT))
-                    && isHost(record.get()) == hosts) {
+                    && kind.test(record.get())) {
                 running(record.get()).ifPresent(recorded::add);
             }
         }
 
         return recorded;
-    }
-
-    private static boolean isHost(Properties record) {
-        return Boolean.parseBoolean(record.getProperty(HOST));
     }
 
     /**
@@ -277,11 +287,14 @@ public final class EmbeddedProcesses {
 
     /** Record {@code child} in {@code stageDir}, as serving {@code slotDir}, if not {@code null}. */
     static void record(Path stageDir, ProcessHandle child, Path slotDir) throws IOException {
-        record(stageDir, child, slotDir, false);
+        record(stageDir, child, slotDir, null);
     }
 
-    /** As {@link #record(Path, ProcessHandle, Path)}, for a JVM that hosts GlassFish itself with {@code host}. */
-    static void record(Path stageDir, ProcessHandle process, Path slotDir, boolean host) throws IOException {
+    /**
+     * As {@link #record(Path, ProcessHandle, Path)}, for a JVM that hosts
+     * GlassFish itself with {@code host}, which says what it is, or else a child.
+     */
+    static void record(Path stageDir, ProcessHandle process, Path slotDir, String host) throws IOException {
         Properties record = new Properties();
         record.setProperty(PID, String.valueOf(process.pid()));
         process.info().startInstant().ifPresent(start -> record.setProperty(START,
@@ -289,11 +302,11 @@ public final class EmbeddedProcesses {
         if (slotDir != null) {
             record.setProperty(SLOT, slotDir.toAbsolutePath().normalize().toString());
         }
-        if (host) {
-            record.setProperty(HOST, "true");
+        if (host != null) {
+            record.setProperty(HOST, host);
         }
 
-        store(record, recordFile(stageDir, process.pid()), host
+        store(record, recordFile(stageDir, process.pid()), (host != null)
                 ? "A JVM that hosts GlassFish Embedded from this directory"
                 : "A GlassFish Embedded child that runs from this directory");
     }

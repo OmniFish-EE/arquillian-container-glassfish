@@ -97,7 +97,7 @@ final class HostedRun implements AutoCloseable {
             loader = HostedGlassFish.classLoader(glassfish.classPath());
             requireModuleOptions(glassfish, loader);
             workDir = EmbeddedWorkDir.forHost(lease.slotDir(), glassfish, ports, null, null);
-            host = EmbeddedProcesses.host(glassfish.stageDir(), lease.slotDir());
+            host = EmbeddedProcesses.host(glassfish.stageDir(), lease.slotDir(), true);
             hosted = HostedGlassFish.start(loader, HostedGlassFish.Settings.of(glassfish, workDir, ports)
                     .systemProperties(poolConfig.setup().systemProperties()));
             HostedGlassFish commands = hosted;

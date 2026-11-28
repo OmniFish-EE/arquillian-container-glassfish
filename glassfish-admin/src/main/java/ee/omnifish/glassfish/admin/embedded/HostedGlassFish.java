@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.lang.System.Logger;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,6 +27,8 @@ import org.glassfish.embeddable.GlassFish;
 import org.glassfish.embeddable.GlassFishException;
 import org.glassfish.embeddable.GlassFishProperties;
 import org.glassfish.embeddable.GlassFishRuntime;
+
+import ee.omnifish.glassfish.admin.DomainXmlEditor;
 
 import static java.lang.System.Logger.Level.DEBUG;
 import static java.lang.System.Logger.Level.WARNING;
@@ -246,10 +249,10 @@ public final class HostedGlassFish implements AutoCloseable {
                 }
                 properties.setConfigFileReadOnly(settings.configReadOnly);
                 if (settings.httpPort > 0) {
-                    properties.setPort("http-listener", settings.httpPort);
+                    properties.setPort(listener(settings, false), settings.httpPort);
                 }
                 if (settings.httpsPort > 0) {
-                    properties.setPort("https-listener", settings.httpsPort);
+                    properties.setPort(listener(settings, true), settings.httpsPort);
                 }
                 GlassFish glassfish = runtime.newGlassFish(properties);
                 glassfish.start();
@@ -265,6 +268,30 @@ public final class HostedGlassFish implements AutoCloseable {
                 thread.setContextClassLoader(previous);
             }
         }
+    }
+
+    /**
+     * The listener that gets the HTTPS port, with {@code secure}, or else the
+     * HTTP port: the first of the {@link DomainXmlEditor#webListeners} of the
+     * {@code domain.xml} GlassFish runs on, which, when it's the user's, may
+     * name them as a distribution's {@code domain1} does, or else Embedded's
+     * own name.
+     */
+    private static String listener(Settings settings, boolean secure) {
+        Path domainXml = (settings.configFile != null) ? settings.configFile
+                : (settings.instanceRoot != null) ? settings.instanceRoot.resolve("config").resolve("domain.xml")
+                : null;
+        if (domainXml != null && Files.isRegularFile(domainXml)) {
+            try {
+                List<String> listeners = DomainXmlEditor.webListeners(domainXml, secure);
+                if (!listeners.isEmpty()) {
+                    return listeners.get(0);
+                }
+            } catch (IOException e) {
+                LOG.log(DEBUG, "Could not read the web listeners of " + domainXml + ": " + e.getMessage());
+            }
+        }
+        return secure ? "https-listener" : "http-listener";
     }
 
     /** GlassFish itself, for what the methods here don't cover. */

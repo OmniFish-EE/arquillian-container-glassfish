@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -73,14 +74,20 @@ public class ManualIT {
         return Archives.marked("on-instance-root.war", "on-instance-root");
     }
 
-    /** Embedded's own domain.xml, from the test JVM's GlassFish, as a user's domain.xml, and in an instance root. */
+    /**
+     * Embedded's own domain.xml, from the test JVM's GlassFish, in an instance
+     * root, and as a user's domain.xml, whose listeners are named as a
+     * distribution's domain1 names them.
+     */
     @BeforeAll
     static void writeUserConfig() throws IOException {
         Path instanceConfig = Files.createDirectories(USER_CONFIG.resolve("instance/config"));
         try (InputStream in = ManualIT.class.getClassLoader().getResourceAsStream("org/glassfish/embed/domain.xml")) {
-            byte[] domainXml = in.readAllBytes();
-            Files.write(USER_CONFIG.resolve("domain.xml"), domainXml);
-            Files.write(instanceConfig.resolve("domain.xml"), domainXml);
+            String domainXml = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            Files.writeString(instanceConfig.resolve("domain.xml"), domainXml);
+            Files.writeString(USER_CONFIG.resolve("domain.xml"), domainXml
+                    .replace("https-listener", "http-listener-2")
+                    .replaceAll("http-listener(?![-\\w])", "http-listener-1"));
         }
         Files.writeString(USER_CONFIG.resolve("instance/marker.txt"), "the user's");
     }
@@ -124,7 +131,7 @@ public class ManualIT {
         deployer.deploy("on-domain-xml");
     }
 
-    /** Its listeners take the leased slot's ports, whatever the domain.xml says. */
+    /** Its listeners take the leased slot's ports, whatever the domain.xml says, and whatever it names them. */
     @Test
     @Order(6)
     public void servesOnTheLeasedPortWithADomainXmlOfTheUsers(

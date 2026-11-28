@@ -79,6 +79,30 @@ class GlassFishContainerRestartTest {
         }
     }
 
+    /**
+     * Set, the port also reaches a domain.xml whose listeners are named as a
+     * distribution's domain1 names them, http-listener-1 and http-listener-2,
+     * rather than as Embedded's own.
+     */
+    @Test
+    void aSetPortAppliesAlsoToListenersNamedAsADistributionNamesThem() throws Exception {
+        Path domainXml = domainXml(7182);
+        Files.writeString(domainXml, Files.readString(domainXml)
+                .replace("https-listener", "http-listener-2")
+                .replaceAll("http-listener(?![-\\w])", "http-listener-1"));
+        GlassFishConfiguration configuration = new GlassFishConfiguration();
+        configuration.setConfigurationXml(domainXml.toString());
+        configuration.setBindHttpPort(7175);
+
+        GlassFishContainer container = started(configuration);
+        try {
+            assertEquals("hello", serve(container, 7175));
+            assertThrows(ConnectException.class, () -> get(7182));
+        } finally {
+            container.stop();
+        }
+    }
+
     /** Unset, the domain.xml's own port stays, as before. */
     @Test
     void anUnsetPortLeavesADomainXmlsOwn() throws Exception {

@@ -15,9 +15,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -150,6 +152,47 @@ public final class DomainXmlEditor {
             }
         }
         atomicWrite(domainXml, doc);
+    }
+
+    /**
+     * The names of the server's network listeners for applications, in its
+     * config's order: those whose protocol has security enabled, with
+     * {@code secure}, or else the others, but the admin listener and any of
+     * the admin virtual server, {@code __asadmin}. Embedded's own
+     * {@code domain.xml} names them {@code http-listener} and
+     * {@code https-listener}, a distribution's {@code domain1}
+     * {@code http-listener-1} and {@code http-listener-2}.
+     */
+    public static List<String> webListeners(Path domainXml, boolean secure) throws IOException {
+        Document doc = parse(domainXml);
+        Element config = serverConfig(doc, domainXml);
+        Set<String> secureProtocols = new HashSet<>();
+        NodeList protocols = config.getElementsByTagName("protocol");
+        for (int i = 0; i < protocols.getLength(); i++) {
+            Element protocol = (Element) protocols.item(i);
+            if (Boolean.parseBoolean(protocol.getAttribute("security-enabled"))) {
+                secureProtocols.add(protocol.getAttribute("name"));
+            }
+        }
+        Set<String> admin = new HashSet<>(Set.of(ADMIN_LISTENER));
+        NodeList virtualServers = config.getElementsByTagName("virtual-server");
+        for (int i = 0; i < virtualServers.getLength(); i++) {
+            Element virtualServer = (Element) virtualServers.item(i);
+            if ("__asadmin".equals(virtualServer.getAttribute("id"))) {
+                for (String name : virtualServer.getAttribute("network-listeners").split(",")) {
+                    admin.add(name.trim());
+                }
+            }
+        }
+
+        List<String> names = new ArrayList<>();
+        for (Element listener : serverListeners(doc, domainXml)) {
+            String name = listener.getAttribute("name");
+            if (!admin.contains(name) && secureProtocols.contains(listener.getAttribute("protocol")) == secure) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     /**

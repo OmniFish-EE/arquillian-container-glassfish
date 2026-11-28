@@ -105,7 +105,7 @@ final class HostedSlot implements AutoCloseable {
         try {
             workDir = EmbeddedWorkDir.forHost(lease.slotDir(), embedded, ports, path(configuration.getInstanceRoot()),
                     path(configuration.getConfigurationXml()));
-            host = EmbeddedProcesses.host(embedded.stageDir(), lease.slotDir());
+            host = EmbeddedProcesses.host(embedded.stageDir(), lease.slotDir(), false);
             logJvmSettings(poolConfig.setup());
             glassfish = HostedGlassFish.start(HostedSlot.class.getClassLoader(),
                     settings(embedded, ports, workDir, poolConfig, configuration));
