@@ -1,0 +1,7 @@
+PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [beta.war=WebModule
+    [alpha.war=WebModule
+    beta.war   <WebModule>  
+        [moduleInfo=beta.war:war:beta
+    alpha.war  <WebModule>  
+        [moduleInfo=alpha.war:war:alpha

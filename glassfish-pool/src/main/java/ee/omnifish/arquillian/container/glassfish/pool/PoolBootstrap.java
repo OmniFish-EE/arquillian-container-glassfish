@@ -16,6 +16,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -53,6 +54,9 @@ import static java.nio.file.Files.isDirectory;
 public final class PoolBootstrap {
 
     private static final Logger LOG = Logger.getLogger(PoolBootstrap.class.getName());
+
+    /** How long {@code down} waits for the runs that host GlassFish in their own JVM to stop. */
+    private static final Duration HOSTED_RUN_STOP_TIMEOUT = Duration.ofMinutes(2);
 
     // ANSI colors used for the [LIVE] tag — mirrors ProgressListener's [RUNNING]/[FAILED] styling.
     private static final String WHITE = "[37m";
@@ -242,10 +246,54 @@ public final class PoolBootstrap {
         try {
             if (keepOtherRuns) {
                 slots.removeIf(slot -> !holdRunMark(poolDir, slot, runMarks));
+            } else {
+                stopHostedRuns(config, slots);
             }
             stop(config, slots);
         } finally {
             runMarks.forEach(PoolLocks.Held::close);
+        }
+    }
+
+    /**
+     * Ask each {@code glassfish-pool:run} that hosts GlassFish in its own JVM,
+     * on one of {@code slots}, to stop, through the slot's stop request, which
+     * the run watches, and wait until it has handed its slot back, for up to
+     * {@link #HOSTED_RUN_STOP_TIMEOUT} in all. The pool never ends such a run,
+     * which is Maven itself, and whose later goals still run.
+     */
+    private static void stopHostedRuns(PoolConfig config, List<Integer> slots) {
+        Path poolDir = config.poolDir();
+        PoolProvisioner provisioner = new PoolProvisioner(config);
+        List<Integer> asked = new ArrayList<>();
+        for (int slot : slots) {
+            if (!provisioner.hosts(slot).isEmpty() && PoolLocks.isBusy(PoolPaths.runLockFile(poolDir, slot))) {
+                try {
+                    Files.writeString(PoolPaths.stopRequest(poolDir, slot), "Stop, as glassfish-pool:down asks\n");
+                    asked.add(slot);
+                    LOG.info("Asked the glassfish-pool:run on slot " + slot + " to stop");
+                } catch (IOException e) {
+                    LOG.log(Level.WARNING, "Could not ask the glassfish-pool:run on slot " + slot + " to stop", e);
+                }
+            }
+        }
+
+        long deadline = System.currentTimeMillis() + HOSTED_RUN_STOP_TIMEOUT.toMillis();
+        for (int slot : asked) {
+            try {
+                while (PoolLocks.isBusy(PoolPaths.runLockFile(poolDir, slot)) && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(200);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } finally {
+                try {
+                    Files.deleteIfExists(PoolPaths.stopRequest(poolDir, slot));
+                } catch (IOException e) {
+                    LOG.log(Level.FINE, "Could not remove slot " + slot + "'s stop request", e);
+                }
+            }
         }
     }
 
@@ -282,6 +330,16 @@ public final class PoolBootstrap {
 
         List<String> running = new ArrayList<>();
         PoolProvisioner provisioner = new PoolProvisioner(config);
+        for (int slot : slots) {
+            for (ProcessHandle host : provisioner.hosts(slot)) {
+                if (PoolLocks.isBusy(PoolPaths.runLockFile(poolDir, slot))) {
+                    running.add(slot + " (glassfish-pool:run in the JVM " + host.pid() + ")");
+                } else {
+                    LOG.info("Slot " + slot + ": the JVM " + host.pid() + " hosts GlassFish Embedded itself, which "
+                            + "stops with its tests");
+                }
+            }
+        }
         for (int slot : slots) {
             int adminPort = adminPort(config, slot);
             if (isDirectory(slotInstall(poolDir, slot)) && isPortHealthy(adminPort)) {
@@ -343,7 +401,7 @@ public final class PoolBootstrap {
     /**
      * Print a one-line-per-slot status to stdout: idx, adminPort, alive/dead,
      * leased/idle. An Embedded slot has no admin port, and is alive while a
-     * child runs on it.
+     * child runs on it, or a JVM hosts GlassFish on it.
      */
     public static void status(PoolConfig config) {
         status(config, System.out);
@@ -382,7 +440,8 @@ public final class PoolBootstrap {
                     SlotPorts ports = SlotPorts.readFrom(portsFile);
                     if (ports.isEmbedded()) {
                         adminPort = "-";
-                        alive = provisioner.children(slot).isEmpty() ? "idle" : "child";
+                        alive = !provisioner.children(slot).isEmpty() ? "child"
+                                : !provisioner.hosts(slot).isEmpty() ? "host" : "idle";
                     } else {
                         adminPort = String.valueOf(ports.adminPort());
                         alive = isPortHealthy(ports.adminPort()) ? "yes" : "no";

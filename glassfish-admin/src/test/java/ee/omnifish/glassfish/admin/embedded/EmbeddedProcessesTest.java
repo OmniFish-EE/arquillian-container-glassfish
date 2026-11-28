@@ -91,6 +91,37 @@ class EmbeddedProcessesTest {
         assertThat(EmbeddedProcesses.serving(tmp, tmp.resolve("pool/slot-3")), empty());
     }
 
+    /**
+     * A JVM that hosts GlassFish keeps staging from wiping the stage
+     * directory, as a child does, but the pool never ends it: it isn't one
+     * of the slot's children.
+     */
+    @Test
+    void aHostIsRecordedApartFromTheChildren() throws Exception {
+        Path slot = tmp.resolve("pool/slot-1");
+
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(tmp, slot)) {
+            assertThat(EmbeddedProcesses.hosts(tmp, slot), contains(ProcessHandle.current()));
+            assertThat(EmbeddedProcesses.serving(tmp, slot), empty());
+            assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.of(ProcessHandle.current())));
+            assertThat(EmbeddedProcesses.stageDirOf(slot), equalTo(Optional.of(tmp.toAbsolutePath().normalize())));
+        }
+
+        assertThat(EmbeddedProcesses.hosts(tmp, slot), empty());
+        assertThat(EmbeddedProcesses.runningFrom(tmp), equalTo(Optional.empty()));
+    }
+
+    /** As glassfish:run's second run is, from the stage directory a JVM hosts GlassFish from. */
+    @Test
+    void anExclusiveStartIsRefusedWhileAJvmHostsGlassFish() throws Exception {
+        try (EmbeddedProcesses.Host host = EmbeddedProcesses.host(tmp, null)) {
+            IOException e = assertThrows(IOException.class,
+                    () -> EmbeddedProcesses.start(tmp, null, true, this::sleeper));
+
+            assertThat(e.getMessage(), containsString("already runs from"));
+        }
+    }
+
     @Test
     void aStartedChildIsRecordedForItsSlot() throws Exception {
         child = EmbeddedProcesses.start(tmp, tmp.resolve("pool/slot-1"), false, this::sleeper);

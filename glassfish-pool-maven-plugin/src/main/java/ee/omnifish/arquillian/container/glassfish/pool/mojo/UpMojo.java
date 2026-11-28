@@ -11,6 +11,7 @@
 package ee.omnifish.arquillian.container.glassfish.pool.mojo;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,8 +23,10 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
+import ee.omnifish.arquillian.container.glassfish.pool.EmbeddedPool;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
 
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_ADMIN_BASE;
 import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_ENABLE_ASSERTIONS;
@@ -60,6 +63,12 @@ import static ee.omnifish.arquillian.container.glassfish.pool.PoolConfig.SYS_SYS
  *
  * <p>And it records the source it staged as {@value #STAGED_SOURCE}, for a
  * {@code glassfish-pool:run} whose {@code package} it ran in.
+ *
+ * <p>When the test JVMs host GlassFish Embedded themselves, with
+ * {@code <embeddedMode>in-process</embeddedMode>}, it sets
+ * {@value #EMBEDDED_CLASSPATH}, the JAR that names GlassFish's class path,
+ * and {@value #EMBEDDED_JVM_OPTIONS}, GlassFish's module options, which the
+ * extension adds to failsafe's class path and {@code argLine}.
  */
 @Mojo(name = "up", defaultPhase = LifecyclePhase.PRE_INTEGRATION_TEST, threadSafe = true)
 public class UpMojo extends AbstractStagingPoolMojo {
@@ -70,6 +79,12 @@ public class UpMojo extends AbstractStagingPoolMojo {
      * {@code up} sets it.
      */
     static final String STAGED_SOURCE = "gf.pool.stagedSource";
+
+    /** The JAR whose manifest names the class path of the GlassFish the test JVMs host. */
+    static final String EMBEDDED_CLASSPATH = "gf.pool.embeddedClasspath";
+
+    /** The module options of the GlassFish the test JVMs host, for failsafe's {@code argLine}. */
+    static final String EMBEDDED_JVM_OPTIONS = "gf.pool.embeddedJvmOptions";
 
     /**
      * Pool layout and slot setup the test JVMs read: published as project
@@ -108,7 +123,6 @@ public class UpMojo extends AbstractStagingPoolMojo {
             return;
         }
 
-        requireCommandLineMode();
         // Before poolConfig(): may derive poolSource from <distribution>.
         Runnable preStage = buildPreStage();
         PoolConfig poolConfig = poolConfig();
@@ -124,6 +138,30 @@ public class UpMojo extends AbstractStagingPoolMojo {
 
         publish(project.getProperties(), poolConfig, getLog());
         recordStaging(project.getProperties(), poolConfig);
+        publishHosting(project.getProperties(), poolConfig);
+    }
+
+    /**
+     * Set {@value #EMBEDDED_CLASSPATH} and {@value #EMBEDDED_JVM_OPTIONS} in
+     * {@code projectProperties} when the test JVMs host the pool's GlassFish
+     * Embedded themselves. Unlike the layout, they're what the staging gave,
+     * so a value the extension defaulted is replaced. Package-private for
+     * unit tests.
+     */
+    static void publishHosting(Properties projectProperties, PoolConfig config) throws MojoExecutionException {
+        Path poolDir = config.poolDir();
+        try {
+            if (!EmbeddedPool.isInProcess(poolDir)) {
+                return;
+            }
+
+            EmbeddedGlassFish glassfish = EmbeddedPool.read(poolDir).orElseThrow();
+            projectProperties.setProperty(EMBEDDED_CLASSPATH,
+                    EmbeddedPool.classPathJar(poolDir).toAbsolutePath().toString());
+            projectProperties.setProperty(EMBEDDED_JVM_OPTIONS, String.join(" ", glassfish.moduleOptions()));
+        } catch (IOException e) {
+            throw new MojoExecutionException("Could not read the pool's GlassFish Embedded: " + e.getMessage(), e);
+        }
     }
 
     /**

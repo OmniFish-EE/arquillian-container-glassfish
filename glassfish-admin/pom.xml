@@ -28,8 +28,9 @@
     <name>GlassFish Admin Helpers</name>
     <description>
         Runs asadmin commands, edits domain.xml, and runs GlassFish Embedded
-        with an application, with nothing but the JDK. Shared by the GlassFish
-        Maven plugins and the Arquillian Containers.
+        with an application, from the command line or in the JVM that asks,
+        with nothing but the JDK. Shared by the GlassFish Maven plugins and the
+        Arquillian Containers.
     </description>
 
     <properties>
@@ -41,6 +42,12 @@
     </properties>
 
     <dependencies>
+        <!-- HostedGlassFish calls it; the GlassFish that runs in the host brings it along. -->
+        <dependency>
+            <groupId>org.glassfish.main.common</groupId>
+            <artifactId>simple-glassfish-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

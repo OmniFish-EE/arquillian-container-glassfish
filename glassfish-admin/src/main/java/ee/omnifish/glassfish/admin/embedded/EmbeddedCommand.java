@@ -45,7 +45,7 @@ public final class EmbeddedCommand {
     public static final String CONTEXT_ROOT_QUERY = "get applications.application.*.context-root";
 
     /** The system property that gives the JMS broker's RMI registry its port, by default the broker's + 100. */
-    static final String JMS_RMI_PORT_PROPERTY = "com.sun.enterprise.connectors.system.mq.rmiport";
+    public static final String JMS_RMI_PORT_PROPERTY = "com.sun.enterprise.connectors.system.mq.rmiport";
 
     /** A log format with only each record's message, and its exception. */
     static final String MESSAGES_ONLY_FORMAT = "%5$s%6$s%n";

@@ -16,6 +16,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.DefaultMavenExecutionResult;
@@ -27,8 +30,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.io.TempDir;
 
+import ee.omnifish.arquillian.container.glassfish.pool.EmbeddedPool;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
 import ee.omnifish.arquillian.container.glassfish.pool.SlotSetup;
+import ee.omnifish.glassfish.admin.embedded.EmbeddedGlassFish;
 import ee.omnifish.glassfish.maven.staging.DistributionCoord;
 import ee.omnifish.glassfish.maven.staging.StagingCommands;
 
@@ -182,31 +187,72 @@ class UpMojoTest {
                 withUnpackSkip.getMessage());
     }
 
-    /** #99 adds in-process; until then, up and provision set slots up for children from the command line only. */
+    /** GlassFish Embedded starts from the command line, by default, or in the JVM that asks for it. */
     @Test
-    void anEmbeddedPoolStartsItsChildrenFromTheCommandLine() {
-        assertDoesNotThrow(() -> AbstractStagingPoolMojo.requireCommandLineMode("command-line"));
-        assertDoesNotThrow(() -> AbstractStagingPoolMojo.requireCommandLineMode(null));
-        MojoExecutionException inProcess = assertThrows(MojoExecutionException.class,
-                () -> AbstractStagingPoolMojo.requireCommandLineMode("in-process"));
+    void anEmbeddedPoolStartsFromTheCommandLineOrInProcess() throws Exception {
+        assertEquals("command-line", AbstractStagingPoolMojo.embeddedMode("command-line"));
+        assertEquals("command-line", AbstractStagingPoolMojo.embeddedMode(null));
+        assertEquals("in-process", AbstractStagingPoolMojo.embeddedMode(" In-Process "));
         MojoExecutionException other = assertThrows(MojoExecutionException.class,
-                () -> AbstractStagingPoolMojo.requireCommandLineMode("forked"));
+                () -> AbstractStagingPoolMojo.embeddedMode("forked"));
 
-        assertTrue(inProcess.getMessage().contains("isn't supported yet"), inProcess.getMessage());
         assertTrue(other.getMessage().contains("is command-line or in-process, not 'forked'"), other.getMessage());
     }
 
     /** The full and web editions ignore <embeddedMode>, which a parent pom may set for others. */
     @Test
-    void onlyAnEmbeddedEditionChecksItsMode() {
+    void onlyAnEmbeddedEditionChecksItsMode() throws Exception {
         UpMojo up = upInModule(true);
-        up.embeddedMode = "in-process";
+        up.embeddedMode = "forked";
 
         up.edition = "web";
-        assertDoesNotThrow(() -> up.requireCommandLineMode());
+        assertEquals("command-line", up.embeddedMode());
 
         up.edition = "embedded-web";
-        assertThrows(MojoExecutionException.class, () -> up.requireCommandLineMode());
+        assertThrows(MojoExecutionException.class, () -> up.embeddedMode());
+    }
+
+    /**
+     * With in-process, up sets what the extension refers to in failsafe's
+     * configuration: the JAR that names GlassFish's class path, and its
+     * module options, replacing the empty ones the extension defaulted.
+     */
+    @Test
+    void anInProcessPoolPublishesWhatTheTestJvmsHostItWith(@TempDir Path tmp) throws Exception {
+        Path pool = tmp.resolve("pool");
+        Path jar = tmp.resolve("dist/glassfish-embedded-web-8.0.5.jar");
+        Files.createDirectories(jar.getParent());
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().putValue("Add-Opens", "java.base/java.lang");
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar), manifest)) {
+            out.finish();
+        }
+        EmbeddedPool.write(pool, EmbeddedGlassFish.jar(jar.getParent(), jar, null, null), "embedded-web",
+                EmbeddedPool.IN_PROCESS);
+        Properties properties = new Properties();
+        properties.setProperty(UpMojo.EMBEDDED_JVM_OPTIONS, "");
+
+        UpMojo.publishHosting(properties, new PoolConfig(pool, null, 1, PoolConfig.DEFAULT_ADMIN_BASE,
+                PoolConfig.DEFAULT_PORT_STRIDE));
+
+        assertEquals(EmbeddedPool.classPathJar(pool).toAbsolutePath().toString(),
+                properties.getProperty(UpMojo.EMBEDDED_CLASSPATH));
+        assertEquals("--add-opens=java.base/java.lang=ALL-UNNAMED", properties.getProperty(UpMojo.EMBEDDED_JVM_OPTIONS));
+    }
+
+    /** From the command line, the test JVMs start children, and need neither. */
+    @Test
+    void aCommandLinePoolPublishesNothingToHostWith(@TempDir Path tmp) throws Exception {
+        Path pool = tmp.resolve("pool");
+        EmbeddedPool.write(pool, EmbeddedGlassFish.jar(tmp, tmp.resolve("glassfish-embedded-web-8.0.5.jar"), null,
+                null), "embedded-web");
+        Properties properties = new Properties();
+
+        UpMojo.publishHosting(properties, new PoolConfig(pool, null, 1, PoolConfig.DEFAULT_ADMIN_BASE,
+                PoolConfig.DEFAULT_PORT_STRIDE));
+
+        assertTrue(properties.isEmpty(), properties.toString());
     }
 
     @Test

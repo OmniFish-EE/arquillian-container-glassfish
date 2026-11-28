@@ -54,6 +54,13 @@ and each `deploy` then starts a child JVM of its own, with the archive, on
 the slot's ports; the `undeploy` ends that child. A slot runs one child at
 a time. See [Running tests on GlassFish Embedded](../glassfish-pool-maven-plugin/README.md#running-tests-on-glassfish-embedded).
 
+With the plugin's `<embeddedMode>in-process</embeddedMode>`, the test JVM
+hosts GlassFish Embedded itself instead: it boots GlassFish from its own
+class path, on the leased slot's ports, when the container starts, deploys
+to it and undeploys from it while it runs, and shuts it down when the
+container stops. The plugin's extension puts GlassFish on failsafe's class
+path, with its module options. See [GlassFish Embedded in the test JVM](../glassfish-pool-maven-plugin/README.md#glassfish-embedded-in-the-test-jvm).
+
 ```
 poolDir/
 ├── grow.lock                        # serialises pool-grow across JVMs
@@ -277,9 +284,11 @@ on the pool plugin.
 | --------------------- | ------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `poolDir`             | String  | `-Dgf.pool.dir`                  | Required. The Maven plugin forwards the build's `poolDir` as `gf.pool.dir`.                                 |
 | `leaseTimeoutSeconds` | long    | `600`                            | Lease wait before failing the test JVM.                                                                     |
-| `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). On GlassFish Embedded, each deployment starts a child of its own, so there's nothing to restart. |
+| `restartOnRelease`    | boolean | `-Dgf.pool.restartOnRelease`/`false` | Restart GF on the leased slot before releasing the lock. See [Restarting GlassFish between tests](#restarting-glassfish-between-tests). On GlassFish Embedded, each deployment starts a child of its own, or GlassFish stops with the container in the test JVM, so there's nothing to restart. |
 | `serverLogToConsole`  | boolean | `-Dglassfish.serverLogToConsole`/`false` | Show what the leased slot's server writes to its `server.log` on the console while the slot is leased, prefixed with `[glassfish:slot-N]`, coloured per slot when Maven's console shows colour (`glassfish.serverLogColor`, set by the plugin's extension). It starts at the log's end, so a slot's earlier output isn't repeated; containers that share a slot see each line once. Slot startup during `up` or a grow isn't shown. On GlassFish Embedded, it shows each child's output, which also goes to `slot-N/glassfish-embedded.log`. |
-| `slotGroup`           | String  | `-Dgf.pool.slotGroup`/(empty)    | Slot-sharing key; containers sharing it reuse one slot. Inferred from the `<group>` qualifier when `gf.pool.shareGroupSlot=true`. See [Sharing one slot across containers](#sharing-one-slot-across-containers). On GlassFish Embedded, the slot still runs one deployment at a time, of whichever container. |
+| `slotGroup`           | String  | `-Dgf.pool.slotGroup`/(empty)    | Slot-sharing key; containers sharing it reuse one slot. Inferred from the `<group>` qualifier when `gf.pool.shareGroupSlot=true`. See [Sharing one slot across containers](#sharing-one-slot-across-containers). On GlassFish Embedded, the slot still runs one deployment at a time, of whichever container. In the test JVM, the containers share its one GlassFish; a container on another slot of the same test JVM fails at its start. |
+| `instanceRoot`        | String  | (none)                           | With `<embeddedMode>in-process</embeddedMode>`: an instance root of your own for the GlassFish the test JVM hosts, as the `glassfish-embedded` Arquillian Container takes it. Each test JVM boots on a copy, in its slot's directory, with the slot's ports. |
+| `configurationXml`    | String  | (none)                           | With `<embeddedMode>in-process</embeddedMode>`: a `domain.xml` of your own, which each test JVM runs a copy of, with the slot's ports. |
 | `adminUser`           | String  | `admin`                          | Inherited from `CommonGlassFishConfiguration`.                                                              |
 | `adminPassword`       | String  | (empty)                          | Inherited.                                                                                                  |
 | `httpPort`            | int     | overwritten at lease             | Set from the slot's `ports.properties`.                                                                     |

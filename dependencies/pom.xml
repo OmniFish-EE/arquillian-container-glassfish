@@ -76,10 +76,20 @@
     <properties>
         <version.parsson>1.1.7</version.parsson>
         <version.arquillian.jee>10.0.0.Final</version.arquillian.jee>
+        <!--
+            GlassFish's embeddable API, which hosts call directly. 7.1.0's is Java 17
+            bytecode, and 8 and 9 have the same API, so one copy serves them all.
+        -->
+        <version.simple-glassfish-api>7.1.0</version.simple-glassfish-api>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.glassfish.main.common</groupId>
+                <artifactId>simple-glassfish-api</artifactId>
+                <version>${version.simple-glassfish-api}</version>
+            </dependency>
             <dependency>
                 <groupId>org.eclipse.parsson</groupId>
                 <artifactId>parsson</artifactId>

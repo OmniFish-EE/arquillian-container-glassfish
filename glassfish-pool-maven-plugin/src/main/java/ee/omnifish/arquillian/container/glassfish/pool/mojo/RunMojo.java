@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.List;
 
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Execute;
@@ -66,9 +67,14 @@ import ee.omnifish.glassfish.maven.staging.GlassFishDomain;
  * tests of the {@code package} this goal runs, not this goal.
  *
  * <p>On an Embedded {@code <edition>}, it runs the artifact on GlassFish
- * Embedded, from the command line, in a JVM of its own, on the slot's ports,
- * as {@code glassfish:run} does on its own, whatever {@code <embeddedMode>}
- * says: there's no test JVM to run it in.
+ * Embedded, on the slot's ports: from the command line, in a JVM of its own,
+ * as {@code glassfish:run} does on its own, or with
+ * {@code <embeddedMode>in-process</embeddedMode>}, in Maven's own JVM, which
+ * then needs GlassFish's module options, from {@code .mvn/jvm.config} or
+ * {@code MAVEN_OPTS}. In Maven's JVM, Ctrl+C ends the run, as does
+ * {@code glassfish-pool:down} from another terminal, after which this goal
+ * returns, and Maven goes on with the next. mvnd's daemon, which would keep
+ * what GlassFish changes in the JVM, can't host it.
  */
 @Mojo(name = "run", threadSafe = true)
 @Execute(phase = LifecyclePhase.PACKAGE)
@@ -78,6 +84,9 @@ public class RunMojo extends AbstractStagingPoolMojo {
 
     /** How long GlassFish Embedded gets to deploy the artifact, or a debugger to attach to it with {@code suspend}. */
     private static final Duration START_TIMEOUT = Duration.ofMinutes(5);
+
+    /** The system property mvnd sets in its daemon, whose JVM a build doesn't have to itself. */
+    static final String MVND_HOME = "mvnd.home";
 
     /**
      * The application's name. GlassFish takes it from an EAR's
@@ -133,14 +142,34 @@ public class RunMojo extends AbstractStagingPoolMojo {
             preStage = buildPreStage();
         }
         PoolConfig poolConfig = poolConfig();
+        boolean hosted = poolConfig.embedded() && IN_PROCESS.equals(embeddedMode());
+        if (hosted) {
+            requireOwnJvm(System.getProperty(MVND_HOME));
+        }
         try {
-            if (poolConfig.embedded()) {
+            if (hosted) {
+                runHosted(poolConfig, preStage, archive);
+            } else if (poolConfig.embedded()) {
                 runEmbedded(poolConfig, preStage, archive);
             } else {
                 run(poolConfig, preStage, archive);
             }
         } finally {
             stopPool(poolConfig);
+        }
+    }
+
+    /**
+     * Fail in mvnd's daemon, with {@code mvndHome} set: Maven and GlassFish
+     * share the JVM's system properties, its logging configuration and its
+     * TLS defaults, and what GlassFish leaves there would reach the daemon's
+     * next build. Package-private for unit tests.
+     */
+    static void requireOwnJvm(String mvndHome) throws MojoExecutionException {
+        if (mvndHome != null) {
+            throw new MojoExecutionException("glassfish-pool:run can't host GlassFish Embedded in mvnd's daemon, which "
+                    + "would keep what GlassFish changes in the JVM for its next build. Set <embeddedMode>command-line"
+                    + "</embeddedMode> to run it in a JVM of its own, or use mvn.");
         }
     }
 
@@ -225,6 +254,58 @@ public class RunMojo extends AbstractStagingPoolMojo {
             } else {
                 handBack.run();
             }
+        }
+    }
+
+    /**
+     * Run {@code archive} on GlassFish Embedded in Maven's own JVM, on a
+     * leased slot's ports, until Ctrl+C, or until {@code glassfish-pool:down}
+     * from another terminal asks the run to stop. Then hand the slot back: as
+     * the run's ending, which on Ctrl+C runs in a shutdown hook.
+     */
+    private void runHosted(PoolConfig poolConfig, Runnable preStage, Path archive) throws MojoExecutionException {
+        SlotLease lease = lease(poolConfig, preStage);
+        int slot = lease.slotIndex();
+        Runnable handBack = () -> {
+            lease.close();
+            getLog().info("Handed slot " + slot + " back to the pool");
+        };
+        HostedRun run = null;
+        try {
+            logSettingsThatDontApply(poolConfig);
+            EmbeddedGlassFish glassfish = embeddedGlassFish(poolConfig);
+            // One that a down left after its run had ended would end this one at once.
+            lease.clearStopRequest();
+            run = HostedRun.start(lease, glassfish, poolConfig, GOAL, getLog(), handBack);
+            List<String> urls = run.deploy(archive, name, contextRoot, executedProject.getPackaging());
+            getLog().info(RunDeployer.deployed(run.name(), urls));
+            getLog().info("Ctrl+C, or glassfish-pool:down from another terminal, ends the run, and hands slot " + slot
+                    + " back to the pool");
+            run.untilStopped(lease::isStopRequested);
+        } catch (IOException e) {
+            throw new MojoExecutionException("Running GlassFish Embedded in Maven's JVM failed: " + e.getMessage(), e);
+        } finally {
+            if (run != null) {
+                // Ends the run, if it hasn't ended, which hands the slot back.
+                run.close();
+            } else {
+                handBack.run();
+            }
+        }
+    }
+
+    /**
+     * Say which settings don't apply when Maven's own JVM hosts GlassFish:
+     * the JVM was started before this goal ran.
+     */
+    private void logSettingsThatDontApply(PoolConfig poolConfig) {
+        if (debug || suspend) {
+            getLog().info("Maven's own JVM hosts GlassFish Embedded, so glassfish.debug and glassfish.suspend don't "
+                    + "apply: debug Maven itself, as mvnDebug does.");
+        }
+        if (poolConfig.setup().maxHeapSize() != null || poolConfig.setup().enableAssertions() != null) {
+            getLog().info("<maxHeapSize> and <enableAssertions> don't apply to GlassFish Embedded in Maven's JVM: give "
+                    + "Maven -Xmx or -ea in .mvn/jvm.config or MAVEN_OPTS.");
         }
     }
 

@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.stream.Collectors;
@@ -220,6 +221,107 @@ class PoolLifecycleParticipantTest {
         new PoolLifecycleParticipant().afterProjectsRead(session);
 
         assertEquals(List.of("pool-up", "pool-down"), executionIds(plugin));
+    }
+
+    /** From the plugin's configuration, or else the properties, as for the mojos. */
+    @Test
+    void theTestJvmsHostGlassFishOnAnEmbeddedEditionInProcess() {
+        Properties none = new Properties();
+        assertTrue(PoolLifecycleParticipant.isInProcess(configured("edition", "embedded-web", "embeddedMode",
+                "in-process"), none));
+        assertFalse(PoolLifecycleParticipant.isInProcess(configured("edition", "web", "embeddedMode", "in-process"),
+                none));
+        assertFalse(PoolLifecycleParticipant.isInProcess(configured("edition", "embedded"), none));
+        Properties properties = new Properties();
+        properties.setProperty("gf.pool.edition", "embedded");
+        properties.setProperty("gf.pool.embeddedMode", "in-process");
+        assertTrue(PoolLifecycleParticipant.isInProcess(new Plugin(), properties));
+        assertFalse(PoolLifecycleParticipant.isInProcess(configured("embeddedMode", "command-line"), properties));
+    }
+
+    /**
+     * Failsafe puts GlassFish after the project's dependencies, so the
+     * Jakarta EE APIs, which GlassFish has, are left out, and it forks with
+     * GlassFish's module options, which up sets after this, and failsafe
+     * replaces when it forks. Without an argLine of its own, failsafe's
+     * takes the argLine property, as jacoco sets it.
+     */
+    @Test
+    void testJvmsThatHostGlassFishGetItsClassPathAndModuleOptions() {
+        MavenProject project = new MavenProject();
+        Plugin failsafe = new Plugin();
+        PluginExecution execution = new PluginExecution();
+        execution.setId("default");
+        failsafe.addExecution(execution);
+
+        PoolLifecycleParticipant.hostInTestJvms(project, failsafe);
+
+        for (Xpp3Dom configuration : List.of((Xpp3Dom) failsafe.getConfiguration(),
+                (Xpp3Dom) execution.getConfiguration())) {
+            assertEquals(List.of("${gf.pool.embeddedClasspath}"),
+                    values(configuration.getChild("additionalClasspathElements")));
+            assertEquals(List.of("jakarta.*:*", "org.glassfish.main.extras:*"),
+                    values(configuration.getChild("classpathDependencyExcludes")));
+            assertEquals("${argLine} @{gf.pool.embeddedJvmOptions}", configuration.getChild("argLine").getValue());
+        }
+        // As @{...} stays as it is when unset, which would break the fork.
+        assertEquals("", project.getProperties().getProperty("gf.pool.embeddedJvmOptions"));
+        assertEquals("", project.getProperties().getProperty("argLine"));
+    }
+
+    @Test
+    void thePomsArgLineAndClassPathElementsAreKept() {
+        MavenProject project = new MavenProject();
+        Plugin failsafe = configured("argLine", "-Xmx1g");
+        Xpp3Dom elements = new Xpp3Dom("additionalClasspathElements");
+        Xpp3Dom element = new Xpp3Dom("additionalClasspathElement");
+        element.setValue("extra.jar");
+        elements.addChild(element);
+        ((Xpp3Dom) failsafe.getConfiguration()).addChild(elements);
+
+        PoolLifecycleParticipant.hostInTestJvms(project, failsafe);
+        PoolLifecycleParticipant.hostInTestJvms(project, failsafe);
+
+        Xpp3Dom configuration = (Xpp3Dom) failsafe.getConfiguration();
+        assertEquals("-Xmx1g @{gf.pool.embeddedJvmOptions}", configuration.getChild("argLine").getValue());
+        assertEquals(List.of("extra.jar", "${gf.pool.embeddedClasspath}"),
+                values(configuration.getChild("additionalClasspathElements")));
+        assertNull(project.getProperties().getProperty("argLine"));
+    }
+
+    /** In Maven's JVM, there's no child to attach a debugger to: the run says to debug Maven instead. */
+    @Test
+    void aRunThatHostsGlassFishTurnsNoDebuggerOn() {
+        Plugin plugin = configured("edition", "embedded", "embeddedMode", "in-process");
+        plugin.setGroupId(PoolLifecycleParticipant.GROUP_ID);
+        plugin.setArtifactId(PoolLifecycleParticipant.ARTIFACT_ID);
+        MavenProject project = new MavenProject();
+        project.getBuild().addPlugin(plugin);
+        DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+        request.setGoals(List.of("glassfish-pool:run"));
+        MavenSession session = new MavenSession(null, null, request, new DefaultMavenExecutionResult());
+        session.setProjects(List.of(project));
+
+        new PoolLifecycleParticipant().afterProjectsRead(session);
+
+        assertNull(project.getProperties().getProperty("glassfish.debug"));
+    }
+
+    /** A plugin whose configuration has the {@code name}, {@code value} pairs of {@code settings}. */
+    private static Plugin configured(String... settings) {
+        Plugin plugin = new Plugin();
+        Xpp3Dom configuration = new Xpp3Dom("configuration");
+        for (int i = 0; i < settings.length; i += 2) {
+            Xpp3Dom setting = new Xpp3Dom(settings[i]);
+            setting.setValue(settings[i + 1]);
+            configuration.addChild(setting);
+        }
+        plugin.setConfiguration(configuration);
+        return plugin;
+    }
+
+    private static List<String> values(Xpp3Dom list) {
+        return Arrays.stream(list.getChildren()).map(Xpp3Dom::getValue).collect(Collectors.toList());
     }
 
     /**

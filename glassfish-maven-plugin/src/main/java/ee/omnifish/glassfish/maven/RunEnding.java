@@ -13,6 +13,7 @@ package ee.omnifish.glassfish.maven;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BooleanSupplier;
 
 import org.apache.maven.plugin.logging.Log;
 
@@ -21,10 +22,15 @@ import ee.omnifish.glassfish.maven.RunningDomain.Ending;
 /**
  * The one ending of a run, however it ends: from a shutdown hook on plain
  * Maven's Ctrl+C, after mvnd's Ctrl+C interrupts the wait, after a failed
- * start or deploy, or once the server's process ended otherwise. Shared by
- * {@link RunningDomain} and {@link EmbeddedRun}.
+ * start or deploy, once the server's process ended otherwise, or once
+ * {@code glassfish-pool:down} asks a run that hosts GlassFish to stop.
+ * Shared by {@link RunningDomain}, {@link EmbeddedRun} and the pool plugin's
+ * run in Maven's JVM.
  */
-final class RunEnding {
+public final class RunEnding {
+
+    /** How often {@link #untilRequested} checks whether the run should stop. */
+    private static final long POLL_MILLIS = 500;
 
     private final Ending ending;
     private final Runnable afterwards;
@@ -39,7 +45,7 @@ final class RunEnding {
      *
      * @param goal the goal that runs, which names the shutdown hook's thread
      */
-    RunEnding(String goal, Log log, Ending ending, Runnable afterwards) {
+    public RunEnding(String goal, Log log, Ending ending, Runnable afterwards) {
         this.ending = ending;
         this.afterwards = afterwards;
         this.log = log;
@@ -72,6 +78,32 @@ final class RunEnding {
     }
 
     /**
+     * Wait until {@code stopRequested} says so, as it's asked now and then,
+     * or this thread is interrupted, then end the run. On Ctrl+C, the
+     * shutdown hook ends the run meanwhile, and the JVM exits once it has.
+     */
+    public void untilRequested(BooleanSupplier stopRequested) {
+        boolean interrupted = false;
+        try {
+            while (!hasEnded() && !stopRequested.getAsBoolean()) {
+                Thread.sleep(POLL_MILLIS);
+            }
+        } catch (InterruptedException e) {
+            interrupted = true;
+        } finally {
+            close();
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /** Whether the run has ended; while it ends, this waits until it has. */
+    public synchronized boolean hasEnded() {
+        return ended;
+    }
+
+    /**
      * Run the ending, then {@code afterwards}. A second call waits until the
      * first has finished: during a shutdown, the JVM exits once its hooks
      * return.
@@ -92,7 +124,7 @@ final class RunEnding {
     }
 
     /** {@link #end}, and drop the shutdown hook, which has nothing left to do. */
-    void close() {
+    public void close() {
         end();
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);

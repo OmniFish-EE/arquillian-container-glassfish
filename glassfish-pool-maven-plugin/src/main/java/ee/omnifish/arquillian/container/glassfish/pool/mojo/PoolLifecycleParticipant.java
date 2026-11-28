@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
@@ -21,6 +22,7 @@ import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.slf4j.Logger;
@@ -28,6 +30,7 @@ import org.slf4j.LoggerFactory;
 
 import ee.omnifish.arquillian.container.glassfish.pool.PoolBootstrap;
 import ee.omnifish.arquillian.container.glassfish.pool.PoolConfig;
+import ee.omnifish.glassfish.maven.staging.Edition;
 
 import static ee.omnifish.glassfish.maven.LifecycleSupport.bind;
 import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardProperties;
@@ -66,6 +69,15 @@ import static ee.omnifish.glassfish.maven.LifecycleSupport.forwardServerLogColor
  * whole build is done, in {@link #afterSessionEnd}, also in a single-module
  * build.
  *
+ * <p>When the test JVMs host GlassFish Embedded themselves, with
+ * {@code <embeddedMode>in-process</embeddedMode>} on an Embedded
+ * {@code <edition>}, it also gives failsafe what they need for that: the JAR
+ * that names GlassFish's class path as an {@code additionalClasspathElement},
+ * GlassFish's module options in its {@code argLine}, and the exclusion of
+ * the Jakarta EE APIs and other GlassFish Embedded JARs from the test class
+ * path, as those come before the additional elements, and an older API would
+ * mask GlassFish's own. {@code up} sets the values those refer to.
+ *
  * <p>Binding and forwarding are shared with {@code glassfish-maven-plugin};
  * see {@link ee.omnifish.glassfish.maven.LifecycleSupport}.
  */
@@ -76,6 +88,16 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
     static final String FAILSAFE_KEY = "org.apache.maven.plugins:maven-failsafe-plugin";
     static final String GOAL_PREFIX = "glassfish-pool";
     static final String DEBUG_PROPERTY = "glassfish.debug";
+    static final String EDITION_PROPERTY = "gf.pool.edition";
+    static final String EMBEDDED_MODE_PROPERTY = "gf.pool.embeddedMode";
+
+    /**
+     * What a test JVM that hosts GlassFish mustn't have on its class path,
+     * where it would come before GlassFish's: the Jakarta EE APIs, which
+     * GlassFish has in the versions it implements, and other GlassFish
+     * Embedded JARs.
+     */
+    static final List<String> HOSTING_EXCLUDES = List.of("jakarta.*:*", "org.glassfish.main.extras:*");
 
     private static final Logger LOG = LoggerFactory.getLogger(PoolLifecycleParticipant.class);
 
@@ -102,13 +124,20 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
         for (MavenProject project : session.getProjects()) {
             Plugin plugin = project.getPlugin(GROUP_ID + ":" + ARTIFACT_ID);
             if (plugin != null) {
+                Properties properties = properties(project, session);
+                boolean inProcess = isInProcess(plugin, properties);
                 publishRootDirectory(project, session);
-                debugRun(project, session.getGoals());
-                bindGoals(plugin, properties(project, session));
+                if (!inProcess) {
+                    debugRun(project, session.getGoals());
+                }
+                bindGoals(plugin, properties);
                 Plugin failsafe = project.getPlugin(FAILSAFE_KEY);
                 if (failsafe != null) {
                     forwardPoolProperties(failsafe);
                     forwardServerLogColor(project, failsafe);
+                    if (inProcess) {
+                        hostInTestJvms(project, failsafe);
+                    }
                 }
             }
         }
@@ -239,5 +268,97 @@ public class PoolLifecycleParticipant extends AbstractMavenLifecycleParticipant 
      */
     static void forwardPoolProperties(Plugin failsafe) {
         forwardProperties(failsafe, UpMojo.FORWARDED_PROPERTIES);
+    }
+
+    /**
+     * Whether the test JVMs host the pool's GlassFish Embedded: the plugin's
+     * configuration, or else the properties, give an Embedded
+     * {@code <edition>} and {@code <embeddedMode>in-process</embeddedMode>}.
+     * Package-private for unit tests.
+     */
+    static boolean isInProcess(Plugin plugin, Properties properties) {
+        String edition = setting(plugin, "edition", properties, EDITION_PROPERTY);
+        String mode = setting(plugin, "embeddedMode", properties, EMBEDDED_MODE_PROPERTY);
+        if (edition == null || mode == null) {
+            return false;
+        }
+
+        try {
+            return Edition.of(edition).isEmbedded()
+                    && AbstractStagingPoolMojo.IN_PROCESS.equals(mode.trim().toLowerCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            // up says what's wrong with it.
+            return false;
+        }
+    }
+
+    /** A setting of the plugin-level configuration, or else its property; {@code null} when neither has one. */
+    private static String setting(Plugin plugin, String name, Properties properties, String property) {
+        Xpp3Dom configuration = (Xpp3Dom) plugin.getConfiguration();
+        Xpp3Dom child = (configuration == null) ? null : configuration.getChild(name);
+        String value = (child != null) ? child.getValue() : properties.getProperty(property);
+        return (value == null || value.isBlank() || value.contains("${")) ? null : value;
+    }
+
+    /**
+     * Give failsafe what test JVMs that host GlassFish need, in the plugin's
+     * configuration and each execution's: the class path JAR as an
+     * {@code additionalClasspathElement}, the module options at the end of
+     * the {@code argLine}, as {@code @{...}}, which failsafe replaces when it
+     * forks, after {@code up}, and {@link #HOSTING_EXCLUDES}. Without an
+     * {@code argLine} of its own, failsafe's takes the {@code argLine}
+     * property, as jacoco and {@code -DargLine} set it. The properties
+     * default to empty, as {@code @{...}} stays as it is when unset.
+     * Package-private for unit tests.
+     */
+    static void hostInTestJvms(MavenProject project, Plugin failsafe) {
+        Properties properties = project.getProperties();
+        properties.putIfAbsent(UpMojo.EMBEDDED_JVM_OPTIONS, "");
+        failsafe.setConfiguration(withHosting((Xpp3Dom) failsafe.getConfiguration(), properties));
+        for (PluginExecution execution : failsafe.getExecutions()) {
+            execution.setConfiguration(withHosting((Xpp3Dom) execution.getConfiguration(), properties));
+        }
+    }
+
+    private static Xpp3Dom withHosting(Xpp3Dom configuration, Properties properties) {
+        if (configuration == null) {
+            configuration = new Xpp3Dom("configuration");
+        }
+        addEntry(configuration, "additionalClasspathElements", "additionalClasspathElement",
+                "${" + UpMojo.EMBEDDED_CLASSPATH + "}");
+        for (String exclude : HOSTING_EXCLUDES) {
+            addEntry(configuration, "classpathDependencyExcludes", "classpathDependencyExclude", exclude);
+        }
+
+        String options = "@{" + UpMojo.EMBEDDED_JVM_OPTIONS + "}";
+        Xpp3Dom argLine = configuration.getChild("argLine");
+        if (argLine == null) {
+            argLine = new Xpp3Dom("argLine");
+            argLine.setValue("${argLine} " + options);
+            configuration.addChild(argLine);
+            properties.putIfAbsent("argLine", "");
+        } else if (argLine.getValue() == null || argLine.getValue().isBlank()) {
+            argLine.setValue(options);
+        } else if (!argLine.getValue().contains(options)) {
+            argLine.setValue(argLine.getValue().trim() + " " + options);
+        }
+        return configuration;
+    }
+
+    /** Add {@code value} to the list {@code list} of {@code configuration}, unless it has it. */
+    private static void addEntry(Xpp3Dom configuration, String list, String entry, String value) {
+        Xpp3Dom entries = configuration.getChild(list);
+        if (entries == null) {
+            entries = new Xpp3Dom(list);
+            configuration.addChild(entries);
+        }
+        for (Xpp3Dom existing : entries.getChildren()) {
+            if (value.equals(existing.getValue())) {
+                return;
+            }
+        }
+        Xpp3Dom added = new Xpp3Dom(entry);
+        added.setValue(value);
+        entries.addChild(added);
     }
 }

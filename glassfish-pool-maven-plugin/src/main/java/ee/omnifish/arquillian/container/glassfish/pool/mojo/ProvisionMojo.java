@@ -37,7 +37,6 @@ public class ProvisionMojo extends AbstractStagingPoolMojo {
             getLog().info("glassfish-pool:provision skipped (gf.pool.skip=true)");
             return;
         }
-        requireCommandLineMode();
         // Before poolConfig(): may derive poolSource from <distribution>.
         Runnable preStage = buildPreStage();
         try {

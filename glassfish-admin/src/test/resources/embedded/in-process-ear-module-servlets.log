@@ -1,0 +1,7 @@
+PlainTextActionReporterSUCCESSDescription: list-sub-components AdminCommandnull
+    [default=Servlet
+    [jsp=Servlet
+    [probe.HelloServlet=Servlet
+    probe.HelloServlet  <Servlet>  
+    default             <Servlet>  
+    jsp                 <Servlet>  

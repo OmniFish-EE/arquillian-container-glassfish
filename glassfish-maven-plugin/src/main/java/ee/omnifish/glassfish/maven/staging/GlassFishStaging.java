@@ -196,10 +196,12 @@ public final class GlassFishStaging {
                             + " runs from " + running.get().home() + ". Stop it with glassfish:stop, then build "
                             + "again.");
                 }
-                if (EmbeddedProcesses.runningFrom(stageDir).isPresent()) {
-                    // Started by glassfish:run, in another Maven.
+                Optional<ProcessHandle> embedded = EmbeddedProcesses.runningFrom(stageDir);
+                if (embedded.isPresent()) {
+                    // A glassfish:run's child, a pool slot's, or a JVM that hosts GlassFish itself, in another Maven.
                     throw new IOException("The inputs of " + stageDir + " changed, but GlassFish Embedded runs from "
-                            + "it. End that glassfish:run, then build again.");
+                            + "it, in the process " + embedded.get().pid() + ": a run, or tests. End it, then build "
+                            + "again.");
                 }
                 LOG.info("Re-staging " + stageDir + ": its inputs changed");
             }

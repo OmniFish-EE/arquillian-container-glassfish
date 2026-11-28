@@ -98,7 +98,7 @@ public final class RunDeployer {
     }
 
     /** The URL of {@code contextRoot} over HTTP on {@code port} of this host. */
-    static String url(int port, String contextRoot) {
+    public static String url(int port, String contextRoot) {
         String root = contextRoot.startsWith("/") ? contextRoot : "/" + contextRoot;
         return "http://localhost:" + port + (root.endsWith("/") ? root : root + "/");
     }

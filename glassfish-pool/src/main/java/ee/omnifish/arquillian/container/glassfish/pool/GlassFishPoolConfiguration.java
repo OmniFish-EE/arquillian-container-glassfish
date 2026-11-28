@@ -48,6 +48,12 @@ import ee.omnifish.arquillian.container.glassfish.CommonGlassFishConfiguration;
  *       which infers {@code slotGroup} from the {@code <group>} qualifier (see
  *       {@link GroupSlotInference}); set it explicitly only to share across
  *       non-grouped containers or to override that inference.</li>
+ *   <li>{@code instanceRoot} and {@code configurationXml} — with the pool
+ *       plugin's {@code <embeddedMode>in-process</embeddedMode>}, an instance
+ *       root or a {@code domain.xml} of the user's own for the GlassFish the
+ *       test JVM hosts, as the {@code glassfish-embedded} Arquillian Container
+ *       takes them. Each test JVM boots on a copy, in its slot's directory,
+ *       with the slot's ports.</li>
  * </ul>
  *
  * <p>{@code httpPort}/{@code httpsPort}/{@code glassFishHome} are populated
@@ -73,6 +79,9 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
     private boolean serverLogToConsole = Boolean.getBoolean("glassfish.serverLogToConsole");
     private boolean serverLogColor = Boolean.getBoolean("glassfish.serverLogColor");
     private String slotGroup = System.getProperty(SYS_SLOT_GROUP, "");
+
+    private String instanceRoot;
+    private String configurationXml;
 
     private int httpPort = Integer.parseInt(System.getProperty("glassfish.httpPort", "8080"));
     private int httpsPort = Integer.parseInt(System.getProperty("glassfish.httpsPort", "8181"));
@@ -132,6 +141,30 @@ public class GlassFishPoolConfiguration extends CommonGlassFishConfiguration {
 
     public void setSlotGroup(String slotGroup) {
         this.slotGroup = slotGroup;
+    }
+
+    public String getInstanceRoot() {
+        return instanceRoot;
+    }
+
+    /**
+     * @param instanceRoot An instance root for the GlassFish the test JVM hosts, with
+     *        {@code <embeddedMode>in-process</embeddedMode>}, which it boots on a copy of
+     */
+    public void setInstanceRoot(String instanceRoot) {
+        this.instanceRoot = instanceRoot;
+    }
+
+    public String getConfigurationXml() {
+        return configurationXml;
+    }
+
+    /**
+     * @param configurationXml A {@code domain.xml} for the GlassFish the test JVM hosts, with
+     *        {@code <embeddedMode>in-process</embeddedMode>}, which it runs on a copy of
+     */
+    public void setConfigurationXml(String configurationXml) {
+        this.configurationXml = configurationXml;
     }
 
     public int getHttpPort() {

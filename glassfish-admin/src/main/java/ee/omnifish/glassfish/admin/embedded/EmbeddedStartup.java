@@ -179,8 +179,52 @@ public final class EmbeddedStartup {
     }
 
     /** {@code contextRoot}, starting with {@code /}, as GlassFish reports it either way. */
-    private static String rooted(String contextRoot) {
+    static String rooted(String contextRoot) {
         return contextRoot.startsWith("/") ? contextRoot : "/" + contextRoot;
+    }
+
+    /**
+     * The servlets that the output of a {@code list-sub-components} of a web
+     * module lists, as a child logs it, or as a host gets it from GlassFish's
+     * {@code CommandRunner}.
+     */
+    public static List<String> servletsIn(String output) {
+        List<String> servlets = new ArrayList<>();
+        for (String line : output.split("\\R")) {
+            Matcher servlet = SERVLET.matcher(line);
+            if (servlet.matches()) {
+                servlets.add(servlet.group(1).trim());
+            }
+        }
+        return servlets;
+    }
+
+    /**
+     * The web modules that the output of a {@code list-sub-components} of an
+     * EAR lists, by URI, each with the context root GlassFish gave it,
+     * starting with {@code /}.
+     */
+    public static Map<String, String> webModulesIn(String output) {
+        Map<String, String> webModules = new LinkedHashMap<>();
+        for (String line : output.split("\\R")) {
+            Matcher webModule = WEB_MODULE.matcher(line);
+            if (webModule.matches()) {
+                webModules.put(webModule.group(1).trim(), rooted(webModule.group(2).trim()));
+            }
+        }
+        return webModules;
+    }
+
+    /** The context roots that the output of a context-root query gives the application {@code name}. */
+    public static List<String> contextRootsIn(String output, String name) {
+        List<String> contextRoots = new ArrayList<>();
+        for (String line : output.split("\\R")) {
+            Matcher contextRoot = CONTEXT_ROOT.matcher(line);
+            if (contextRoot.matches() && contextRoot.group(1).equals(name)) {
+                contextRoots.add(contextRoot.group(2).trim());
+            }
+        }
+        return contextRoots;
     }
 
     /** Whether the child has deployed the application, and said what the command asked. */

@@ -116,7 +116,7 @@ final class EmbeddedSlotDeployer {
                     .jvmOptions(jvmOptions())
                     .commands(commands())
                     .name(name)
-                    .deployOptions(deployOptions())
+                    .deployOptions(deployOptions(configuration))
                     .listServlets(webModules);
             List<String> line;
             try {
@@ -236,8 +236,11 @@ final class EmbeddedSlotDeployer {
         return commands;
     }
 
-    /** The deploy options the container sets, as the REST deployment passes them. */
-    private List<String> deployOptions() {
+    /**
+     * The deploy options {@code configuration} sets, as the REST deployment
+     * passes them. Package-private for the GlassFish a test JVM hosts.
+     */
+    static List<String> deployOptions(GlassFishPoolConfiguration configuration) {
         List<String> options = new ArrayList<>();
         if (configuration.getLibraries() != null) {
             options.add("--libraries=" + configuration.getLibraries());

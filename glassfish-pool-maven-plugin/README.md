@@ -149,9 +149,9 @@ build isn't running tests there's no reason to pay for a pool.
 
 | Parameter         | Property               | Default                          | Notes                                                                  |
 | ----------------- | ---------------------- | -------------------------------- | ---------------------------------------------------------------------- |
-| `edition`         | `gf.pool.edition`      | `full`                           | `full` or `web`, a `domain1` per slot, or `embedded` or `embedded-web`, GlassFish Embedded, a child JVM per deployment. See *Running tests on GlassFish Embedded*. |
+| `edition`         | `gf.pool.edition`      | `full`                           | `full` or `web`, a `domain1` per slot, or `embedded` or `embedded-web`, GlassFish Embedded, a child JVM per deployment, or in the test JVM. See *Running tests on GlassFish Embedded*. |
 | `version`         | `gf.pool.version`      | (none)                           | The GlassFish version, for the artifact `<edition>` names. `<distribution>` overrides it, and with `<poolSource>`, it doesn't apply. |
-| `embeddedMode`    | `gf.pool.embeddedMode` | `command-line`                   | How GlassFish Embedded starts on an Embedded edition: `command-line`, a child JVM per deployment. `in-process`, inside the test JVM, isn't supported yet. `full` and `web`, and `run`, ignore it. |
+| `embeddedMode`    | `gf.pool.embeddedMode` | `command-line`                   | How GlassFish Embedded starts on an Embedded edition: `command-line`, a child JVM per deployment or run, or `in-process`, in the JVM that asks: the test JVM, or for `run`, Maven's. See *GlassFish Embedded in the test JVM* and *In Maven's JVM*. `full` and `web` ignore it. |
 | `distribution`    | (nested `<distribution>`) | (none)                        | Optional GAV of a GlassFish dist to resolve and unpack into `stageDir`, overriding `<version>`. Only `<version>` is required; `groupId`/`artifactId`/`type` default to the artifact of `<edition>`, `org.glassfish.main.distributions`/`glassfish`/`zip` by default. |
 | `stageDir`        | `gf.pool.stageDir`     | `target/dist`, see *Defaults*    | Where the dist zip is unpacked.                                        |
 | `unpackSkip`      | `gf.pool.unpack.skip`  | `false`                          | Skip the unpack — assume `poolSource` already points at a staged install. |
@@ -584,6 +584,55 @@ $ mvn glassfish-pool:run
   an `up` bound in it, but not `run`. Projects other than `war`, `ear`,
   `ejb` and `rar` have nothing to deploy, and `run` does nothing there.
 
+### In Maven's JVM
+
+On an Embedded `<edition>` with `<embeddedMode>in-process</embeddedMode>`,
+the Maven that runs `glassfish-pool:run` hosts GlassFish Embedded itself, on
+the ports of the slot it leases, one slot per invocation, as for tests:
+
+```
+$ mvn glassfish-pool:run
+...
+[INFO] Leased slot 1 of the pool at .../target/pool
+[INFO] Deployed app, at http://localhost:14849/app/
+[INFO] Ctrl+C, or glassfish-pool:down from another terminal, ends the run, and hands slot 1 back to the pool
+```
+
+- **The module options:** GlassFish needs packages of the JDK opened to it,
+  which only Maven's command line can do. Without them, `run` fails, and
+  names the lines to add to `.mvn/jvm.config`, in the project's root, or
+  to `MAVEN_OPTS`, such as `--add-opens=java.base/java.lang=ALL-UNNAMED`.
+- **What GlassFish sees:** it loads from a class loader of its own, over the
+  staged JAR, or the static shell when an overlay applies, whose parent is
+  the platform class loader. So GlassFish and the application see neither
+  Maven's libraries nor the plugin's, except for GlassFish's embeddable
+  API, which the plugin calls GlassFish through.
+- **Settings:** `<systemProperties>` are system properties of Maven's JVM
+  while GlassFish runs, and `<postBootCommands>` and `<postStartCommands>`
+  run through GlassFish's `CommandRunner` once it has started. The heap, the
+  debugger and assertions are Maven's: `<maxHeapSize>`,
+  `<enableAssertions>`, `glassfish.debug` and `glassfish.suspend` don't
+  apply, and `run` says so. To debug the application, debug Maven, as
+  `mvnDebug` does. GlassFish logs on Maven's console, through
+  `java.util.logging`.
+- **Ending it:** Ctrl+C stops GlassFish and hands the slot back.
+  `glassfish-pool:down` from another terminal asks the run to stop, through
+  a file in the slot's directory that the run watches, as it can't end the
+  run's Maven, and waits until the run has handed its slot back. The run's
+  goal then returns, so a later goal of the same invocation still runs. A
+  GlassFish that doesn't stop can't be killed apart from Maven.
+- **What Maven's JVM gets back:** GlassFish sets some thirty system
+  properties, and replaces the JVM's default TLS context with one that
+  trusts the pool's truststore. When it stops, those are as they were, so
+  Maven's own HTTPS requests work after the run. What GlassFish changed in
+  the configuration of `java.util.logging` stays, which is harmless for
+  `mvn`, which exits after the run.
+- **mvnd:** its daemon would keep what GlassFish leaves in the JVM for its
+  next build, so `run` doesn't host GlassFish there: use `command-line`
+  with mvnd.
+- **The stage directory** records the run's Maven as a host while
+  GlassFish runs, so staging doesn't replace what it runs from.
+
 ## Running tests on GlassFish Embedded
 
 With an Embedded `<edition>`, the tests run on GlassFish Embedded, the way
@@ -667,12 +716,88 @@ JVM leases, and the undeploy ends that child.
   remote EJB calls between two children.
 - **What doesn't apply:** `restartOnRelease` has nothing to restart.
   `<sourcePostBootCommands>`, `<poolSource>` and `<unpackSkip>` fail on an
-  Embedded edition, and so does `<embeddedMode>in-process</embeddedMode>`,
-  which isn't supported yet.
+  Embedded edition.
 - **`glassfish-pool:run`** runs the project on GlassFish Embedded too, from
-  the command line, on a leased slot's ports, whatever `<embeddedMode>`
-  says. Its debugger, on by default in a build that runs `run`, is on the
-  slot's debug port.
+  the command line, on a leased slot's ports. Its debugger, on by default in
+  a build that runs `run`, is on the slot's debug port. With
+  `<embeddedMode>in-process</embeddedMode>`, Maven's own JVM hosts it
+  instead: see *In Maven's JVM*.
+
+### GlassFish Embedded in the test JVM
+
+With `<embeddedMode>in-process</embeddedMode>`, each test JVM hosts GlassFish
+Embedded itself, on the ports of the slot it leases, as the
+`glassfish-embedded` Arquillian Container runs it, and deploys to it while it
+runs.
+
+```xml
+<plugin>
+    <groupId>ee.omnifish.arquillian</groupId>
+    <artifactId>glassfish-pool-maven-plugin</artifactId>
+    <version>2.2.3</version>
+    <extensions>true</extensions>
+    <configuration>
+        <edition>embedded-web</edition>
+        <version>8.0.5</version>
+        <embeddedMode>in-process</embeddedMode>
+    </configuration>
+</plugin>
+```
+
+- **How long it runs:** the test JVM leases a slot when the Arquillian
+  Container starts, and boots GlassFish on it. Deployments come and go
+  while it runs, so a test class can deploy several archives to it at once.
+  When the container stops, GlassFish stops, is disposed of, and its runtime
+  shuts down, so a test JVM that failsafe reuses can boot it again. Then the
+  slot is released.
+- **What the extension gives failsafe,** when `<edition>` and
+  `<embeddedMode>` are in the plugin's configuration, or properties:
+  - GlassFish's class path, as an `additionalClasspathElement`:
+    `${gf.pool.embeddedClasspath}`, the JAR `up` writes as
+    `poolDir/embedded-classpath.jar`, whose manifest names the staged JAR,
+    or the static shell and its bootstrap JARs.
+  - GlassFish's module options, at the end of the `argLine`:
+    `@{gf.pool.embeddedJvmOptions}`, which `up` sets. Without an `argLine`
+    of its own, failsafe's takes the `argLine` property, as jacoco and
+    `-DargLine` set it.
+  - `classpathDependencyExcludes` of `jakarta.*:*` and
+    `org.glassfish.main.extras:*`: failsafe puts the additional elements
+    after the project's dependencies, where an older Jakarta EE API, or
+    even a same-level API of other versions, breaks GlassFish, and another
+    GlassFish Embedded JAR would mask the staged one and its overlays. The
+    tests compile against the API as before, and run with GlassFish's.
+- **What the test JVM checks:** the Arquillian Container fails at its start
+  when GlassFish isn't on the class path, when another JAR masks the staged
+  one, or when the JVM lacks a module option, and says what to add.
+  Without the extension, give failsafe those three things yourself.
+- **One GlassFish per test JVM:** containers that share a slot, through
+  `slotGroup`, share its GlassFish. A container on another slot of the same
+  test JVM fails at its start; give it the same `slotGroup`, or use
+  `command-line`.
+- **Settings and commands:**
+  - `<systemProperties>`, then the container's `glassfish.systemProperties`,
+    are system properties of the test JVM while GlassFish runs.
+  - `<postBootCommands>` and `<postStartCommands>`, then the container's
+    `glassfish.postBootCommands` and `glassfish.postStartCommands`, run
+    through GlassFish's `CommandRunner` once it has started.
+    `<failOnCommandError>` decides whether a failure fails the start.
+  - `<maxHeapSize>` and `<enableAssertions>` don't apply: give failsafe's
+    `argLine` `-Xmx` or `-ea` instead. The debugger is the test JVM's own,
+    as `-Dmaven.failsafe.debug` starts it.
+  - The container's `instanceRoot` or `configurationXml` give GlassFish an
+    instance root or a `domain.xml` of your own, as for the
+    `glassfish-embedded` Arquillian Container. Each test JVM boots on a
+    copy, in its slot's directory, and the slot's ports apply.
+- **Trusted certificates:** GlassFish replaces the JVM's default TLS
+  context with one that trusts the pool's truststore copy, which the
+  application uses, and so do the tests' own HTTPS requests while it runs.
+- **What the JVM gets back:** after the stop, the JVM's system properties,
+  of which GlassFish sets some thirty, and its default TLS context are as
+  they were. What GlassFish changed in the configuration of
+  `java.util.logging` stays.
+- **The stage directory** records the test JVM as a host while GlassFish
+  runs, so staging doesn't replace what it runs from. The pool never ends
+  a test JVM: `down` leaves it, and `status` shows its slot as `host`.
 
 ## Recipes
 
